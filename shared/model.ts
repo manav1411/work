@@ -1,0 +1,256 @@
+export const RECORD_KINDS = [
+  "action",
+  "note",
+  "company",
+  "application",
+  "contact",
+  "interview",
+  "story",
+  "practice",
+  "topic",
+  "progress",
+  "achievement",
+  "project",
+  "asset",
+  "path",
+  "decision",
+  "review",
+  "focus",
+  "resource",
+  "rotation",
+] as const;
+
+export type RecordKind = (typeof RECORD_KINDS)[number];
+export type RecordData = Record<string, unknown>;
+
+export interface WorkRecord {
+  id: string;
+  kind: RecordKind;
+  title: string;
+  body: string;
+  tags: string[];
+  links: string[];
+  data: RecordData;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface RecordInput {
+  kind: RecordKind;
+  title: string;
+  body?: string;
+  tags?: string[];
+  links?: string[];
+  data?: RecordData;
+}
+
+export type RecordPatch = Partial<Omit<RecordInput, "kind">>;
+
+export interface WorkUser {
+  id: string;
+  name: string;
+  email: string;
+  image?: string | null;
+}
+
+export interface UserPreferences {
+  timezone: string;
+  theme: "light" | "dark";
+  displayName: string;
+  github: string;
+  linkedin: string;
+  website: string;
+  leetcode: string;
+  overleaf: string;
+  currentCompany: string;
+  stack: string;
+  weeklyHours: number;
+  weeklyApplications: number;
+  weeklyPractice: number;
+  customStages: string[];
+  reducedMotion: boolean;
+}
+
+export const DEFAULT_PREFERENCES: UserPreferences = {
+  timezone: "Australia/Melbourne",
+  theme: "light",
+  displayName: "Manav",
+  github: "https://github.com/manav1411",
+  linkedin: "https://linkedin.com/in/manav-dodia",
+  website: "https://manavdodia.com",
+  leetcode: "",
+  overleaf: "",
+  currentCompany: "",
+  stack: "",
+  weeklyHours: 4,
+  weeklyApplications: 3,
+  weeklyPractice: 3,
+  customStages: [
+    "Saved",
+    "Researching",
+    "Ready to apply",
+    "Applied",
+    "Assessment",
+    "Interview",
+    "Offer",
+    "Accepted",
+    "Rejected",
+    "Withdrawn",
+  ],
+  reducedMotion: false,
+};
+
+export interface Attachment {
+  id: string;
+  recordId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  createdAt: string;
+}
+
+export interface RecordRevision {
+  id: string;
+  recordId: string;
+  version: number;
+  title: string;
+  body: string;
+  tags: string[];
+  links: string[];
+  data: RecordData;
+  createdAt: string;
+}
+
+export interface SessionResponse {
+  user: WorkUser | null;
+  local: boolean;
+  configured: boolean;
+}
+
+export const field = (
+  record: WorkRecord | undefined,
+  key: string,
+  fallback = "",
+): string => {
+  const value = record?.data[key];
+  return typeof value === "string" ? value : fallback;
+};
+export const numberField = (
+  record: WorkRecord | undefined,
+  key: string,
+  fallback = 0,
+): number => {
+  const value = record?.data[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+};
+export const boolField = (
+  record: WorkRecord | undefined,
+  key: string,
+): boolean => record?.data[key] === true;
+export const arrayField = (
+  record: WorkRecord | undefined,
+  key: string,
+): string[] => {
+  const value = record?.data[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+};
+
+export const KIND_LABELS: Record<RecordKind, string> = {
+  action: "Action",
+  note: "Note",
+  company: "Company",
+  application: "Application",
+  contact: "Contact",
+  interview: "Interview",
+  story: "Story",
+  practice: "Practice attempt",
+  topic: "Learning topic",
+  progress: "Learning progress",
+  achievement: "Work evidence",
+  project: "Project",
+  asset: "Career asset",
+  path: "Career path",
+  decision: "Decision",
+  review: "Weekly review",
+  focus: "Focus session",
+  resource: "Resource",
+  rotation: "Rotation",
+};
+
+export const KIND_ROUTES: Record<RecordKind, string> = {
+  action: "/today",
+  note: "/notes",
+  company: "/companies",
+  application: "/applications",
+  contact: "/network",
+  interview: "/interviews",
+  story: "/interviews",
+  practice: "/practice",
+  topic: "/learn",
+  progress: "/learn",
+  achievement: "/evidence",
+  project: "/projects",
+  asset: "/assets",
+  path: "/career",
+  decision: "/career",
+  review: "/review",
+  focus: "/focus",
+  resource: "/resources",
+  rotation: "/career",
+};
+
+export const recordUrl = (record: WorkRecord): string => {
+  if (
+    record.kind === "practice" ||
+    (record.kind === "progress" && record.data.category === "problem")
+  )
+    return `/practice?record=${encodeURIComponent(field(record, "problemId", record.id))}`;
+  if (record.kind === "progress")
+    return `/learn?record=${encodeURIComponent(field(record, "topicId", record.id))}`;
+  return `${KIND_ROUTES[record.kind]}?record=${encodeURIComponent(record.id)}`;
+};
+
+export function localDate(
+  date = new Date(),
+  timezone = "Australia/Melbourne",
+): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+export function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T12:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+export function niceDate(
+  value: string,
+  timezone = "Australia/Melbourne",
+): string {
+  if (!value) return "No date yet";
+  const parsed = new Date(value.length === 10 ? `${value}T12:00:00Z` : value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-AU", {
+    month: "short",
+    day: "numeric",
+    timeZone: value.length === 10 ? "UTC" : timezone,
+  }).format(parsed);
+}
+
+export function safeUrl(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return ["https:", "http:"].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+}

@@ -1,0 +1,195 @@
+.asset-card-grid {
+  width: 100%;
+}
+.asset-card {
+  display: grid;
+  gap: 0.75rem;
+}
+.asset-card.is-selected {
+  outline: 3px solid var(--pink, #ff4db8);
+  outline-offset: 2px;
+}
+.asset-card p {
+  margin: 0;
+}
+.asset-profile-strip {
+  background: var(--pink, #ff4db8);
+  border: 2px solid var(--ink, #171629);
+  color: #171629;
+  box-shadow: 4px 4px 0 #171629;
+  border-radius: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+  padding: 1rem 1.25rem;
+}
+.asset-profile-strip > a {
+  color: inherit;
+  font-weight: 800;
+  text-underline-offset: 0.2em;
+}
+.asset-profile-strip .button {
+  margin-left: auto;
+}
+.asset-document-preview {
+  background: var(--paper, #fff8ed);
+  padding: 1.5rem;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 0.6rem;
+  overflow-wrap: anywhere;
+}
+.asset-profile-tasks {
+  display: grid;
+  gap: 1rem;
+}
+.asset-profile-task {
+  border: 2px solid currentColor;
+  border-radius: 0.65rem;
+  padding: 1rem;
+  display: grid;
+  gap: 0.8rem;
+}
+.asset-profile-task > p {
+  padding-left: 1.7rem;
+}
+.asset-upload-label {
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+.asset-upload-label input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+.asset-upload-label:focus-within {
+  outline: 3px solid var(--blue, #315bff);
+  outline-offset: 3px;
+}
+.asset-upload-label.is-disabled {
+  opacity: 0.65;
+  pointer-events: none;
+}
+.asset-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  padding: 0.85rem;
+}
+.asset-file > div:first-child {
+  display: grid;
+  gap: 0.35rem;
+  overflow-wrap: anywhere;
+}
+.asset-pdf-preview {
+  width: 100%;
+  min-height: 450px;
+  border: 2px solid currentColor;
+  border-radius: 0.65rem;
+  background: white;
+}
+.resume-entry {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem !important;
+  box-shadow: none !important;
+}
+.resume-editor {
+  padding: 1rem;
+  border: 2px dashed currentColor;
+  border-radius: 0.65rem;
+}
+.resume-editor h3 {
+  margin: 0;
+}
+.asset-bullet-picker {
+  border: 2px solid currentColor;
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+}
+.asset-bullet-picker summary {
+  cursor: pointer;
+  font-weight: 750;
+  margin-bottom: 0.65rem;
+}
+.asset-bullet-item {
+  padding: 0.7rem;
+  border-bottom: 1px solid currentColor;
+  display: grid;
+  gap: 0.5rem;
+}
+.asset-bullet-item p {
+  margin: 0;
+}
+.asset-print-root {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 16mm;
+    size: A4;
+  }
+  body:has(.asset-print-root) * {
+    visibility: hidden !important;
+  }
+  body:has(.asset-print-root) .asset-print-root,
+  body:has(.asset-print-root) .asset-print-root * {
+    visibility: visible !important;
+  }
+  .asset-print-root {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background: white;
+    color: black;
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+  .asset-print-root .markdown h1 {
+    font-size: 24pt;
+    margin-top: 0;
+  }
+  .asset-print-root .markdown h2 {
+    font-size: 12pt;
+    border-bottom: 1px solid black;
+    margin-top: 1rem;
+    padding-bottom: 0.25rem;
+  }
+  .asset-print-root .markdown h3 {
+    font-size: 10.5pt;
+  }
+  .asset-print-root .markdown h1,
+  .asset-print-root .markdown h2,
+  .asset-print-root .markdown h3 {
+    break-after: avoid;
+  }
+  .asset-print-root .markdown ul {
+    margin-top: 0.3rem;
+  }
+  .asset-print-root .markdown a {
+    color: black;
+  }
+  dialog {
+    display: none !important;
+  }
+}
+@media (max-width: 760px) {
+  .asset-profile-strip .button {
+    margin-left: 0;
+  }
+  .asset-document-preview {
+    padding: 1rem;
+  }
+  .asset-pdf-preview {
+    min-height: 320px;
+  }
+}

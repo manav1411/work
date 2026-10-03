@@ -1,0 +1,7 @@
+ENVIRONMENT=local
+LOCAL_DEV_AUTH=true
+BETTER_AUTH_SECRET=replace-with-a-random-secret-of-at-least-32-characters
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+OWNER_GITHUB_LOGIN=manav1411
+APP_ORIGIN=http://127.0.0.1:5180

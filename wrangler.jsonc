@@ -1,0 +1,53 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "work",
+  "account_id": "235b7f098227aa97860dfd1d4ea9ee71",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [{ "pattern": "work.manavdodia.com", "custom_domain": true }],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "OWNER_GITHUB_LOGIN": "manav1411",
+    "OWNER_GITHUB_ID": "41612145",
+    "APP_ORIGIN": "https://work.manavdodia.com",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "work-prod",
+      "database_id": "a36c8c5c-420d-4699-b358-746c9640faae",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "work-files-prod" }],
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "env": {
+    "staging": {
+      "name": "work-staging",
+      "routes": [],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "OWNER_GITHUB_LOGIN": "manav1411",
+        "OWNER_GITHUB_ID": "41612145",
+        "APP_ORIGIN": "https://work-staging.manavbdodia.workers.dev",
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "work-staging",
+          "database_id": "07d0cb9a-99ab-4197-b856-e6ef19d46dd8",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "work-files-staging" },
+      ],
+    },
+  },
+}

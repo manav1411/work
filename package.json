@@ -1,0 +1,61 @@
+{
+  "name": "work-career-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "tsc -b && eslint .",
+    "format": "prettier --write src worker shared tests scripts *.ts *.js package.json wrangler.jsonc",
+    "format:check": "prettier --check src worker shared tests scripts *.ts *.js package.json wrangler.jsonc",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "ci:build": "npm run check && npm test && npm run build",
+    "db:local": "wrangler d1 migrations apply DB --local --config wrangler.jsonc",
+    "db:staging": "wrangler d1 migrations apply DB --remote --env staging",
+    "deploy": "npm run build && node scripts/check-build.mjs production && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
+    "deploy:ci": "node scripts/check-build.mjs production && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
+    "deploy:staging": "CLOUDFLARE_ENV=staging npm run build && node scripts/check-build.mjs staging && wrangler d1 migrations apply DB --remote --env staging --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
+    "cf:types": "wrangler types"
+  },
+  "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.7",
+    "@fontsource-variable/dm-sans": "5.3.0",
+    "@fontsource-variable/space-grotesk": "5.3.0",
+    "@tanstack/react-query": "5.104.1",
+    "better-auth": "1.7.7",
+    "drizzle-orm": "0.45.3",
+    "hono": "4.13.12",
+    "lucide-react": "1.50.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "react-router-dom": "7.18.4",
+    "remark-gfm": "4.0.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.62.5",
+    "@cloudflare/workers-types": "5.20261002.1",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "eslint": "10.11.0",
+    "globals": "17.13.0",
+    "miniflare": "5.20261001.0-alpha",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vite": "8.3.2",
+    "vitest": "5.0.3",
+    "wrangler": "4.147.0"
+  }
+}

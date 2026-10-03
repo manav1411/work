@@ -1,0 +1,138 @@
+.career-timeline {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  gap: 0.8rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+.career-timeline article {
+  border: 2px solid var(--ink, #171629);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background: var(--orange, #ff8a3d);
+  color: #171629;
+}
+.career-timeline article:nth-child(even) {
+  background: var(--lime, #d7ff3f);
+}
+.career-timeline article span {
+  font: 750 0.72rem monospace;
+}
+.career-timeline h3 {
+  margin: 0.5rem 0;
+  font-size: 1rem;
+}
+.career-timeline p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+.career-path-card {
+  display: grid;
+  gap: 0.9rem;
+}
+.career-path-card p {
+  margin: 0;
+}
+.career-comparison-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.86rem;
+}
+.career-comparison-table th,
+.career-comparison-table td {
+  text-align: left;
+  padding: 0.8rem;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  min-width: 180px;
+  vertical-align: top;
+}
+.career-comparison-table th {
+  background: color-mix(in srgb, var(--orange, #ff8a3d) 12%, transparent);
+}
+.career-comparison-table th small {
+  display: block;
+  font-weight: 500;
+  opacity: 0.7;
+  margin-top: 0.3rem;
+}
+.career-criterion-row {
+  display: grid;
+  grid-template-columns: 1fr 80px auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+.career-option-editor {
+  box-shadow: none !important;
+}
+.preserve-lines {
+  white-space: pre-wrap;
+}
+.evidence-card {
+  display: grid;
+  gap: 0.7rem;
+}
+.evidence-card p {
+  margin: 0;
+}
+.evidence-kind-actions {
+  border: 2px solid var(--ink, #171629);
+  border-radius: 0.7rem;
+  background: var(--lime, #d7ff3f);
+  color: #171629;
+  padding: 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+.project-progress {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+.project-progress progress {
+  width: 100%;
+  accent-color: var(--blue, #315bff);
+  height: 0.65rem;
+}
+.review-prompt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.review-summary {
+  background: color-mix(
+    in srgb,
+    var(--aqua, #45e6e0) 25%,
+    var(--paper, #fff8ed)
+  );
+  border: 2px solid currentColor;
+  padding: 1rem;
+  border-radius: 0.75rem;
+}
+.review-carry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  padding: 0.7rem 0;
+}
+.review-carry-row .inline-actions {
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .review-prompt-grid {
+    grid-template-columns: 1fr;
+  }
+  .review-carry-row {
+    align-items: start;
+    flex-direction: column;
+  }
+  .career-criterion-row {
+    grid-template-columns: 1fr 65px;
+  }
+  .career-criterion-row .button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
