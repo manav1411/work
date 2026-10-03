@@ -17,7 +17,7 @@
     "test:e2e": "playwright test",
     "ci:build": "npm run check && npm test && npm run build",
     "db:local": "wrangler d1 migrations apply DB --local --config wrangler.jsonc",
-    "db:staging": "wrangler d1 migrations apply DB --remote --env staging",
+    "db:staging": "wrangler d1 migrations apply DB --remote --env staging --config wrangler.jsonc",
     "deploy": "npm run build && node scripts/check-build.mjs production && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
     "deploy:ci": "node scripts/check-build.mjs production && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
     "deploy:staging": "CLOUDFLARE_ENV=staging npm run build && node scripts/check-build.mjs staging && wrangler d1 migrations apply DB --remote --env staging --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",

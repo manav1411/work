@@ -35,10 +35,10 @@ Create a GitHub OAuth application with production callback `https://work.manavdo
 Store runtime secrets through the selected Cloudflare environment:
 
 ```sh
-npx wrangler secret put BETTER_AUTH_SECRET
-npx wrangler secret put GITHUB_CLIENT_SECRET
-npx wrangler secret put BETTER_AUTH_SECRET --env staging
-npx wrangler secret put GITHUB_CLIENT_SECRET --env staging
+npx wrangler secret put BETTER_AUTH_SECRET --config wrangler.jsonc
+npx wrangler secret put GITHUB_CLIENT_SECRET --config wrangler.jsonc
+npx wrangler secret put BETTER_AUTH_SECRET --env staging --config wrangler.jsonc
+npx wrangler secret put GITHUB_CLIENT_SECRET --env staging --config wrangler.jsonc
 ```
 
 Set client IDs and owner/origin variables in the matching Wrangler environment. Secret inputs are interactive; do not put secrets into command arguments, readme files, client `VITE_` variables or screenshots. A configured production Worker still requires an actual successful GitHub sign-in before private data can be saved. Do not work around missing credentials with fixture flags.
@@ -60,7 +60,7 @@ npm run deploy:staging
 The staging script sets `CLOUDFLARE_ENV=staging` while building, applies staging migrations and deploys that build. Review the generated configuration/Worker name and binding IDs before deployment. Perform a staged real GitHub login, note edit/reload, file upload/download, search, conflict/recovery and export/restore check. Then inspect pending production migrations and deploy the reviewed production build:
 
 ```sh
-npx wrangler d1 migrations list DB --remote
+npx wrangler d1 migrations list DB --remote --config wrangler.jsonc
 npm run ci:build
 npm run deploy:ci
 ```
@@ -107,8 +107,8 @@ For an unwanted note edit, use its revision history to save an earlier version a
 For a Worker-code regression, inspect the known good deployment/version and roll back only the selected Worker:
 
 ```sh
-npx wrangler versions list
-npx wrangler rollback <known-good-version-id> --message "Restore the verified release"
+npx wrangler versions list --config wrangler.jsonc
+npx wrangler rollback <known-good-version-id> --config wrangler.jsonc --message "Restore the verified release"
 ```
 
 Staging operations need `--env staging`. Record the selected environment, version and incident reason. Rollback restores Worker code/configuration; it does not undo database migrations or R2 deletion. Keep the previous release compatible with the current schema.
@@ -116,10 +116,10 @@ Staging operations need `--env staging`. Record the selected environment, versio
 For database-level recovery, inspect Time Travel before making a restore:
 
 ```sh
-npx wrangler d1 time-travel info DB --timestamp <RFC3339-time>
+npx wrangler d1 time-travel info DB --config wrangler.jsonc --timestamp <RFC3339-time>
 ```
 
-Time Travel acts on the entire selected remote D1 database, including all content and sessions, rather than one note. Arrange a maintenance window, preserve a current export, resolve the intended database and timestamp/bookmark, and account for R2 changes before issuing any restore. The recovery command is `npx wrangler d1 time-travel restore DB --bookmark <verified-bookmark>`; run it only as an explicit recovery action. Time Travel availability is currently seven days on Free and thirty days on Workers Paid. Verify the account's actual retention rather than assuming the paid window. [D1 limits and recovery retention](https://developers.cloudflare.com/d1/platform/limits/).
+Time Travel acts on the entire selected remote D1 database, including all content and sessions, rather than one note. Arrange a maintenance window, preserve a current export, resolve the intended database and timestamp/bookmark, and account for R2 changes before issuing any restore. The recovery command is `npx wrangler d1 time-travel restore DB --config wrangler.jsonc --bookmark <verified-bookmark>`; run it only as an explicit recovery action. Time Travel availability is currently seven days on Free and thirty days on Workers Paid. Verify the account's actual retention rather than assuming the paid window. [D1 limits and recovery retention](https://developers.cloudflare.com/d1/platform/limits/).
 
 A database restore can reintroduce old sessions; use a fresh auth secret and require sign-in again when incident scope warrants revocation. It cannot recover file objects that were already permanently removed from R2. Use file bytes from a bundled archive for those cases. Test the recovery procedure on staging before relying on it for personal data.
 

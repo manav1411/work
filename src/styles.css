@@ -1885,6 +1885,9 @@ kbd {
   gap: 24px;
   align-items: start;
 }
+.settings-starter {
+  grid-column: 1 / -1;
+}
 .settings-tabs {
   display: flex;
   gap: 8px;

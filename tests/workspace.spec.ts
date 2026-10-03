@@ -6,6 +6,52 @@ test.describe("shared workspace journeys", () => {
       sessionStorage.setItem("work-demo-active", "true"),
     );
   });
+  test("career setup stays available after a first note without replacing it", async ({
+    page,
+  }) => {
+    await page.goto("/today");
+    await page.getByRole("heading", { name: "Hey, Manav." }).waitFor();
+    await page.evaluate(() => {
+      const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+      const existing = state.records.find(
+        (record: { kind: string }) => record.kind === "note",
+      );
+      existing.title = "Synthetic existing capture";
+      existing.body = "Keep this note exactly as captured.";
+      state.records = [existing];
+      sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+    });
+    await page.goto("/settings");
+    await page
+      .getByRole("button", { name: "Add career starter", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Career starter added" }),
+    ).toBeDisabled();
+    expect(
+      await page.evaluate(
+        () =>
+          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.length,
+      ),
+    ).toBe(12);
+    await page.goto("/notes");
+    await page
+      .getByRole("button", { name: /Synthetic existing capture/ })
+      .click();
+    await expect(page.getByLabel("Note content")).toHaveValue(
+      "Keep this note exactly as captured.",
+    );
+    await page.goto("/settings");
+    await expect(
+      page.getByRole("button", { name: "Career starter added" }),
+    ).toBeDisabled();
+    expect(
+      await page.evaluate(
+        () =>
+          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.length,
+      ),
+    ).toBe(12);
+  });
   test("keyboard capture, global search and a recovered focus session", async ({
     page,
   }) => {

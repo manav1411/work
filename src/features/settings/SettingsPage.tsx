@@ -70,6 +70,7 @@ export function SettingsPage() {
     records,
     notify,
     refresh,
+    initialize,
     restore,
     savePreferences,
     signOut,
@@ -372,6 +373,37 @@ export function SettingsPage() {
       )}
       {!dataTab ? (
         <div className="settings-grid">
+          <Card className="stack settings-starter">
+            <h2>A useful starting point</h2>
+            <p className="muted">
+              Add editable career paths, rotation prompts, a February 2027
+              decision plan, and a few small next actions. Your existing notes
+              and assets stay unchanged. You can do this after importing or
+              capturing your first note, too.
+            </p>
+            <div className="inline-actions">
+              <Button
+                disabled={
+                  !!busy ||
+                  pending > 0 ||
+                  records.some(
+                    (record) =>
+                      record.kind === "path" &&
+                      record.data.slug === "australia-us",
+                  )
+                }
+                onClick={() => void run("starter", initialize)}
+              >
+                {records.some(
+                  (record) =>
+                    record.kind === "path" &&
+                    record.data.slug === "australia-us",
+                )
+                  ? "Career starter added"
+                  : "Add career starter"}
+              </Button>
+            </div>
+          </Card>
           <Card className="stack">
             <div className="settings-toolbar">
               <h2>A little about you</h2>

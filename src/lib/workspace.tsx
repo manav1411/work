@@ -415,8 +415,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }),
     );
     for (const record of response.records) put(record);
+    // An idempotent setup response can predate subsequent edits to starters.
+    await refresh();
     notify("Your workspace is ready. Pick one small next move.");
-  }, [notify, put]);
+  }, [notify, put, refresh]);
   const syncOutbox = useCallback(async () => {
     if (syncRef.current || !outboxRef.current.length || !userRef.current)
       return;

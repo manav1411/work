@@ -1,6 +1,6 @@
 # Finish the private launch
 
-The app and storage are deployed. On 3 October 2026 the owner provided the dedicated production OAuth credentials (uploaded without logging their values) and confirmed the Cloudflare GitHub connection. Production reports authentication configured and sign-in reaches GitHub. Actual provider callback/private persistence and a fresh Git-triggered deployment still need verification. The instructions below document setup and recovery; do not recreate the OAuth app if its current configuration is working, or replace sign-in with development fixture access.
+The private launch is active. On 3 October 2026 production OAuth credentials were securely uploaded; the owner completed real sign-in and confirmed note save/reload. A GitHub `main` push produced a successful Cloudflare build/deployment and passed the complete GitHub checks. The owner recovered the private archive; read-only production counts confirm 14 imported records and three attachments. The instructions below document setup and recovery; do not recreate the working OAuth app, reconnect an existing build trigger, or replace sign-in with development fixture access.
 
 ## 1. Dedicated GitHub OAuth application
 
@@ -59,6 +59,8 @@ The ignored `.private/work-migration.json` archive was produced from local, owne
 After private cloud sign-in, open **Settings → Import, export & recovery → Recover a backup** and select that archive. It copies records/files into fresh server IDs, preserves links/revisions and leaves existing records unchanged. Review the restored notes and résumé before linking a historical asset to an application. Current employer/stack, Overleaf destination, LeetCode profile, weekly time budget and work-authorisation details remain user-owned preference/research fields.
 
 Alternatively, choose the original unzipped Notion directory in the import preview and import the résumé PDF separately. The source files remain untouched. Do not use the public preview for migration: it stores only tab-local samples and has browser-storage limits.
+
+After migration, **Settings → Add career starter** adds the editable research target, career paths, rotation prompts, February decision and initial actions without replacing imported notes. This setup is also available if a first note was captured before onboarding. The learning and practice catalogues do not need a separate import.
 
 ## Release gate
 
