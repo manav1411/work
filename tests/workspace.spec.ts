@@ -107,13 +107,11 @@ test.describe("shared workspace journeys", () => {
       };
     });
     const oldCount = archive.records.length;
-    await page
-      .getByLabel("Choose Work backup")
-      .setInputFiles({
-        name: "work-backup.json",
-        mimeType: "application/json",
-        buffer: Buffer.from(JSON.stringify(archive)),
-      });
+    await page.getByLabel("Choose Work backup").setInputFiles({
+      name: "work-backup.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(archive)),
+    });
     await page
       .getByRole("button", { name: "Restore as separate archive" })
       .click();

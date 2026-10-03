@@ -55,16 +55,14 @@ test("notes save, recover a device draft, restore history and preview an attachm
     "A recovered draft that never synced.",
   );
   await expect(page.getByRole("status")).toContainText("Saved");
-  await page
-    .locator(".attachment-upload input")
-    .setInputFiles({
-      name: "synthetic-pixel.png",
-      mimeType: "image/png",
-      buffer: Buffer.from(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
-        "base64",
-      ),
-    });
+  await page.locator(".attachment-upload input").setInputFiles({
+    name: "synthetic-pixel.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  });
   await expect(
     page.getByRole("link", { name: "synthetic-pixel.png", exact: true }),
   ).toBeVisible();

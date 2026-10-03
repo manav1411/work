@@ -354,13 +354,11 @@ test("retain the exact submitted PDF after uploading a newer résumé export", a
     .click();
   await expect(dialog).not.toBeVisible();
   const assetId = new URL(page.url()).searchParams.get("record")!;
-  await page
-    .locator(".asset-upload-label input")
-    .setInputFiles({
-      name: "submitted.pdf",
-      mimeType: "application/pdf",
-      buffer: syntheticPDF("Submitted version"),
-    });
+  await page.locator(".asset-upload-label input").setInputFiles({
+    name: "submitted.pdf",
+    mimeType: "application/pdf",
+    buffer: syntheticPDF("Submitted version"),
+  });
   await expect(page.getByText("submitted.pdf", { exact: true })).toBeVisible();
   const firstPDF = (await demoRecords(page)).find(
     (record) => record.id === assetId,
@@ -382,13 +380,11 @@ test("retain the exact submitted PDF after uploading a newer résumé export", a
   await expect(applicationDialog).not.toBeVisible();
   const applicationId = new URL(page.url()).searchParams.get("record")!;
   await page.goto(`/assets?record=${assetId}`);
-  await page
-    .locator(".asset-upload-label input")
-    .setInputFiles({
-      name: "newer.pdf",
-      mimeType: "application/pdf",
-      buffer: syntheticPDF("Later version"),
-    });
+  await page.locator(".asset-upload-label input").setInputFiles({
+    name: "newer.pdf",
+    mimeType: "application/pdf",
+    buffer: syntheticPDF("Later version"),
+  });
   await expect(page.getByText("newer.pdf", { exact: true })).toBeVisible();
   const records = await demoRecords(page);
   expect(

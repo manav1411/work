@@ -248,10 +248,10 @@ export async function readLimitedBody(
 }
 
 export function filename(value: string): string {
-  // eslint-disable-next-line no-control-regex -- Remove controls from a download header filename.
   const clean = value
     .split(/[\\/]/)
     .pop()
+    // eslint-disable-next-line no-control-regex -- Remove controls from a download header filename.
     ?.replace(/[\x00-\x1f\x7f"<>:|?*]/g, "_")
     .trim()
     .slice(0, 240);
