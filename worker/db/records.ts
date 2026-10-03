@@ -1,5 +1,8 @@
 import type { Attachment, RecordInput, WorkRecord } from "../../shared/model";
+import { dataReferences, detachDataReferences } from "../../shared/references";
 import { ApiError, id, now } from "../env";
+
+export { dataReferences } from "../../shared/references";
 
 export interface RecordRow {
   id: string;
@@ -85,49 +88,6 @@ export async function validateLinks(
     );
 }
 
-export function dataReferences(data: Record<string, unknown>): {
-  records: string[];
-  files: string[];
-} {
-  const recordKeys = new Set([
-    "companyId",
-    "applicationId",
-    "contactId",
-    "assetId",
-    "projectId",
-    "achievementId",
-    "rotationId",
-    "actionId",
-    "decisionId",
-    "recordId",
-  ]);
-  const fileKeys = new Set(["attachmentId", "primaryAttachmentId"]);
-  const records = new Set<string>();
-  const files = new Set<string>();
-  const visit = (value: unknown) => {
-    if (!value || typeof value !== "object") return;
-    for (const [key, child] of Object.entries(value)) {
-      if (typeof child === "string" && child) {
-        if (
-          recordKeys.has(key) ||
-          (["problemId", "topicId"].includes(key) &&
-            /^[0-9a-f-]{36}$/i.test(child))
-        )
-          records.add(child);
-        if (fileKeys.has(key)) files.add(child);
-      }
-      if (
-        Array.isArray(child) &&
-        ["assetIds", "recordIds", "companyIds"].includes(key)
-      )
-        for (const item of child)
-          if (typeof item === "string" && item) records.add(item);
-      if (child && typeof child === "object") visit(child);
-    }
-  };
-  visit(data);
-  return { records: [...records], files: [...files] };
-}
 export async function validateDataReferences(
   db: D1Database,
   owner: string,
@@ -168,6 +128,52 @@ export async function validateDataReferences(
         "Related attachments must belong to your workspace.",
       );
   }
+}
+
+export function referencePresenceStatements(
+  db: D1Database,
+  owner: string,
+  data: Record<string, unknown>,
+  options: {
+    links?: string[];
+    allowedRecords?: ReadonlySet<string>;
+    allowedFiles?: ReadonlySet<string>;
+    allowedLinks?: ReadonlySet<string>;
+  } = {},
+): D1PreparedStatement[] {
+  const references = dataReferences(data);
+  const records = references.records.filter(
+    (value) => !options.allowedRecords?.has(value),
+  );
+  const files = references.files.filter(
+    (value) => !options.allowedFiles?.has(value),
+  );
+  const links = [...new Set(options.links || [])].filter(
+    (value) => !options.allowedLinks?.has(value),
+  );
+  if (!records.length && !files.length && !links.length) return [];
+  const guardId = id();
+  // Validate inside the write transaction as well as at the API boundary. A
+  // target deleted after preflight cannot leave a newly committed dangling ID.
+  return [
+    db
+      .prepare(
+        "INSERT INTO write_guards(id,value) SELECT ?, (SELECT count(*) FROM records WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)))=? AND (SELECT count(*) FROM attachments WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)))=? AND (SELECT count(*) FROM records WHERE owner_id=? AND deleted_at IS NULL AND id IN (SELECT value FROM json_each(?)))=?",
+      )
+      .bind(
+        guardId,
+        owner,
+        JSON.stringify(records),
+        records.length,
+        owner,
+        JSON.stringify(files),
+        files.length,
+        owner,
+        JSON.stringify(links),
+        links.length,
+      ),
+    db.prepare("DELETE FROM write_guards WHERE id=?").bind(guardId),
+  ];
 }
 
 export function newRecord(input: RecordInput, recordId = id()): WorkRecord {
@@ -373,6 +379,80 @@ export function bulkReplaceLinks(
     ...bulkInsertLinks(db, owner, records),
   ];
 }
+
+export async function detachReferenceStatements(
+  db: D1Database,
+  owner: string,
+  recordIds: string[],
+  fileIds: string[],
+  excludedRecordId = "",
+): Promise<D1PreparedStatement[]> {
+  const candidateFilter =
+    "owner_id=? AND id!=? AND (EXISTS(SELECT 1 FROM json_tree(records.data) WHERE atom IN (SELECT value FROM json_each(?))) OR EXISTS(SELECT 1 FROM json_each(records.links) WHERE value IN (SELECT value FROM json_each(?))))";
+  const candidateBindings = [
+    owner,
+    excludedRecordId,
+    JSON.stringify([...recordIds, ...fileIds]),
+    JSON.stringify(recordIds),
+  ];
+  const rows = await db
+    .prepare(`SELECT * FROM records WHERE ${candidateFilter}`)
+    .bind(...candidateBindings)
+    .all<RecordRow>();
+  const removedRecords = new Set(recordIds);
+  const removedFiles = new Set(fileIds);
+  const updates = rows.results.flatMap((row) => {
+    const before = fromRow(row);
+    const links = before.links.filter((link) => !removedRecords.has(link));
+    const data = detachDataReferences(
+      before.data,
+      removedRecords,
+      // A capture can arrive after the early FILE_IN_USE check. Never detach
+      // submitted-file references; their FK must still abort this deletion.
+      before.kind === "application" ? new Set<string>() : removedFiles,
+    );
+    if (
+      links.length === before.links.length &&
+      JSON.stringify(data) === row.data
+    )
+      return [];
+    return [
+      {
+        expectedVersion: before.version,
+        record: {
+          ...before,
+          links,
+          data,
+          version: before.version + 1,
+          updatedAt: now(),
+        },
+      },
+    ];
+  });
+  const records = updates.map((update) => update.record);
+  const guardId = id();
+  // The caller executes this with the deletion in one batch. A competing edit
+  // fails the version guards and rolls back all detaches and the deletion.
+  return [
+    // Also reject a newly added relationship after the read. Cascading the
+    // normalized link alone would leave its record's JSON details dangling.
+    db
+      .prepare(
+        `INSERT INTO write_guards(id,value) SELECT ?, NOT EXISTS(SELECT id,version FROM records WHERE ${candidateFilter} EXCEPT SELECT json_extract(value,'$.id'),json_extract(value,'$.version') FROM json_each(?))`,
+      )
+      .bind(
+        guardId,
+        ...candidateBindings,
+        JSON.stringify(
+          rows.results.map((row) => ({ id: row.id, version: row.version })),
+        ),
+      ),
+    db.prepare("DELETE FROM write_guards WHERE id=?").bind(guardId),
+    ...bulkUpdateRecords(db, owner, updates),
+    ...bulkReplaceLinks(db, owner, records),
+    ...applicationFileStatements(db, owner, records),
+  ];
+}
 export function applicationFileStatements(
   db: D1Database,
   owner: string,
@@ -416,13 +496,16 @@ export async function writeRecord(
     expectedVersion === undefined
       ? null
       : await getRecord(db, owner, record.id, true);
+  const originalReferences = original
+    ? dataReferences(original.data)
+    : { records: [], files: [] };
   await validateLinks(db, owner, record.links, new Set(original?.links || []));
   await validateDataReferences(
     db,
     owner,
     record.data,
-    new Set(original ? dataReferences(original.data).records : []),
-    new Set(original ? dataReferences(original.data).files : []),
+    new Set(originalReferences.records),
+    new Set(originalReferences.files),
   );
   const statements =
     expectedVersion === undefined
@@ -434,6 +517,12 @@ export async function writeRecord(
   try {
     await db.batch([
       ...statements,
+      ...referencePresenceStatements(db, owner, record.data, {
+        links: record.links,
+        allowedRecords: new Set(originalReferences.records),
+        allowedFiles: new Set(originalReferences.files),
+        allowedLinks: new Set(original?.links || []),
+      }),
       ...linkStatements(db, owner, record),
       ...applicationFileStatements(db, owner, [record]),
       ...additionalStatements,
@@ -448,6 +537,12 @@ export async function writeRecord(
         "VERSION_CONFLICT",
         "This record changed in another session. Your draft has been preserved.",
         { record: await getRecord(db, owner, record.id, true) },
+      );
+    if (String(error).includes("CHECK constraint failed"))
+      throw new ApiError(
+        409,
+        "REFERENCE_CONFLICT",
+        "A related record or file changed during this save. Nothing was saved; reload and try again.",
       );
     throw error;
   }

@@ -6,6 +6,7 @@ import {
   type UserPreferences,
   type WorkRecord,
 } from "../../shared/model";
+import { dataReferences, detachDataReferences } from "../../shared/references";
 import { DEMO_EXTRAS, STARTER_RECORDS } from "../content/starter";
 import { ApiError, type ApiAdapter } from "./api";
 
@@ -106,6 +107,51 @@ export function createDemoStore() {
       createdAt: new Date().toISOString(),
     });
   };
+  const assertFilesUnused = (fileIds: string[]) => {
+    if (
+      state.records.some(
+        (item) =>
+          item.kind === "application" &&
+          dataReferences(item.data).files.some((file) =>
+            fileIds.includes(file),
+          ),
+      )
+    )
+      throw new ApiError(
+        "This document was captured in an application. Remove its captured version before deleting it.",
+        409,
+      );
+  };
+  const detachRelations = (
+    recordIds: string[],
+    fileIds: string[],
+    excluded = "",
+  ) => {
+    const removedRecords = new Set(recordIds);
+    const removedFiles = new Set(fileIds);
+    state.records = state.records.map((before) => {
+      if (before.id === excluded) return before;
+      const links = before.links.filter((link) => !removedRecords.has(link));
+      const data = detachDataReferences(
+        before.data,
+        removedRecords,
+        before.kind === "application" ? new Set<string>() : removedFiles,
+      );
+      if (
+        links.length === before.links.length &&
+        JSON.stringify(data) === JSON.stringify(before.data)
+      )
+        return before;
+      revisions(structuredClone(before));
+      return {
+        ...before,
+        links,
+        data,
+        version: before.version + 1,
+        updatedAt: new Date().toISOString(),
+      };
+    });
+  };
   const parse = (init?: RequestInit): Record<string, unknown> =>
     typeof init?.body === "string"
       ? (JSON.parse(init.body) as Record<string, unknown>)
@@ -181,6 +227,13 @@ export function createDemoStore() {
         return { record: previous };
       }
       if (sub === "permanent") {
+        if (!previous.deletedAt)
+          throw new ApiError("Move the record to trash first.", 409);
+        const fileIds = state.attachments
+          .filter((item) => item.recordId === previous.id)
+          .map((item) => item.id);
+        assertFilesUnused(fileIds);
+        detachRelations([previous.id], fileIds, previous.id);
         state.records = state.records.filter((item) => item.id !== previous.id);
         state.revisions = state.revisions.filter(
           (item) => item.recordId !== previous.id,
@@ -258,6 +311,10 @@ export function createDemoStore() {
     }
     if (url.pathname.startsWith("/api/attachments/") && method === "DELETE") {
       const id = url.pathname.split("/").pop()!;
+      if (!state.attachments.some((item) => item.id === id))
+        throw new ApiError("File not found.", 404);
+      assertFilesUnused([id]);
+      detachRelations([], [id]);
       state.attachments = state.attachments.filter((item) => item.id !== id);
       delete state.files[id];
       persist();

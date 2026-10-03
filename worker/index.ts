@@ -13,11 +13,13 @@ import {
   attachmentFromRow,
   bulkInsertLinks,
   bulkInsertRecords,
+  detachReferenceStatements,
   fromRow,
   getRecord,
   insertRecord,
   insertLinks,
   newRecord,
+  referencePresenceStatements,
   validateDataReferences,
   validateLinks,
   writeRecord,
@@ -244,6 +246,12 @@ app.post("/api/records/batch", async (context) => {
   try {
     await context.env.DB.batch([
       ...bulkInsertRecords(context.env.DB, owner, records),
+      ...referencePresenceStatements(
+        context.env.DB,
+        owner,
+        { batch: records.map((record) => record.data) },
+        { links: allLinks },
+      ),
       ...bulkInsertLinks(context.env.DB, owner, records),
       ...applicationFileStatements(context.env.DB, owner, records),
       ...idempotencyStatement(context.env.DB, owner, state, response),
@@ -251,6 +259,12 @@ app.post("/api/records/batch", async (context) => {
   } catch (error) {
     const raced = await raceResponse(context.env.DB, owner, state);
     if (raced) return context.json(raced);
+    if (String(error).includes("CHECK constraint failed"))
+      throw new ApiError(
+        409,
+        "REFERENCE_CONFLICT",
+        "A related record or file changed during this save. Nothing was saved; reload and try again.",
+      );
     throw error;
   }
   return context.json(response, 201);
@@ -273,6 +287,9 @@ app.post("/api/records", async (context) => {
   try {
     await context.env.DB.batch([
       insertRecord(context.env.DB, owner, record),
+      ...referencePresenceStatements(context.env.DB, owner, record.data, {
+        links: record.links,
+      }),
       ...insertLinks(context.env.DB, owner, record),
       ...applicationFileStatements(context.env.DB, owner, [record]),
       ...idempotencyStatement(context.env.DB, owner, state, response),
@@ -280,6 +297,12 @@ app.post("/api/records", async (context) => {
   } catch (error) {
     const raced = await raceResponse(context.env.DB, owner, state);
     if (raced) return context.json(raced);
+    if (String(error).includes("CHECK constraint failed"))
+      throw new ApiError(
+        409,
+        "REFERENCE_CONFLICT",
+        "A related record or file changed during this save. Nothing was saved; reload and try again.",
+      );
     throw error;
   }
   return context.json(response, 201);
@@ -411,17 +434,20 @@ app.delete("/api/records/:id/permanent", async (context) => {
     );
   await assertRecordFilesNotSubmitted(context.env.DB, owner, recordId);
   const files = await context.env.DB.prepare(
-    "SELECT object_key FROM attachments WHERE owner_id=? AND record_id=?",
+    "SELECT id,object_key FROM attachments WHERE owner_id=? AND record_id=?",
   )
     .bind(owner, recordId)
-    .all<{ object_key: string }>();
-  // Remove only this relationship from the current value inside the same batch,
-  // so a concurrent edit to another field cannot be overwritten by a snapshot.
+    .all<{ id: string; object_key: string }>();
+  const detaches = await detachReferenceStatements(
+    context.env.DB,
+    owner,
+    [recordId],
+    files.results.map((file) => file.id),
+    recordId,
+  );
   try {
     await context.env.DB.batch([
-      context.env.DB.prepare(
-        "UPDATE records SET links=(SELECT json_group_array(value) FROM json_each(records.links) WHERE value!=?),version=version+1,updated_at=? WHERE owner_id=? AND id!=? AND id IN (SELECT source_id FROM record_links WHERE owner_id=? AND target_id=?)",
-      ).bind(recordId, now(), owner, recordId, owner, recordId),
+      ...detaches,
       context.env.DB.prepare(
         "DELETE FROM records WHERE id=? AND owner_id=? AND deleted_at IS NOT NULL AND version=?",
       ).bind(recordId, owner, record.version),
@@ -432,7 +458,7 @@ app.delete("/api/records/:id/permanent", async (context) => {
       throw new ApiError(
         409,
         "VERSION_CONFLICT",
-        "This record changed while deletion was running. Nothing was permanently deleted.",
+        "This record or a related record changed while deletion was running. Nothing was permanently deleted. Try again with the latest versions.",
       );
     if (String(error).includes("FOREIGN KEY constraint failed"))
       throw new ApiError(
@@ -612,13 +638,27 @@ app.delete("/api/attachments/:id", async (context) => {
   const owner = context.get("user").id;
   const row = await getAttachment(context.env, owner, context.req.param("id"));
   await assertFilesNotSubmitted(context.env.DB, owner, [row.id]);
+  const detaches = await detachReferenceStatements(
+    context.env.DB,
+    owner,
+    [],
+    [row.id],
+  );
   try {
-    await context.env.DB.prepare(
-      "DELETE FROM attachments WHERE id=? AND owner_id=?",
-    )
-      .bind(row.id, owner)
-      .run();
+    await context.env.DB.batch([
+      ...detaches,
+      context.env.DB.prepare(
+        "DELETE FROM attachments WHERE id=? AND owner_id=?",
+      ).bind(row.id, owner),
+      ...assertChanged(context.env.DB),
+    ]);
   } catch (error) {
+    if (String(error).includes("CHECK constraint failed"))
+      throw new ApiError(
+        409,
+        "VERSION_CONFLICT",
+        "A related record changed while deletion was running. The file was not deleted. Try again with the latest versions.",
+      );
     if (String(error).includes("FOREIGN KEY constraint failed"))
       throw new ApiError(
         409,

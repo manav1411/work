@@ -8,7 +8,7 @@ Home: [work.manavdodia.com](https://work.manavdodia.com) · Repository: [manav14
 
 Implemented and deployed to separate Cloudflare production and staging Workers, D1 databases and private R2 buckets. The production custom domain is attached and serves HTTPS with security headers. All launch areas below have working interfaces and server-backed persistence; the public preview is a separate, synthetic tab-only workspace.
 
-Private production sign-in is **not active until the owner completes GitHub OAuth registration**. Git-triggered Cloudflare Builds is also pending the Cloudflare GitHub App/build authorisation; a successful CLI deployment does not imply that repository connection exists. See [launch setup](docs/launch-setup.md) for the remaining account steps.
+Production GitHub OAuth credentials are configured, and the sign-in button reaches GitHub's real login. The owner has connected the repository in Cloudflare Builds. A successful real provider callback/private save and an observed Git-triggered deployment are the remaining verification gates; configuration and a CLI deployment alone do not prove those journeys. See [launch setup](docs/launch-setup.md).
 
 The actual Notion export was verified locally: 13 notes, two screenshots, original source metadata and rewritten page links; the personal-site résumé PDF was also imported. The private migration archive is ignored by Git. No original personal notes or résumé PDF are included in repository fixtures or the public preview.
 

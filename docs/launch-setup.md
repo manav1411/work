@@ -1,6 +1,6 @@
 # Finish the private launch
 
-The app and storage are deployed. These external account authorisations are still required; do not replace them with development fixture access.
+The app and storage are deployed. On 3 October 2026 the owner provided the dedicated production OAuth credentials (uploaded without logging their values) and confirmed the Cloudflare GitHub connection. Production reports authentication configured and sign-in reaches GitHub. Actual provider callback/private persistence and a fresh Git-triggered deployment still need verification. The instructions below document setup and recovery; do not recreate the OAuth app if its current configuration is working, or replace sign-in with development fixture access.
 
 ## 1. Dedicated GitHub OAuth application
 
@@ -64,7 +64,7 @@ Alternatively, choose the original unzipped Notion directory in the import previ
 
 Complete these before declaring the full private launch finished:
 
-- Successful real production and staging GitHub callbacks, not synthetic sessions.
+- Successful real production GitHub callback, not a synthetic session. Staging remains signed out until a separate OAuth app is deliberately configured for staging authentication tests.
 - Production edit/file/search/export retrieved after reload and a second device sign-in.
 - Verified backup restore into copied records and a recoverable competing edit.
 - A GitHub `main` push observed as a successful Cloudflare Git-triggered deployment.

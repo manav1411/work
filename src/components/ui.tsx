@@ -79,7 +79,7 @@ export function PageHeader({
       <div>
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
         <h1>
-          {title}
+          {title.replace(/\.$/, "")}
           <span className="heading-dot">.</span>
         </h1>
         {description && <p className="page-description">{description}</p>}

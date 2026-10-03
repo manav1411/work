@@ -18,6 +18,7 @@ import {
   fromRow,
   jsonChunks,
   newRecord,
+  referencePresenceStatements,
   validateDataReferences,
   validateLinks,
   type AttachmentRow,
@@ -372,6 +373,9 @@ export async function importRecords(env: Env, owner: string, input: unknown) {
         changedItems.filter((item) => !item.before).map((item) => item.record),
       ),
       ...bulkInsertAttachments(env.DB, attachments),
+      ...referencePresenceStatements(env.DB, owner, {
+        batch: changedItems.map((item) => item.record.data),
+      }),
       ...applicationFileStatements(
         env.DB,
         owner,
@@ -461,6 +465,9 @@ export async function undoImport(env: Env, owner: string, batchId: string) {
     : [];
   const statements = [
     ...bulkUpdateRecords(env.DB, owner, updates),
+    ...referencePresenceStatements(env.DB, owner, {
+      batch: updates.map((item) => item.record.data),
+    }),
     ...bulkReplaceLinks(
       env.DB,
       owner,
@@ -480,11 +487,21 @@ export async function undoImport(env: Env, owner: string, batchId: string) {
       ).bind(owner, chunk),
     ),
     ...(attachmentIds.length
-      ? [
-          env.DB.prepare(
-            "DELETE FROM attachments WHERE owner_id=? AND id IN (SELECT value FROM json_each(?))",
-          ).bind(owner, JSON.stringify(attachmentIds)),
-        ]
+      ? (() => {
+          const guardId = id();
+          return [
+            // An unrelated record may reference a replacement file after the
+            // import. Refuse undo rather than delete its file or edit that record.
+            // Application captures remain protected by their separate FK.
+            env.DB.prepare(
+              "INSERT INTO write_guards(id,value) SELECT ?, NOT EXISTS(SELECT 1 FROM records r JOIN json_tree(r.data) j ON j.key IN ('attachmentId','primaryAttachmentId') AND j.value IN (SELECT value FROM json_each(?)) WHERE r.owner_id=? AND r.kind!='application')",
+            ).bind(guardId, JSON.stringify(attachmentIds), owner),
+            env.DB.prepare("DELETE FROM write_guards WHERE id=?").bind(guardId),
+            env.DB.prepare(
+              "DELETE FROM attachments WHERE owner_id=? AND id IN (SELECT value FROM json_each(?))",
+            ).bind(owner, JSON.stringify(attachmentIds)),
+          ];
+        })()
       : []),
   ];
   statements.push(
@@ -500,7 +517,7 @@ export async function undoImport(env: Env, owner: string, batchId: string) {
       throw new ApiError(
         409,
         "IMPORT_UNDO_CONFLICT",
-        "The imported data changed while undo was running. Nothing was undone.",
+        "The imported data changed, or another record uses a replacement file. Nothing was undone; review those records before trying again.",
       );
     if (String(error).includes("FOREIGN KEY constraint failed"))
       throw new ApiError(
@@ -823,6 +840,11 @@ export async function restoreWorkspace(
       ),
     );
     statements.push(
+      ...referencePresenceStatements(env.DB, owner, {
+        batch: records.map((record) => record.data),
+      }),
+    );
+    statements.push(
       env.DB.prepare(
         "INSERT INTO preferences(owner_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(owner_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at",
       ).bind(owner, JSON.stringify(backup.preferences), now()),
@@ -847,6 +869,12 @@ export async function restoreWorkspace(
       await env.FILES.delete(attachments.map((row) => row.object_key));
     const response = await raceResponse(env.DB, owner, state);
     if (response) return response;
+    if (String(error).includes("CHECK constraint failed"))
+      throw new ApiError(
+        409,
+        "RESTORE_CONFLICT",
+        "A related record or file changed during recovery. Nothing was restored; review the backup and try again.",
+      );
     throw error;
   }
 }

@@ -4,7 +4,14 @@ import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { app } from "../worker";
 import { allowedIdentity, createAuth, localAuthAllowed } from "../worker/auth";
 import type { Env } from "../worker/env";
-import { fromRow, type RecordRow } from "../worker/db/records";
+import {
+  dataReferences,
+  fromRow,
+  insertLinks,
+  insertRecord,
+  newRecord,
+  type RecordRow,
+} from "../worker/db/records";
 import {
   DEFAULT_PREFERENCES,
   type Attachment,
@@ -698,6 +705,533 @@ describe("private files, migration and backups", () => {
     ).toBe(200);
   });
 
+  it("round-trips backups after permanently deleting referenced records and their files", async () => {
+    const company = await create("Permanently deleted company", {
+      kind: "company",
+    });
+    const retained = await create("Retained company", { kind: "company" });
+    const form = new FormData();
+    form.set(
+      "file",
+      new File(["%PDF-1.7\nsynthetic research"], "research.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    const attachment = (
+      (await (
+        await request(`/api/records/${company.id}/attachments`, "POST", form)
+      ).json()) as { attachment: Attachment }
+    ).attachment;
+    const snapshotText = `Original research for ${company.id}; file ${attachment.id}`;
+    const asset = await create("Keep this evidence", {
+      kind: "asset",
+      links: [company.id, retained.id],
+      data: {
+        companyId: company.id,
+        primaryAttachmentId: attachment.id,
+        retainedCompanyId: retained.id,
+        snapshotText,
+        nested: {
+          companyId: company.id,
+          recordIds: [company.id, retained.id],
+          companyIds: [company.id, retained.id],
+          assetIds: [company.id, retained.id],
+          snapshots: [
+            {
+              recordId: company.id,
+              attachmentId: attachment.id,
+              body: snapshotText,
+            },
+          ],
+        },
+      },
+    });
+    const other = await foreignRecord();
+    const otherData = {
+      companyId: company.id,
+      primaryAttachmentId: attachment.id,
+      snapshotText,
+    };
+    await env.DB.prepare(
+      "UPDATE records SET data=?,version=version+1 WHERE id=? AND owner_id=?",
+    )
+      .bind(JSON.stringify(otherData), other.id, "other-user")
+      .run();
+
+    expect((await request(`/api/records/${company.id}`, "DELETE")).status).toBe(
+      200,
+    );
+    expect(
+      (await request(`/api/records/${company.id}/permanent`, "DELETE")).status,
+    ).toBe(200);
+    const current = (await (
+      await request(`/api/records/${asset.id}`)
+    ).json()) as { record: WorkRecord };
+    const references = dataReferences(current.record.data);
+    expect(references.records).not.toContain(company.id);
+    expect(references.files).not.toContain(attachment.id);
+    expect(references.records).toContain(retained.id);
+    expect(current.record.links).toEqual([retained.id]);
+    expect(current.record.data.snapshotText).toBe(snapshotText);
+    expect(
+      (current.record.data.nested as { snapshots: { body: string }[] })
+        .snapshots[0].body,
+    ).toBe(snapshotText);
+    expect(current.record.version).toBeGreaterThan(asset.version);
+    const otherRow = await env.DB.prepare(
+      "SELECT data FROM records WHERE id=? AND owner_id=?",
+    )
+      .bind(other.id, "other-user")
+      .first<{ data: string }>();
+    expect(JSON.parse(otherRow!.data)).toEqual(otherData);
+    expect((await request(`/api/attachments/${attachment.id}`)).status).toBe(
+      404,
+    );
+
+    const backup = (await (
+      await request("/api/export")
+    ).json()) as WorkspaceExport;
+    expect(backup.records).toHaveLength(2);
+    expect(backup.attachments).toHaveLength(0);
+    const restoredResponse = await request("/api/restore", "POST", backup);
+    expect(restoredResponse.status).toBe(201);
+    const restored = (await restoredResponse.json()) as {
+      records: WorkRecord[];
+    };
+    const copiedAsset = restored.records.find(
+      (record) => record.title === asset.title,
+    )!;
+    const copiedCompany = restored.records.find(
+      (record) => record.title === retained.title,
+    )!;
+    expect(copiedAsset.links).toEqual([copiedCompany.id]);
+    expect(dataReferences(copiedAsset.data).records).toContain(
+      copiedCompany.id,
+    );
+    expect(copiedAsset.data.snapshotText).toBe(snapshotText);
+  });
+
+  it("round-trips backups after deleting a non-submitted primary file without changing unrelated data", async () => {
+    const asset = await create("Editable résumé", { kind: "asset" });
+    const upload = async (filename: string) => {
+      const form = new FormData();
+      form.set(
+        "file",
+        new File([`%PDF-1.7\n${filename}`], filename, {
+          type: "application/pdf",
+        }),
+      );
+      return (
+        (await (
+          await request(`/api/records/${asset.id}/attachments`, "POST", form)
+        ).json()) as { attachment: Attachment }
+      ).attachment;
+    };
+    const primary = await upload("old.pdf");
+    const retained = await upload("keep.pdf");
+    const snapshotText = `Original primary document ${primary.id}`;
+    expect(
+      (
+        await request(`/api/records/${asset.id}`, "PATCH", {
+          version: asset.version,
+          data: {
+            primaryAttachmentId: primary.id,
+            snapshotText,
+            nested: [
+              { attachmentId: primary.id, body: snapshotText },
+              { attachmentId: retained.id },
+            ],
+          },
+        })
+      ).status,
+    ).toBe(200);
+    const other = await foreignRecord();
+    const otherData = { primaryAttachmentId: primary.id, snapshotText };
+    await env.DB.prepare(
+      "UPDATE records SET data=?,version=version+1 WHERE id=? AND owner_id=?",
+    )
+      .bind(JSON.stringify(otherData), other.id, "other-user")
+      .run();
+
+    expect(
+      (await request(`/api/attachments/${primary.id}`, "DELETE")).status,
+    ).toBe(200);
+    const current = (await (
+      await request(`/api/records/${asset.id}`)
+    ).json()) as { record: WorkRecord };
+    expect(dataReferences(current.record.data).files).not.toContain(primary.id);
+    expect(dataReferences(current.record.data).files).toContain(retained.id);
+    expect(current.record.data.snapshotText).toBe(snapshotText);
+    expect((current.record.data.nested as { body?: string }[])[0].body).toBe(
+      snapshotText,
+    );
+    expect((await request(`/api/attachments/${retained.id}`)).status).toBe(200);
+    const otherRow = await env.DB.prepare(
+      "SELECT data FROM records WHERE id=? AND owner_id=?",
+    )
+      .bind(other.id, "other-user")
+      .first<{ data: string }>();
+    expect(JSON.parse(otherRow!.data)).toEqual(otherData);
+
+    const backup = (await (
+      await request("/api/export")
+    ).json()) as WorkspaceExport;
+    expect(backup.attachments.map((attachment) => attachment.id)).toEqual([
+      retained.id,
+    ]);
+    const restoredResponse = await request("/api/restore", "POST", backup);
+    expect(restoredResponse.status).toBe(201);
+    const restored = (await restoredResponse.json()) as {
+      records: WorkRecord[];
+      attachments: number;
+    };
+    expect(restored.attachments).toBe(1);
+    expect(dataReferences(restored.records[0].data).files).toHaveLength(1);
+    expect(restored.records[0].data.snapshotText).toBe(snapshotText);
+  });
+
+  it("rolls back permanent deletion when a related record changes after the detach scan", async () => {
+    const target = await create("Trash parent");
+    const form = new FormData();
+    const fileText = "Synthetic file that must survive the conflict";
+    form.set(
+      "file",
+      new File([fileText], "conflict.txt", { type: "text/plain" }),
+    );
+    const attachment = (
+      (await (
+        await request(`/api/records/${target.id}/attachments`, "POST", form)
+      ).json()) as { attachment: Attachment }
+    ).attachment;
+    const related = await create("Original related title", {
+      links: [target.id],
+      data: { recordId: target.id, primaryAttachmentId: attachment.id },
+    });
+    expect((await request(`/api/records/${target.id}`, "DELETE")).status).toBe(
+      200,
+    );
+    let injected = false;
+    const guardedDatabase = new Proxy(env.DB, {
+      get(database, property) {
+        if (property === "batch")
+          return async (statements: D1PreparedStatement[]) => {
+            if (!injected) {
+              injected = true;
+              const edit = await request(
+                `/api/records/${related.id}`,
+                "PATCH",
+                {
+                  version: related.version,
+                  title: "Concurrent title must survive",
+                  body: "Concurrent body must survive",
+                },
+              );
+              expect(edit.status).toBe(200);
+            }
+            return database.batch(statements);
+          };
+        const value = Reflect.get(database, property);
+        return typeof value === "function" ? value.bind(database) : value;
+      },
+    });
+    const response = await request(
+      `/api/records/${target.id}/permanent`,
+      "DELETE",
+      undefined,
+      {},
+      { ...env, DB: guardedDatabase },
+    );
+    expect(injected).toBe(true);
+    expect(response.status).toBe(409);
+    const retainedTarget = (await (
+      await request(`/api/records/${target.id}?includeDeleted=true`)
+    ).json()) as { record: WorkRecord };
+    expect(retainedTarget.record.deletedAt).not.toBeNull();
+    const current = (await (
+      await request(`/api/records/${related.id}`)
+    ).json()) as { record: WorkRecord };
+    expect(current.record).toMatchObject({
+      title: "Concurrent title must survive",
+      body: "Concurrent body must survive",
+      version: related.version + 1,
+    });
+    expect(current.record.links).toEqual([target.id]);
+    expect(current.record.data).toEqual(related.data);
+    const retainedFile = await env.DB.prepare(
+      "SELECT object_key FROM attachments WHERE id=? AND owner_id=?",
+    )
+      .bind(attachment.id, "local-manav")
+      .first<{ object_key: string }>();
+    expect(retainedFile).not.toBeNull();
+    expect(await (await env.FILES.get(retainedFile!.object_key))?.text()).toBe(
+      fileText,
+    );
+    expect(
+      await env.DB.prepare("SELECT count(*) AS count FROM write_guards").first<{
+        count: number;
+      }>(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("preserves a submitted file captured after the initial deletion precheck", async () => {
+    const asset = await create("Résumé being submitted", { kind: "asset" });
+    const form = new FormData();
+    const fileText = "%PDF-1.7\nSynthetic concurrent submission";
+    form.set(
+      "file",
+      new File([fileText], "submitted.pdf", { type: "application/pdf" }),
+    );
+    const attachment = (
+      (await (
+        await request(`/api/records/${asset.id}/attachments`, "POST", form)
+      ).json()) as { attachment: Attachment }
+    ).attachment;
+    expect(
+      (
+        await request(`/api/records/${asset.id}`, "PATCH", {
+          version: asset.version,
+          data: { primaryAttachmentId: attachment.id },
+        })
+      ).status,
+    ).toBe(200);
+    let captured: WorkRecord | null = null;
+    const wrapStatement = (
+      statement: D1PreparedStatement,
+    ): D1PreparedStatement =>
+      new Proxy(statement, {
+        get(current, property) {
+          if (property === "bind")
+            return (...values: unknown[]) =>
+              wrapStatement(current.bind(...values));
+          if (property === "all")
+            return async () => {
+              if (!captured) {
+                captured = await create("Concurrent submitted application", {
+                  kind: "application",
+                  links: [asset.id],
+                  data: {
+                    stage: "Applied",
+                    assetVersions: [
+                      {
+                        assetId: asset.id,
+                        attachmentId: attachment.id,
+                        body: "Immutable submitted content",
+                      },
+                    ],
+                  },
+                });
+              }
+              return current.all();
+            };
+          const value = Reflect.get(current, property);
+          return typeof value === "function" ? value.bind(current) : value;
+        },
+      });
+    const guardedDatabase = new Proxy(env.DB, {
+      get(database, property) {
+        if (property === "prepare")
+          return (sql: string) => {
+            const statement = database.prepare(sql);
+            return sql.includes("json_tree(records.data)") &&
+              sql.includes("id!=?")
+              ? wrapStatement(statement)
+              : statement;
+          };
+        const value = Reflect.get(database, property);
+        return typeof value === "function" ? value.bind(database) : value;
+      },
+    });
+    const response = await request(
+      `/api/attachments/${attachment.id}`,
+      "DELETE",
+      undefined,
+      {},
+      { ...env, DB: guardedDatabase },
+    );
+    expect(captured).not.toBeNull();
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: { code: "FILE_IN_USE" },
+    });
+    const application = (await (
+      await request(`/api/records/${(captured as unknown as WorkRecord).id}`)
+    ).json()) as { record: WorkRecord };
+    expect(application.record.data.assetVersions).toEqual([
+      {
+        assetId: asset.id,
+        attachmentId: attachment.id,
+        body: "Immutable submitted content",
+      },
+    ]);
+    const currentAsset = (await (
+      await request(`/api/records/${asset.id}`)
+    ).json()) as { record: WorkRecord };
+    expect(currentAsset.record.data.primaryAttachmentId).toBe(attachment.id);
+    const download = await request(`/api/attachments/${attachment.id}`);
+    expect(download.status).toBe(200);
+    expect(await download.text()).toBe(fileText);
+  });
+
+  it("refuses permanent deletion when a new referencing record commits after the detach scan", async () => {
+    const target = await create("Target of delayed creation");
+    const lateRecord = newRecord({
+      kind: "note",
+      title: "Previously validated creation",
+      body: "Preserve this concurrent capture",
+      links: [target.id],
+      data: { recordId: target.id, nested: { recordIds: [target.id] } },
+    });
+    expect((await request(`/api/records/${target.id}`, "DELETE")).status).toBe(
+      200,
+    );
+    let injected = false;
+    const guardedDatabase = new Proxy(env.DB, {
+      get(database, property) {
+        if (property === "batch")
+          return async (statements: D1PreparedStatement[]) => {
+            if (!injected) {
+              injected = true;
+              // Model a request validated while the target was live whose write
+              // commits only after this deletion's candidate scan has completed.
+              await database.batch([
+                insertRecord(database, "local-manav", lateRecord),
+                ...insertLinks(database, "local-manav", lateRecord),
+              ]);
+            }
+            return database.batch(statements);
+          };
+        const value = Reflect.get(database, property);
+        return typeof value === "function" ? value.bind(database) : value;
+      },
+    });
+    const response = await request(
+      `/api/records/${target.id}/permanent`,
+      "DELETE",
+      undefined,
+      {},
+      { ...env, DB: guardedDatabase },
+    );
+    expect(injected).toBe(true);
+    expect(response.status).toBe(409);
+    const retainedTarget = (await (
+      await request(`/api/records/${target.id}?includeDeleted=true`)
+    ).json()) as { record: WorkRecord };
+    expect(retainedTarget.record.deletedAt).not.toBeNull();
+    const preservedCapture = (await (
+      await request(`/api/records/${lateRecord.id}`)
+    ).json()) as { record: WorkRecord };
+    expect(preservedCapture.record).toMatchObject({
+      title: lateRecord.title,
+      body: lateRecord.body,
+      version: 1,
+      links: [target.id],
+      data: lateRecord.data,
+    });
+    const normalizedLink = await env.DB.prepare(
+      "SELECT target_id FROM record_links WHERE owner_id=? AND source_id=?",
+    )
+      .bind("local-manav", lateRecord.id)
+      .first<{ target_id: string }>();
+    expect(normalizedLink?.target_id).toBe(target.id);
+    const backup = (await (
+      await request("/api/export")
+    ).json()) as WorkspaceExport;
+    expect((await request("/api/restore", "POST", backup)).status).toBe(201);
+  });
+
+  it("rejects single and batch creates when structured-reference targets disappear after preflight", async () => {
+    for (const endpoint of ["/api/records", "/api/records/batch"]) {
+      for (const deletedTarget of ["record", "file"]) {
+        const target = await create(
+          `Reference race ${endpoint} ${deletedTarget}`,
+          { kind: "asset" },
+        );
+        const form = new FormData();
+        form.set(
+          "file",
+          new File(["%PDF-1.7\nSynthetic reference target"], "reference.pdf", {
+            type: "application/pdf",
+          }),
+        );
+        const attachment = (
+          (await (
+            await request(`/api/records/${target.id}/attachments`, "POST", form)
+          ).json()) as { attachment: Attachment }
+        ).attachment;
+        const title = `Must not commit ${endpoint} ${deletedTarget}`;
+        const input = {
+          kind: "note",
+          title,
+          data:
+            deletedTarget === "record"
+              ? { recordId: target.id }
+              : { recordId: target.id, primaryAttachmentId: attachment.id },
+        };
+        let injected = false;
+        const guardedDatabase = new Proxy(env.DB, {
+          get(database, property) {
+            if (property === "batch")
+              return async (statements: D1PreparedStatement[]) => {
+                if (!injected) {
+                  injected = true;
+                  if (deletedTarget === "record") {
+                    expect(
+                      (await request(`/api/records/${target.id}`, "DELETE"))
+                        .status,
+                    ).toBe(200);
+                    expect(
+                      (
+                        await request(
+                          `/api/records/${target.id}/permanent`,
+                          "DELETE",
+                        )
+                      ).status,
+                    ).toBe(200);
+                  } else {
+                    expect(
+                      (
+                        await request(
+                          `/api/attachments/${attachment.id}`,
+                          "DELETE",
+                        )
+                      ).status,
+                    ).toBe(200);
+                  }
+                }
+                return database.batch(statements);
+              };
+            const value = Reflect.get(database, property);
+            return typeof value === "function" ? value.bind(database) : value;
+          },
+        });
+        const response = await request(
+          endpoint,
+          "POST",
+          endpoint.endsWith("/batch") ? { records: [input] } : input,
+          {},
+          { ...env, DB: guardedDatabase },
+        );
+        expect(injected).toBe(true);
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({
+          error: { code: "REFERENCE_CONFLICT" },
+        });
+        expect(
+          await env.DB.prepare(
+            "SELECT count(*) AS count FROM records WHERE owner_id=? AND title=?",
+          )
+            .bind("local-manav", title)
+            .first<{ count: number }>(),
+        ).toEqual({ count: 0 });
+        expect(
+          await env.DB.prepare(
+            "SELECT count(*) AS count FROM write_guards",
+          ).first<{ count: number }>(),
+        ).toEqual({ count: 0 });
+      }
+    }
+  });
+
   it("imports encoded note links, circular relations and private attachments idempotently", async () => {
     const payload = {
       source: "synthetic-notion",
@@ -841,6 +1375,103 @@ describe("private files, migration and backups", () => {
         ).json()) as { record: WorkRecord }
       ).record.body,
     ).toBe("Later personal edit");
+  });
+
+  it("refuses replacement-import undo when another record uses its replacement file", async () => {
+    const originalPdf = "%PDF-1.7\nOriginal resume";
+    const replacementPdf = "%PDF-1.7\nReplacement resume";
+    const payload = {
+      source: "synthetic-resume-undo",
+      records: [
+        {
+          sourceId: "resume",
+          hash: "original",
+          record: {
+            kind: "asset",
+            title: "Imported résumé",
+            body: "Original résumé content",
+          },
+          attachments: [
+            {
+              filename: "original.pdf",
+              contentType: "application/pdf",
+              base64: btoa(originalPdf),
+            },
+          ],
+        },
+      ],
+    };
+    expect((await request("/api/import", "POST", payload)).status).toBe(201);
+    const replacementResponse = await request("/api/import", "POST", {
+      ...payload,
+      mode: "replace",
+      records: [
+        {
+          ...payload.records[0],
+          hash: "replacement",
+          record: {
+            ...payload.records[0].record,
+            body: "Replacement résumé content",
+          },
+          attachments: [
+            {
+              filename: "replacement.pdf",
+              contentType: "application/pdf",
+              base64: btoa(replacementPdf),
+            },
+          ],
+        },
+      ],
+    });
+    expect(replacementResponse.status).toBe(201);
+    const replacement = (await replacementResponse.json()) as {
+      batchId: string;
+      records: WorkRecord[];
+    };
+    const imported = replacement.records[0];
+    const replacementFileId = imported.data.primaryAttachmentId as string;
+    expect(replacementFileId).toBeTruthy();
+    const separate = await create("Separate non-application evidence", {
+      kind: "asset",
+      body: "Keep this independent content unchanged",
+      data: {
+        attachmentId: replacementFileId,
+        primaryAttachmentId: replacementFileId,
+      },
+    });
+    const response = await request(
+      `/api/import/${replacement.batchId}/undo`,
+      "POST",
+    );
+    expect(response.status).toBe(409);
+    const currentImported = (await (
+      await request(`/api/records/${imported.id}`)
+    ).json()) as { record: WorkRecord };
+    expect(currentImported.record).toEqual(imported);
+    const currentSeparate = (await (
+      await request(`/api/records/${separate.id}`)
+    ).json()) as { record: WorkRecord };
+    expect(currentSeparate.record).toEqual(separate);
+    const batch = await env.DB.prepare(
+      "SELECT undone_at FROM import_batches WHERE id=? AND owner_id=?",
+    )
+      .bind(replacement.batchId, "local-manav")
+      .first<{ undone_at: string | null }>();
+    expect(batch?.undone_at).toBeNull();
+    const source = await env.DB.prepare(
+      "SELECT batch_id FROM import_sources WHERE owner_id=? AND source=? AND source_id=?",
+    )
+      .bind("local-manav", payload.source, "resume")
+      .first<{ batch_id: string }>();
+    expect(source?.batch_id).toBe(replacement.batchId);
+    const file = await request(`/api/attachments/${replacementFileId}`);
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe(replacementPdf);
+    const backup = (await (
+      await request("/api/export")
+    ).json()) as WorkspaceExport;
+    expect(backup.attachments).toHaveLength(2);
+    expect((await request("/api/restore", "POST", backup)).status).toBe(201);
   });
 
   it("rejects a whole bad import rather than committing a partial graph", async () => {

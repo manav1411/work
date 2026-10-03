@@ -84,6 +84,7 @@ export function AssetsPage() {
     update,
     remove,
     notify,
+    refresh,
     pending: pendingCount,
   } = useWorkspace();
   const pending = !!pendingCount;
@@ -755,6 +756,7 @@ export function AssetsPage() {
                           onClick={async () => {
                             try {
                               await removeAttachment(file.id);
+                              await refresh();
                               setFileRefresh((value) => value + 1);
                               notify("Unreferenced PDF removed.", "info");
                             } catch (error) {

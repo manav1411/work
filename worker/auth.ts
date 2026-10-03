@@ -47,6 +47,11 @@ export function createAuth(env: Env) {
       "AUTH_NOT_CONFIGURED",
       "GitHub sign-in is not configured yet.",
     );
+  // This auth instance is constructed afresh for each request. Only a verified
+  // provider response can populate this one-use, server-side identity capture.
+  // Better Auth deliberately excludes input:false fields from provider input
+  // parsing, so the database hook supplies them after that parsing boundary.
+  let verifiedIdentity: { githubId: string; githubLogin: string } | null = null;
   const db = drizzle(env.DB, { schema });
   return betterAuth({
     appName: "Work",
@@ -66,20 +71,32 @@ export function createAuth(env: Env) {
         clientSecret: env.GITHUB_CLIENT_SECRET!,
         scope: ["read:user", "user:email"],
         mapProfileToUser: async (profile) => {
+          verifiedIdentity = null;
           const githubId = String(profile.id);
           if (!allowedIdentity(env, githubId, profile.login))
             throw new APIError("FORBIDDEN", {
               message:
                 "This workspace is currently available to its owner only.",
             });
-          return { githubId, githubLogin: profile.login };
+          verifiedIdentity = { githubId, githubLogin: profile.login };
+          return verifiedIdentity;
         },
       },
     },
     user: {
       additionalFields: {
-        githubId: { type: "string", required: true, input: false },
-        githubLogin: { type: "string", required: true, input: false },
+        githubId: {
+          type: "string",
+          required: false,
+          defaultValue: "",
+          input: false,
+        },
+        githubLogin: {
+          type: "string",
+          required: false,
+          defaultValue: "",
+          input: false,
+        },
       },
     },
     account: { accountLinking: { enabled: false } },
@@ -102,9 +119,36 @@ export function createAuth(env: Env) {
       user: {
         create: {
           before: async (user) => {
-            if (!allowedIdentity(env, user.githubId, user.githubLogin))
+            const identity = verifiedIdentity;
+            verifiedIdentity = null;
+            if (
+              !identity ||
+              !allowedIdentity(env, identity.githubId, identity.githubLogin)
+            )
               throw new APIError("FORBIDDEN", {
                 message: "Registration is restricted to the workspace owner.",
+              });
+            return { data: { ...user, ...identity } };
+          },
+        },
+      },
+      account: {
+        create: {
+          before: async (account) => {
+            const user = await env.DB.prepare(
+              "SELECT github_id,github_login FROM user WHERE id=?",
+            )
+              .bind(account.userId)
+              .first<{ github_id: string; github_login: string }>();
+            if (
+              account.providerId !== "github" ||
+              !user ||
+              account.accountId !== user.github_id ||
+              !allowedIdentity(env, user.github_id, user.github_login)
+            )
+              throw new APIError("FORBIDDEN", {
+                message:
+                  "The provider account must match the verified workspace owner.",
               });
           },
         },

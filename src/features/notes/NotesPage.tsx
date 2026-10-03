@@ -850,6 +850,7 @@ function NoteEditor({
                   setAttachments((items) =>
                     items.filter((item) => item.id !== attachment.id),
                   );
+                  await refresh();
                 } catch (error) {
                   notify(String(error), "error");
                 }
