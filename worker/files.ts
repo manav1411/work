@@ -130,7 +130,7 @@ export async function getAttachment(
   attachmentId: string,
 ): Promise<AttachmentRow> {
   const row = await env.DB.prepare(
-    "SELECT a.* FROM attachments a JOIN records r ON r.id=a.record_id AND r.owner_id=a.owner_id WHERE a.id=? AND a.owner_id=? AND r.deleted_at IS NULL",
+    "SELECT a.* FROM attachments a JOIN records r ON r.id=a.record_id AND r.owner_id=a.owner_id WHERE a.id=? AND a.owner_id=? AND r.deleted_at IS NULL AND COALESCE(json_extract(r.data,'$.connectorSource.available'),1)!=0",
   )
     .bind(attachmentId, owner)
     .first<AttachmentRow>();

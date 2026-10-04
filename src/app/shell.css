@@ -1,0 +1,307 @@
+.simple-shell .sidebar {
+  width: 220px;
+  padding: 28px 18px 22px;
+  overflow: visible;
+}
+.simple-shell .workspace-main {
+  margin-left: 220px;
+}
+.simple-shell .sidebar-brand-row {
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.simple-shell .sidebar > nav {
+  margin-top: 44px;
+  display: grid;
+  gap: 7px;
+}
+.simple-shell .nav-link {
+  padding: 12px 13px;
+  font-size: 12px;
+  min-height: 43px;
+}
+.simple-shell .sidebar-bottom {
+  padding-top: 18px;
+}
+.simple-shell .page-container {
+  padding-top: 42px;
+}
+.simple-mobile-header,
+.simple-nav-close {
+  display: none;
+}
+.account-control {
+  position: relative;
+}
+.account-trigger {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 5px;
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  color: #f2f2ed;
+  text-align: left;
+  font-size: 12px;
+}
+.account-trigger:hover {
+  background: #ffffff0a;
+}
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  background: var(--pink);
+  color: #202128;
+  font-family: var(--font-heading);
+  font-weight: 750;
+  font-size: 15px;
+}
+.account-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  padding: 7px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 9px;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.account-menu > a,
+.account-menu > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  font-size: 12px;
+}
+.account-menu > a:hover,
+.account-menu > button:hover,
+.account-menu > a:focus-visible,
+.account-menu > button:focus-visible {
+  background: var(--lime);
+  color: #202128;
+}
+.account-email {
+  margin: 0 0 4px;
+  padding: 7px 9px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.pending-changes {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  margin-bottom: 18px;
+  text-decoration: none;
+  color: var(--ink);
+}
+.pending-changes:hover {
+  text-decoration: underline;
+}
+.work-signin-page {
+  min-height: 100dvh;
+  background: var(--canvas);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 35px;
+  padding: 44px 22px;
+}
+.work-signin-page .signin-brand {
+  color: var(--ink);
+}
+.work-signin-page .brand-word {
+  font-size: 58px;
+}
+.work-signin-page .brand-word > span {
+  color: var(--blue);
+}
+.signin-card {
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: 16px;
+  width: min(100%, 380px);
+  padding: 30px;
+  box-shadow: 6px 6px 0 var(--ink);
+  display: grid;
+  gap: 13px;
+  overflow: hidden;
+}
+.signin-card h1 {
+  font-size: 28px;
+  margin: 4px 0 9px;
+}
+.signin-card .field-hint,
+.signin-card .notice {
+  margin: 5px 0 0;
+}
+.signin-card .button {
+  min-height: 45px;
+  justify-content: center;
+}
+.signin-mark {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  height: 75px;
+  position: relative;
+}
+.signin-mark:before {
+  content: "";
+  position: absolute;
+  width: 170px;
+  height: 2px;
+  background: var(--ink);
+  left: 10px;
+  top: 38px;
+}
+.signin-mark i {
+  position: relative;
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: var(--pink);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+}
+.signin-mark i:nth-child(2) {
+  width: 29px;
+  height: 29px;
+  margin-left: 12px;
+  background: var(--aqua);
+  border-radius: 4px;
+  transform: rotate(12deg);
+}
+.signin-mark i:nth-child(3) {
+  width: 41px;
+  height: 41px;
+  margin-left: 12px;
+  background: var(--lime);
+}
+.signin-mark > span {
+  margin-left: 27px;
+  color: var(--blue);
+  font-family: var(--font-heading);
+  font-size: 59px;
+  font-weight: 750;
+}
+@media (max-width: 1050px) and (min-width: 761px) {
+  .simple-shell .sidebar {
+    width: 196px;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .simple-shell .workspace-main {
+    margin-left: 196px;
+  }
+}
+@media (max-width: 760px) {
+  .simple-shell .sidebar {
+    width: min(280px, 85vw);
+    overflow-y: auto;
+    overflow-x: visible;
+  }
+  .simple-shell .workspace-main {
+    margin-left: 0;
+  }
+  .simple-shell .page-container {
+    padding-top: 26px;
+    padding-bottom: 100px;
+  }
+  .simple-shell .simple-mobile-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 18px;
+    height: 64px;
+    border-bottom: 1px solid var(--line);
+    background: var(--paper);
+  }
+  .simple-menu-trigger,
+  .simple-shell .simple-nav-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    border-radius: 7px;
+  }
+  .simple-shell .simple-nav-close {
+    color: white;
+  }
+  .mobile-work-brand {
+    font-family: var(--font-heading);
+    font-weight: 750;
+    font-size: 27px;
+    letter-spacing: -0.08em;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .mobile-work-brand > span {
+    color: var(--blue);
+    margin-left: 2px;
+  }
+  .mobile-account {
+    margin-left: auto;
+    max-width: 170px;
+  }
+  .mobile-account .account-trigger {
+    color: var(--ink);
+    padding: 3px;
+  }
+  .mobile-account .account-trigger:hover {
+    background: var(--canvas);
+  }
+  .mobile-account .account-menu {
+    top: calc(100% + 9px);
+    bottom: auto;
+    left: auto;
+    right: 0;
+    width: 200px;
+  }
+  .simple-shell .mobile-nav > a {
+    min-width: 0;
+    flex: 1;
+    padding: 6px 5px;
+    font-size: 9px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .simple-shell .sidebar {
+    transition: none;
+  }
+}
+html[data-reduce-motion="true"] .simple-shell .sidebar {
+  transition: none;
+}

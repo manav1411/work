@@ -1,4 +1,14 @@
 import { z } from "zod";
+import { goalBackupSchema, type Goal } from "../shared/goals";
+import { bulkInsertGoals, listGoals } from "./goals";
+import {
+  connectorBackupSchema,
+  exportConnectors,
+  restoreConnectorStatements,
+  detachRestoredSource,
+  type ConnectorBackup,
+} from "./connectors/backup";
+import { assertProviderPatch } from "./connectors/store";
 import {
   DEFAULT_PREFERENCES,
   type RecordRevision,
@@ -207,6 +217,8 @@ export async function importRecords(env: Env, owner: string, input: unknown) {
           deletedAt: null,
         }
       : newRecord(incoming.record);
+    if (before && !skip) assertProviderPatch(before, record);
+    if (!before) record.data = detachRestoredSource(record.data);
     items.push({ incoming, source, before, record, skip, hash });
   }
   const sourceIds = new Map(
@@ -543,12 +555,14 @@ interface ExportAttachment {
 }
 export interface WorkspaceExport {
   format: "work-export";
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   records: WorkRecord[];
   preferences: UserPreferences;
   attachments: ExportAttachment[];
   revisions: RecordRevision[];
+  connectors?: ConnectorBackup;
+  goals?: Goal[];
 }
 
 export async function exportWorkspace(
@@ -609,8 +623,10 @@ export async function exportWorkspace(
   }
   return {
     format: "work-export",
-    version: 1,
+    version: 2,
     exportedAt: now(),
+    connectors: await exportConnectors(env, owner),
+    goals: await listGoals(env.DB, owner, true),
     records: rows.results.map(fromRow),
     preferences: preferences
       ? { ...DEFAULT_PREFERENCES, ...JSON.parse(preferences.data) }
@@ -640,7 +656,7 @@ const backupRecordSchema = recordSchema.extend({
 const backupSchema = z
   .object({
     format: z.literal("work-export"),
-    version: z.literal(1),
+    version: z.union([z.literal(1), z.literal(2)]),
     exportedAt: z.string().datetime(),
     records: z.array(backupRecordSchema).max(5000),
     preferences: preferencesSchema,
@@ -678,6 +694,8 @@ const backupSchema = z
       )
       .max(50_000)
       .default([]),
+    connectors: connectorBackupSchema.optional(),
+    goals: z.array(goalBackupSchema).max(1000).default([]),
   })
   .strict();
 
@@ -694,6 +712,12 @@ export async function restoreWorkspace(
       "Split backups containing more than 40 attachments into smaller linked archives.",
     );
   const ids = new Map(backup.records.map((record) => [record.id, id()]));
+  if (new Set(backup.goals.map((goal) => goal.id)).size !== backup.goals.length)
+    throw new ApiError(
+      400,
+      "INVALID_BACKUP",
+      "The backup contains duplicate goal IDs.",
+    );
   if (ids.size !== backup.records.length)
     throw new ApiError(
       400,
@@ -771,6 +795,12 @@ export async function restoreWorkspace(
           `/api/attachments/${oldId}`,
           `/api/attachments/${newId}`,
         );
+      for (const [oldId, newId] of attachmentIds)
+        body = replaceAllLiteral(
+          body,
+          `work-attachment://${oldId}`,
+          `work-attachment://${newId}`,
+        );
       return body;
     };
     const rewriteData = (data: Record<string, unknown>) => {
@@ -794,7 +824,7 @@ export async function restoreWorkspace(
       id: ids.get(record.id)!,
       links: record.links.map((link) => ids.get(link)!),
       body: rewriteBody(record.body),
-      data: rewriteData(record.data),
+      data: detachRestoredSource(rewriteData(record.data)),
     }));
     await validateDataReferences(
       env.DB,
@@ -804,6 +834,18 @@ export async function restoreWorkspace(
       new Set(attachmentIds.values()),
     );
     const statements = bulkInsertRecords(env.DB, owner, records);
+    // Goal IDs are remapped independently; the restore idempotency key prevents duplicates.
+    const goals = backup.goals.map((goal) => ({ ...goal, id: id() }));
+    statements.push(...bulkInsertGoals(env.DB, owner, goals));
+    statements.push(
+      ...(await restoreConnectorStatements(
+        env,
+        owner,
+        backup.connectors,
+        ids,
+        attachmentIds,
+      )),
+    );
     statements.push(
       ...bulkInsertLinks(env.DB, owner, records),
       ...bulkInsertAttachments(env.DB, attachments),
@@ -854,6 +896,7 @@ export async function restoreWorkspace(
       attachments: attachments.length,
       warnings,
       records,
+      goals,
     };
     statements.push(...idempotencyStatement(env.DB, owner, state, response));
     if (statements.length > 35)

@@ -9,402 +9,262 @@ async function demoRecords(page: Page): Promise<WorkRecord[]> {
   );
 }
 
-function syntheticPDF(text: string): Buffer {
-  const stream = `BT /F1 12 Tf 10 100 Td (${text}) Tj ET`;
-  const objects = [
-    "<< /Type /Catalog /Pages 2 0 R >>",
-    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
-    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
-    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-  ];
-  let pdf = "%PDF-1.4\n";
-  const offsets: number[] = [];
-  objects.forEach((object, index) => {
-    offsets.push(Buffer.byteLength(pdf));
-    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xref = Buffer.byteLength(pdf);
-  pdf += `xref\n0 6\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n `).join("\n")}\ntrailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return Buffer.from(pdf);
-}
-
 test.beforeEach(async ({ page }) => {
-  // Every browser context gets an isolated, explicitly labelled preview workspace.
   await page.addInitScript(() =>
     sessionStorage.setItem("work-demo-active", "true"),
   );
-  await page.goto("/today");
-  await expect(
-    page.getByText(
-      "Preview workspace. Sample records and edits stay in this tab.",
-    ),
-  ).toBeVisible();
-});
-
-test("tailor a structured résumé, preserve its submitted version, and prepare a linked interview", async ({
-  page,
-}) => {
-  await page.goto("/assets");
-  await page.getByRole("button", { name: /Create a career asset/ }).click();
-  const assetDialog = page.getByRole("dialog", {
-    name: "Create a career asset",
-  });
-  await assetDialog.getByLabel("Asset title").fill("E2E résumé — backend");
-  await assetDialog.getByLabel("Name").fill("Example Engineer");
-  await assetDialog.getByLabel("Version label").fill("Submitted version");
-  await assetDialog
-    .getByRole("button", { name: "+ Add role", exact: true })
-    .click();
-  await assetDialog.getByLabel("Role title").fill("Software engineer");
-  await assetDialog.getByLabel("Organisation / context").fill("Example team");
-  await assetDialog.getByLabel("Bullets").fill("Built a tested endpoint.");
-  await assetDialog
-    .getByRole("button", { name: "Save career asset", exact: true })
-    .click();
-  await expect(assetDialog).not.toBeVisible();
-  const assetId = new URL(page.url()).searchParams.get("record")!;
-
   await page.goto("/applications");
-  await page.getByRole("button", { name: /Capture an opportunity/ }).click();
-  const applicationDialog = page.getByRole("dialog", {
-    name: "Capture a real opportunity",
-  });
-  await applicationDialog
-    .getByLabel("Role title")
-    .fill("E2E software engineer opportunity");
-  await applicationDialog
-    .getByLabel("Company", { exact: true })
-    .selectOption({ label: "Google" });
-  await applicationDialog
-    .getByLabel("Location / working arrangement")
-    .fill("Melbourne");
-  await applicationDialog
-    .getByLabel("Vacancy URL")
-    .fill("https://example.com/test-vacancy");
-  await applicationDialog
-    .getByLabel("Job description snapshot & notes")
-    .fill(
-      "Synthetic test vacancy. Build backend services and explain tradeoffs.",
-    );
-  await applicationDialog.getByLabel("Stage").selectOption("Applied");
-  await applicationDialog.getByLabel("Date-only deadline").fill("2026-12-20");
-  await applicationDialog
-    .getByLabel("Next action")
-    .fill("Prepare one engineering example");
-  await applicationDialog
-    .getByRole("group", { name: "Exact résumé / letter / answer versions" })
-    .getByRole("checkbox", { name: /E2E résumé — backend/ })
-    .check();
-  await applicationDialog
-    .getByRole("button", { name: "Save opportunity", exact: true })
-    .click();
-  await expect(applicationDialog).not.toBeVisible();
-  const applicationId = new URL(page.url()).searchParams.get("record")!;
-
-  await page.goto(`/assets?record=${assetId}`);
-  await page.getByRole("button", { name: "Edit asset", exact: true }).click();
-  const editAssetDialog = page.getByRole("dialog", {
-    name: "Edit career asset",
-  });
-  await editAssetDialog.getByLabel("Version label").fill("Later version");
-  await editAssetDialog
-    .getByLabel("Bullets")
-    .fill("Later résumé text that was not submitted.");
-  await editAssetDialog
-    .getByRole("button", { name: "Save career asset", exact: true })
-    .click();
-  await expect(editAssetDialog).not.toBeVisible();
-  const application = (await demoRecords(page)).find(
-    (record) => record.id === applicationId,
-  )!;
-  expect(application.data.assetVersions).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        assetId,
-        label: "Submitted version",
-        body: expect.stringContaining("Built a tested endpoint."),
-      }),
-    ]),
-  );
-  expect(JSON.stringify(application.data.assetVersions)).not.toContain(
-    "Later résumé text",
-  );
-  expect(application.data.deadline).toBe("2026-12-20");
-  expect(application.data.history).toEqual(
-    expect.arrayContaining([expect.objectContaining({ stage: "Applied" })]),
-  );
-  expect(application.data.submittedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-
-  await page.goto(`/applications?record=${applicationId}`);
-  await page
-    .getByRole("link", { name: "Schedule interview ↗", exact: true })
-    .click();
-  const interviewDialog = page.getByRole("dialog", {
-    name: "Schedule interview",
-  });
-  await expect(interviewDialog).toBeVisible();
-  await interviewDialog
-    .getByLabel("Interview title")
-    .fill("E2E linked coding interview");
-  await interviewDialog
-    .getByLabel("Date and local time")
-    .fill("2026-12-15T10:00");
-  await interviewDialog
-    .getByRole("button", { name: "Save interview", exact: true })
-    .click();
-  await expect(interviewDialog).not.toBeVisible();
   await expect(
-    page.getByText("Your preparation view", { exact: true }),
+    page.getByRole("heading", { name: /^Applications/ }),
   ).toBeVisible();
-  const interview = (await demoRecords(page)).find(
-    (record) => record.title === "E2E linked coding interview",
-  )!;
-  expect(interview.links).toContain(applicationId);
-  expect(interview.data.startsAt).toBe("2026-12-14T23:00:00.000Z");
 });
 
-test("reuse one verified contribution in both a behavioural story and résumé bullet", async ({
+test("Overleaf destinations replace authoring while preserving existing résumé content", async ({
   page,
 }) => {
-  await page.goto("/evidence");
-  await page.getByRole("button", { name: /Capture an achievement/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Capture an achievement" });
-  await dialog.getByLabel("What changed?").fill("E2E debugging evidence");
+  await page.evaluate(() => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    state.records.push({
+      id: "legacy-resume",
+      kind: "asset",
+      title: "Existing résumé",
+      body: "Previously submitted résumé text.",
+      tags: ["legacy"],
+      links: [],
+      data: {
+        type: "resume",
+        overleaf: "https://www.overleaf.com/project/oldproject",
+        resume: { name: "Example Engineer" },
+        primaryAttachmentId: "preserved-pdf",
+      },
+      version: 3,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      deletedAt: null,
+    });
+    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+  });
+  await page.goto("/documents");
+  await expect(page.getByRole("heading", { name: /^Documents/ })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open in Overleaf" }),
+  ).toHaveAttribute("href", "https://www.overleaf.com/project/oldproject");
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+  await expect(page.getByRole("searchbox")).toHaveCount(0);
+  await page.getByRole("button", { name: "Edit résumé link" }).click();
+  const dialog = page.getByRole("dialog", { name: "Résumé link" });
   await dialog
-    .getByLabel("Your contribution")
-    .fill("Added request tracing and a reproducible test.");
-  await dialog
-    .getByLabel("Actual outcome / impact")
-    .fill("The failure could be reproduced reliably.");
-  await dialog
-    .getByLabel("I have checked these claims against the evidence.")
-    .check();
-  await dialog
-    .getByRole("button", { name: "Save evidence", exact: true })
-    .click();
+    .getByLabel("Overleaf URL")
+    .fill("https://www.overleaf.com/project/newproject");
+  await dialog.getByRole("button", { name: "Save link" }).click();
   await expect(dialog).not.toBeVisible();
-  const evidenceId = new URL(page.url()).searchParams.get("record")!;
-  await page
-    .getByRole("button", { name: "Create a behavioural story", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/interviews\?record=/);
-  let records = await demoRecords(page);
-  const story = records.find(
-    (record) =>
-      record.kind === "story" && record.title === "E2E debugging evidence",
+  const resume = (await demoRecords(page)).find(
+    (item) => item.id === "legacy-resume",
   )!;
-  expect(story.links).toContain(evidenceId);
-  expect(story.data.action).toBe(
-    "Added request tracing and a reproducible test.",
-  );
-  expect(story.data.result).toBe("The failure could be reproduced reliably.");
-  await page.goto(`/evidence?record=${evidenceId}`);
-  await page
-    .getByRole("button", { name: "Create a résumé bullet", exact: true })
-    .click();
-  await expect(page).toHaveURL(/\/assets\?record=/);
-  records = await demoRecords(page);
-  const bullet = records.find(
-    (record) =>
-      record.kind === "asset" &&
-      record.title === "E2E debugging evidence — résumé bullet",
-  )!;
-  expect(bullet.links).toContain(evidenceId);
-  expect(bullet.data.verified).toBe(true);
-  expect(bullet.body).toBe(
-    "Added request tracing and a reproducible test. The failure could be reproduced reliably.",
-  );
+  expect(resume.body).toBe("Previously submitted résumé text.");
+  expect(resume.data).toMatchObject({
+    sourceUrl: "https://www.overleaf.com/project/newproject",
+    resume: { name: "Example Engineer" },
+    primaryAttachmentId: "preserved-pdf",
+  });
+  expect(resume.tags).toEqual(["legacy"]);
+  await page.getByRole("button", { name: "Edit cover letter link" }).click();
+  const letter = page.getByRole("dialog", { name: "Cover letter link" });
+  await letter
+    .getByLabel("Overleaf URL")
+    .fill("https://example.com/not-overleaf");
+  await letter.getByRole("button", { name: "Save link" }).click();
+  await expect(letter.getByRole("alert")).toContainText("Overleaf");
+  await letter
+    .getByLabel("Overleaf URL")
+    .fill("https://www.overleaf.com/read/letterproject");
+  await letter.getByRole("button", { name: "Save link" }).click();
+  await expect(letter).not.toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Open in Overleaf" }),
+  ).toHaveCount(2);
 });
 
-test("complete a project milestone and create a linked case-study note", async ({
+test("create a minimal application and maintain dates and document destinations without changing submitted snapshots", async ({
   page,
 }) => {
-  await page.goto("/projects");
-  await page.getByRole("button", { name: /Create a project/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Plan a project" });
-  await dialog.getByLabel("Project name").fill("E2E small engineering project");
-  await dialog
-    .getByLabel("Scope / problem to solve")
-    .fill("A synthetic example of a small, testable feature.");
-  await dialog
-    .getByLabel("Milestones")
-    .fill("Build the smallest useful version\nExplain one tradeoff");
-  await dialog
-    .getByRole("button", { name: "Use template", exact: true })
-    .click();
-  await dialog
-    .getByRole("button", { name: "Save project", exact: true })
-    .click();
-  await expect(dialog).not.toBeVisible();
-  const projectId = new URL(page.url()).searchParams.get("record")!;
+  await expect(page.getByRole("textbox")).toHaveCount(0);
   await page
-    .getByRole("checkbox", {
-      name: "Build the smallest useful version",
+    .getByRole("button", { name: "New application", exact: true })
+    .first()
+    .click();
+  const create = page.getByRole("dialog", { name: "New application" });
+  await expect(create.getByRole("textbox")).toHaveCount(3);
+  await create.getByLabel("Company", { exact: true }).fill("Example Company");
+  await create.getByLabel("Role", { exact: true }).fill("E2E backend engineer");
+  await create.getByLabel("Stage", { exact: true }).selectOption("Applied");
+  await create.getByLabel("Vacancy URL").fill("https://example.com/vacancy");
+  await create
+    .getByRole("button", { name: "Save application", exact: true })
+    .click();
+  await expect(create).not.toBeVisible();
+  const applicationId = new URL(page.url()).searchParams.get("record")!;
+  await page.evaluate((id) => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    const application = state.records.find(
+      (item: WorkRecord) => item.id === id,
+    );
+    application.body = "Existing application detail retained for export.";
+    application.data.assetVersions = [
+      {
+        assetId: "submitted-resume",
+        version: 2,
+        title: "Submitted résumé",
+        label: "Submitted",
+        body: "Exact submitted text",
+        attachmentId: "submitted-pdf",
+        capturedAt: "2026-01-01T00:00:00Z",
+      },
+    ];
+    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+  }, applicationId);
+  await page.reload();
+  const detail = page.getByRole("dialog", { name: "E2E backend engineer" });
+  await detail.getByRole("button", { name: "Edit application" }).click();
+  const edit = page.getByRole("dialog", { name: "Edit application" });
+  await edit.getByLabel("Deadline", { exact: true }).fill("2026-12-20");
+  await edit.getByLabel("Follow-up", { exact: true }).fill("2026-12-21");
+  await edit
+    .getByLabel("Résumé URL")
+    .fill("https://www.overleaf.com/project/applicationresume");
+  await edit
+    .getByLabel("Notion preparation URL")
+    .fill("https://www.notion.so/preparation");
+  await edit
+    .getByLabel("Contact", { exact: true })
+    .fill("Recruiter · recruiter@example.com");
+  await edit.getByRole("button", { name: "Save application" }).click();
+  await expect(edit).not.toBeVisible();
+  await expect(
+    detail.getByRole("link", { name: "Résumé", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    "https://www.overleaf.com/project/applicationresume",
+  );
+  await expect(
+    detail.getByRole("link", { name: "Preparation in Notion" }),
+  ).toBeVisible();
+  const saved = (await demoRecords(page)).find(
+    (item) => item.id === applicationId,
+  )!;
+  expect(saved.body).toBe("Existing application detail retained for export.");
+  expect(saved.data).toMatchObject({
+    company: "Example Company",
+    stage: "Applied",
+    deadline: "2026-12-20",
+    followUp: "2026-12-21",
+    assetVersions: [
+      { body: "Exact submitted text", attachmentId: "submitted-pdf" },
+    ],
+  });
+});
+
+test("schedule and reschedule the same application interview with timezone and meeting details", async ({
+  page,
+}) => {
+  await page
+    .getByRole("button", { name: "New application", exact: true })
+    .first()
+    .click();
+  const create = page.getByRole("dialog", { name: "New application" });
+  await create.getByLabel("Company", { exact: true }).fill("Example Company");
+  await create.getByLabel("Role", { exact: true }).fill("E2E interview role");
+  await create.getByRole("button", { name: "Save application" }).click();
+  await expect(create).not.toBeVisible();
+  const applicationId = new URL(page.url()).searchParams.get("record")!;
+  const detail = page.getByRole("dialog", { name: "E2E interview role" });
+  await detail.getByRole("button", { name: "Schedule interview" }).click();
+  const schedule = page.getByRole("dialog", { name: "Schedule interview" });
+  await schedule.getByLabel("Date and local time").fill("2026-12-15T10:00");
+  await schedule
+    .getByLabel("Timezone", { exact: true })
+    .fill("Australia/Melbourne");
+  await schedule
+    .getByLabel("Meeting URL")
+    .fill("https://meet.example.com/technical");
+  await schedule.getByRole("button", { name: "Save interview" }).click();
+  await expect(schedule).not.toBeVisible();
+  const first = (await demoRecords(page)).find(
+    (item) => item.title === "E2E interview role — interview",
+  )!;
+  expect(first.links).toContain(applicationId);
+  expect(first.data).toMatchObject({
+    applicationId,
+    startsAt: "2026-12-14T23:00:00.000Z",
+    meetingUrl: "https://meet.example.com/technical",
+  });
+  await detail
+    .getByRole("button", {
+      name: "E2E interview role — interview",
       exact: true,
     })
-    .check();
-  await expect
-    .poll(async () => {
-      const project = (await demoRecords(page)).find(
-        (record) => record.id === projectId,
-      )!;
-      return (project.data.milestones as { text: string; done: boolean }[])[0]
-        .done;
+    .click();
+  const edit = page.getByRole("dialog", { name: "Edit interview" });
+  await edit.getByLabel("Date and local time").fill("2026-12-16T11:00");
+  await edit.getByRole("button", { name: "Save interview" }).click();
+  await expect(edit).not.toBeVisible();
+  const interviews = (await demoRecords(page)).filter(
+    (item) => item.id === first.id,
+  );
+  expect(interviews).toHaveLength(1);
+  expect(interviews[0].data.startsAt).toBe("2026-12-16T00:00:00.000Z");
+  await detail
+    .getByRole("button", {
+      name: "E2E interview role — interview",
+      exact: true,
     })
-    .toBe(true);
-  await page
-    .getByRole("button", { name: "Create a case-study note", exact: true })
     .click();
-  await expect(page).toHaveURL(/\/notes\?record=/);
-  const note = (await demoRecords(page)).find(
-    (record) => record.title === "E2E small engineering project — case study",
-  )!;
-  expect(note.links).toContain(projectId);
-  expect(note.body).toContain("## Engineering decision");
-});
-
-test("save a weekly review and explicitly turn a priority into a next-week action", async ({
-  page,
-}) => {
-  await page.goto("/review");
-  await page.getByRole("button", { name: /Write a weekly review/ }).click();
-  const dialog = page.getByRole("dialog", { name: "A small weekly reset" });
-  await dialog.getByLabel("Review title").fill("E2E weekly reset");
-  await dialog
-    .getByLabel("What meaningful work did you complete?")
-    .fill("Captured useful engineering evidence.");
-  await dialog
-    .getByLabel("What was difficult to start?")
-    .fill("The task was too vague. Start with one sentence.");
-  await dialog
-    .getByLabel("What are next week’s priorities?")
-    .fill("E2E explain a backend tradeoff");
-  await dialog
-    .getByRole("button", { name: "Save review", exact: true })
-    .click();
-  await expect(dialog).not.toBeVisible();
-  const reviewId = new URL(page.url()).searchParams.get("record")!;
-  await page
-    .getByRole("button", { name: "Make a next-week action", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Action created", exact: true }),
-  ).toBeDisabled();
-  const action = (await demoRecords(page)).find(
-    (record) =>
-      record.kind === "action" &&
-      record.title === "E2E explain a backend tradeoff",
-  )!;
-  expect(action.links).toContain(reviewId);
-  expect(action.data.status).toBe("todo");
-  expect(action.data.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  await page.goto("/today");
-  await expect(
-    page.getByText("E2E explain a backend tradeoff", { exact: true }).first(),
-  ).toBeVisible();
-});
-
-test("keep career comparison terms and ratings unknown until explicitly supplied", async ({
-  page,
-}) => {
-  await page.goto("/career");
-  await page.getByRole("button", { name: /Create a decision/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Create a decision" });
-  await dialog.getByLabel("Title").fill("E2E real options comparison");
-  await dialog
-    .getByRole("button", { name: "+ Add an option", exact: true })
-    .click();
-  await dialog
-    .getByLabel("Option / role name")
-    .fill("Potential role to research");
-  await dialog
-    .getByRole("button", { name: "Save worksheet", exact: true })
-    .click();
-  await expect(dialog).not.toBeVisible();
-  const decision = (await demoRecords(page)).find(
-    (record) => record.title === "E2E real options comparison",
-  )!;
-  expect(decision.data.options).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        title: "Potential role to research",
-        base: "",
-        currency: "",
-        confirmation: "Unknown",
-        nonNegotiables: "Unknown",
-        scores: {},
-      }),
-    ]),
-  );
-  await expect(
-    page.getByText("Incomplete ratings", { exact: true }),
-  ).toBeVisible();
-});
-
-test("retain the exact submitted PDF after uploading a newer résumé export", async ({
-  page,
-}) => {
-  await page.goto("/assets");
-  await page.getByRole("button", { name: /Create a career asset/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Create a career asset" });
-  await dialog.getByLabel("Asset title").fill("E2E PDF résumé");
-  await dialog
-    .getByRole("button", { name: "Save career asset", exact: true })
-    .click();
-  await expect(dialog).not.toBeVisible();
-  const assetId = new URL(page.url()).searchParams.get("record")!;
-  await page.locator(".asset-upload-label input").setInputFiles({
-    name: "submitted.pdf",
-    mimeType: "application/pdf",
-    buffer: syntheticPDF("Submitted version"),
-  });
-  await expect(page.getByText("submitted.pdf", { exact: true })).toBeVisible();
-  const firstPDF = (await demoRecords(page)).find(
-    (record) => record.id === assetId,
-  )!.data.primaryAttachmentId;
-  expect(firstPDF).toBeTruthy();
-  await page.goto("/applications");
-  await page.getByRole("button", { name: /Capture an opportunity/ }).click();
-  const applicationDialog = page.getByRole("dialog", {
-    name: "Capture a real opportunity",
-  });
-  await applicationDialog.getByLabel("Role title").fill("E2E PDF submission");
-  await applicationDialog
-    .getByRole("group", { name: "Exact résumé / letter / answer versions" })
-    .getByRole("checkbox", { name: /E2E PDF résumé/ })
-    .check();
-  await applicationDialog
-    .getByRole("button", { name: "Save opportunity", exact: true })
-    .click();
-  await expect(applicationDialog).not.toBeVisible();
-  const applicationId = new URL(page.url()).searchParams.get("record")!;
-  await page.goto(`/assets?record=${assetId}`);
-  await page.locator(".asset-upload-label input").setInputFiles({
-    name: "newer.pdf",
-    mimeType: "application/pdf",
-    buffer: syntheticPDF("Later version"),
-  });
-  await expect(page.getByText("newer.pdf", { exact: true })).toBeVisible();
-  const records = await demoRecords(page);
+  await edit.getByLabel("Status", { exact: true }).selectOption("Cancelled");
+  await edit.getByRole("button", { name: "Save interview" }).click();
+  await expect(edit).not.toBeVisible();
   expect(
-    records.find((record) => record.id === assetId)!.data.primaryAttachmentId,
-  ).not.toBe(firstPDF);
-  expect(
-    records.find((record) => record.id === applicationId)!.data.assetVersions,
-  ).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        attachmentId: firstPDF,
-        attachmentName: "submitted.pdf",
-      }),
-    ]),
-  );
-  const submittedRow = page
-    .locator(".asset-file")
-    .filter({ hasText: "submitted.pdf" });
-  await expect(
-    submittedRow.getByRole("button", { name: "Remove", exact: true }),
-  ).toBeDisabled();
-  await expect(submittedRow).toContainText("Preserved for 1 application");
+    (await demoRecords(page)).find((item) => item.id === first.id)!.data.status,
+  ).toBe("Cancelled");
+});
+
+test("standalone appointment links remain editable without inventing an application", async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    state.records.push({
+      id: "standalone-interview",
+      kind: "interview",
+      title: "Practice with a friend",
+      body: "Existing notes preserved.",
+      tags: [],
+      links: [],
+      data: {
+        startsAt: "2026-12-01T09:00:00Z",
+        timezone: "UTC",
+        isMock: true,
+        status: "Scheduled",
+      },
+      version: 1,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      deletedAt: null,
+    });
+    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+  });
+  await page.goto("/applications?interview=standalone-interview");
+  const edit = page.getByRole("dialog", { name: "Edit interview" });
+  await expect(edit.getByLabel("Application", { exact: true })).toHaveValue("");
+  await edit.getByLabel("Date and local time").fill("2026-12-02T09:00");
+  await edit.getByRole("button", { name: "Save interview" }).click();
+  await expect(edit).not.toBeVisible();
+  const record = (await demoRecords(page)).find(
+    (item) => item.id === "standalone-interview",
+  )!;
+  expect(record.body).toBe("Existing notes preserved.");
+  expect(record.data).toMatchObject({
+    applicationId: "",
+    isMock: true,
+    startsAt: "2026-12-02T09:00:00.000Z",
+  });
 });

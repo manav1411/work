@@ -1,644 +1,273 @@
-import { useEffect, useMemo, useState } from "react";
+import { useRef } from "react";
+import { ExternalLink, RefreshCw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  ArrowRight,
-  BookOpen,
-  Check,
-  ExternalLink,
-  Pencil,
-  Plus,
-  Search,
-} from "lucide-react";
-import {
-  addDays,
-  boolField,
-  field,
-  localDate,
-  niceDate,
-  safeUrl,
-  type WorkRecord,
-} from "../../../shared/model";
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  Field,
-  Input,
-  Modal,
-  PageHeader,
-  RecordLinks,
-  Select,
-  Textarea,
-} from "../../components/ui";
+import { learningUsername } from "../../../shared/learning";
+import { Badge, Button, Card, PageHeader } from "../../components/ui";
+import { LEARNING_TOPICS, TRACKS } from "../../content/learning";
 import { useWorkspace } from "../../lib/workspace";
-import {
-  LEARNING_TOPICS,
-  TRACKS,
-  type LearningTopic,
-} from "../../content/learning";
-import "./prepare.css";
-
-type TopicView = LearningTopic & { record?: WorkRecord };
-function topicView(record: WorkRecord): TopicView {
-  return {
-    id: record.id,
-    title: record.title,
-    track: field(record, "track", "custom"),
-    summary: record.body,
-    exercise: field(record, "exercise"),
-    recall: field(record, "recall"),
-    prerequisites: field(record, "prerequisites"),
-    resource: field(record, "resource"),
-    url: field(record, "url"),
-    record,
-  };
-}
+import { field, safeUrl } from "../../../shared/model";
+import { Pomodoro } from "../learn/Pomodoro";
+import { useLearningData } from "../learn/useLearningData";
+import WeekBoard from "../learn/foundations/WeekBoard";
+import Roadmap from "../learn/foundations/Roadmap";
+import { roadmapTopics } from "../learn/foundations/roadmapData";
+import "../learn/learn.css";
 
 export function LearnPage() {
-  const { records, preferences } = useWorkspace();
+  const { records, preferences, mode } = useWorkspace();
+  const learning = useLearningData();
   const [params, setParams] = useSearchParams();
-  const [track, setTrack] = useState("dsa");
-  const [search, setSearch] = useState("");
-  const [editing, setEditing] = useState<TopicView | "new" | null>(null);
-  const custom = records.filter(
+  const tabRef = useRef<HTMLDivElement>(null);
+  const track = TRACKS.some((item) => item.id === params.get("track"))
+    ? params.get("track")!
+    : "dsa";
+  const view =
+    params.get("view") === "roadmap" || params.has("problem")
+      ? "roadmap"
+      : "curriculum";
+  const problemTopic = roadmapTopics.find((topic) =>
+    topic.problems.some((problem) => problem.slug === params.get("problem")),
+  )?.id;
+  const personalise = learning.configured && !learning.loading;
+  const showSource =
+    mode !== "demo" &&
+    (learning.configured || learning.source.content.fetchedAt);
+  const selectTrack = (id: string) =>
+    setParams(id === "dsa" ? {} : { track: id });
+  const customTopics = records.filter(
     (record) =>
-      record.kind === "topic" && field(record, "category") === "learning",
+      record.kind === "topic" &&
+      field(record, "track") === track &&
+      !record.deletedAt,
   );
-  const topics: TopicView[] = useMemo(
-    () => [
-      ...LEARNING_TOPICS.map((seed) => {
-        const override = custom.find(
-          (record) => field(record, "seedId") === seed.id,
-        );
-        return override
-          ? {
-              ...seed,
-              ...topicView(override),
-              id: seed.id,
-              patterns: seed.patterns,
-              week: seed.week,
-            }
-          : seed;
-      }),
-      ...custom.filter((record) => !field(record, "seedId")).map(topicView),
-    ],
-    [custom],
+  const topics = LEARNING_TOPICS.filter((topic) => topic.track === track).map(
+    (topic) => {
+      const override = customTopics.find(
+        (record) => field(record, "seedId") === topic.id,
+      );
+      return override
+        ? {
+            ...topic,
+            title: override.title,
+            summary: override.body,
+            resource: field(override, "resource", topic.resource),
+            url: field(override, "url", topic.url),
+          }
+        : topic;
+    },
   );
-  const progress = records.filter(
-    (record) =>
-      record.kind === "progress" && field(record, "category") === "learning",
-  );
-  const requested = params.get("record");
-  const requestedProgress = progress.find((record) => record.id === requested);
-  const requestedTopic = topics.find(
-    (topic) =>
-      topic.id === requested ||
-      topic.record?.id === requested ||
-      topic.id === field(requestedProgress, "topicId"),
-  );
-  useEffect(() => {
-    if (requestedTopic) setTrack(requestedTopic.track);
-  }, [requestedTopic?.track]);
-  const visible = topics.filter(
-    (topic) =>
-      topic.track === track &&
-      [topic.title, topic.summary]
-        .join(" ")
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
-  const selected = requestedTopic ?? visible[0];
-  const tracks = [
-    ...TRACKS,
-    ...[...new Set(custom.map((record) => field(record, "track")))]
-      .filter((id) => id && !TRACKS.some((item) => item.id === id))
-      .map((id) => ({
-        id,
-        title: id,
-        description: "Your own learning track.",
-        accent: "blue",
-      })),
-  ];
-  const completed = topics.filter((topic) =>
-    progress.some(
-      (item) =>
-        field(item, "topicId") === topic.id &&
-        boolField(item, "exerciseCompleted") &&
-        boolField(item, "explained"),
-    ),
-  ).length;
-  const due = progress.filter(
-    (item) =>
-      field(item, "nextReview") &&
-      field(item, "nextReview") <= localDate(new Date(), preferences.timezone),
-  ).length;
+  for (const topic of customTopics.filter((record) => !field(record, "seedId")))
+    topics.push({
+      id: topic.id,
+      title: topic.title,
+      track,
+      summary: topic.body,
+      resource: field(topic, "resource", "Open resource"),
+      url: field(topic, "url"),
+      exercise: "",
+      recall: "",
+      prerequisites: "",
+    });
+
   return (
-    <div className="page-stack">
-      <PageHeader
-        eyebrow="PREPARE / LEARN"
-        title="Make it click"
-        description="Useful foundations. Small exercises. Proof that you understand."
-        action={
-          <Button onClick={() => setEditing("new")}>
-            <Plus size={18} /> Add a topic
-          </Button>
-        }
-      />
-      <div className="learning-banner">
-        <div>
-          <BookOpen size={28} />
-          <h2>Understand it. Build it. Explain it.</h2>
-          <p>
-            Every topic is open. Move at your own pace and connect what you
-            learn to work you can show.
-          </p>
-        </div>
-        <div className="learning-counts">
-          <strong>
-            {completed}
-            <small>topics with evidence</small>
-          </strong>
-          <strong>
-            {due}
-            <small>reviews due</small>
-          </strong>
-        </div>
-      </div>
-      <div className="track-tabs" role="tablist" aria-label="Learning tracks">
-        {tracks.map((item) => (
+    <div className="page learn-page">
+      <PageHeader title="Learn" />
+      <div
+        className="learn-track-tabs"
+        ref={tabRef}
+        role="tablist"
+        aria-label="Learning topics"
+      >
+        {TRACKS.map((item) => (
           <button
             key={item.id}
             role="tab"
             aria-selected={track === item.id}
+            aria-controls="learn-track-content"
+            id={`learn-track-${item.id}`}
+            tabIndex={track === item.id ? 0 : -1}
             className={track === item.id ? "active" : ""}
-            onClick={() => {
-              setTrack(item.id);
-              setParams({});
+            onClick={() => selectTrack(item.id)}
+            onFocus={(event) =>
+              event.currentTarget.scrollIntoView({
+                block: "nearest",
+                inline: "nearest",
+              })
+            }
+            onKeyDown={(event) => {
+              if (
+                !["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)
+              )
+                return;
+              event.preventDefault();
+              const index = TRACKS.findIndex(
+                (candidate) => candidate.id === item.id,
+              );
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? TRACKS.length - 1
+                    : (index +
+                        (event.key === "ArrowRight" ? 1 : -1) +
+                        TRACKS.length) %
+                      TRACKS.length;
+              selectTrack(TRACKS[next].id);
+              (tabRef.current?.children[next] as HTMLElement)?.focus();
             }}
           >
             {item.title}
           </button>
         ))}
       </div>
-      <div className="toolbar">
-        <div className="search-input">
-          <Search size={18} />
-          <Input
-            aria-label="Search learning topics"
-            placeholder="Find a topic in this track…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
-        <span className="muted">
-          {tracks.find((item) => item.id === track)?.description}
-        </span>
-      </div>
-      <div className="learning-layout">
-        <div className="topic-list">
-          {visible.map((topic) => {
-            const evidence = progress.find(
-              (item) => field(item, "topicId") === topic.id,
-            );
-            return (
-              <button
-                key={topic.id}
-                className={`topic-row ${selected?.id === topic.id ? "selected" : ""}`}
-                onClick={() => setParams({ record: topic.id })}
-              >
-                <span className="topic-number">
-                  {boolField(evidence, "exerciseCompleted") &&
-                  boolField(evidence, "explained") ? (
-                    <Check size={19} />
-                  ) : topic.week ? (
-                    `${topic.week}`.padStart(2, "0")
-                  ) : (
-                    <BookOpen size={17} />
-                  )}
-                </span>
-                <span>
-                  <strong>{topic.title}</strong>
-                  <small>
-                    {field(evidence, "nextReview")
-                      ? `Review ${niceDate(field(evidence, "nextReview"))}`
-                      : evidence
-                        ? "In progress"
-                        : "Ready when you are"}
-                  </small>
-                </span>
-                <ArrowRight size={17} />
-              </button>
-            );
-          })}
-          {!visible.length && (
-            <EmptyState
-              title="No matching topics"
-              description="Try a different search or add your own."
-            />
-          )}
-        </div>
-        {selected && (
-          <LearningDetail
-            key={selected.id}
-            topic={selected}
-            progress={progress.find(
-              (item) => field(item, "topicId") === selected.id,
+      <div
+        id="learn-track-content"
+        role="tabpanel"
+        aria-labelledby={`learn-track-${track}`}
+      >
+        {track === "dsa" ? (
+          <>
+            <div className="learn-context-bar">
+              <div className="learn-view-controls" aria-label="Curriculum view">
+                <button
+                  className={view === "curriculum" ? "active" : ""}
+                  aria-pressed={view === "curriculum"}
+                  onClick={() => setParams({})}
+                >
+                  Weeks
+                </button>
+                <button
+                  className={view === "roadmap" ? "active" : ""}
+                  aria-pressed={view === "roadmap"}
+                  onClick={() => setParams({ view: "roadmap" })}
+                >
+                  Roadmap
+                </button>
+              </div>
+              <Pomodoro />
+            </div>
+            {learning.error && (
+              <div className="learn-source-error" role="alert">
+                <span>{learning.error}</span>
+                <Button
+                  variant="ghost"
+                  disabled={learning.loading || learning.pendingTasks.size > 0}
+                  onClick={() => void learning.reload()}
+                >
+                  <RefreshCw size={15} />
+                  Retry
+                </Button>
+              </div>
             )}
-            onEdit={() => setEditing(selected)}
-          />
+            {learning.loading && !learning.weeks.length && (
+              <p className="muted" role="status">
+                Loading curriculum…
+              </p>
+            )}
+            {view === "curriculum" ? (
+              <WeekBoard
+                weeks={learning.weeks}
+                solvedSlugs={learning.solvedSlugs}
+                personalised={personalise}
+                taskProgress={learning.tasks}
+                pendingTasks={learning.pendingTasks}
+                onToggleTask={(id, done) => void learning.toggleTask(id, done)}
+              />
+            ) : (
+              <Roadmap
+                solved={learning.solvedSlugs}
+                personalised={personalise}
+                initialTopic={problemTopic}
+              />
+            )}
+            <footer className="learn-source-footer">
+              {!learning.configured && !learning.loading && (
+                <Link to="/settings">Set LeetCode username</Link>
+              )}
+              {showSource && (
+                <details>
+                  <summary>
+                    {learning.username ||
+                      learningUsername(preferences.leetcode) ||
+                      "Learning source"}
+                    {Object.values(learning.source).some(
+                      (source) => source.stale,
+                    )
+                      ? " · Cached data"
+                      : ""}
+                  </summary>
+                  <div className="learn-source-details">
+                    <a
+                      href="https://manavdodia.com/learn"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Personal-site curriculum
+                      <ExternalLink size={13} />
+                    </a>
+                    {learning.username && (
+                      <a
+                        href={`https://leetcode.com/u/${encodeURIComponent(learning.username)}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        LeetCode profile
+                        <ExternalLink size={13} />
+                      </a>
+                    )}
+                    {learning.source.stats.fetchedAt && (
+                      <span>
+                        Progress fetched{" "}
+                        {new Date(
+                          learning.source.stats.fetchedAt,
+                        ).toLocaleString(undefined, {
+                          timeZone: preferences.timezone,
+                        })}
+                      </span>
+                    )}
+                    <p>
+                      Confirmed solves use the personal site's accumulated
+                      history. Earlier solves may be missing; an empty circle
+                      means a solve has not been observed.
+                    </p>
+                    <Button
+                      variant="ghost"
+                      disabled={
+                        learning.loading || learning.pendingTasks.size > 0
+                      }
+                      onClick={() => void learning.reload()}
+                    >
+                      <RefreshCw size={14} />
+                      Refresh
+                    </Button>
+                  </div>
+                </details>
+              )}
+              {mode === "demo" && (
+                <Badge tone="muted">Demo curriculum and progress</Badge>
+              )}
+            </footer>
+          </>
+        ) : (
+          <div className="learn-reading-grid">
+            {topics.map((topic) => {
+              const url = safeUrl(topic.url);
+              return (
+                <Card key={topic.id} className="learn-reading-card">
+                  <h2>{topic.title}</h2>
+                  <p>{topic.summary}</p>
+                  {url && (
+                    <a href={url} target="_blank" rel="noopener noreferrer">
+                      {topic.resource || "Open resource"}
+                      <ExternalLink size={15} />
+                    </a>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
         )}
       </div>
-      <TopicEditor
-        key={editing === "new" ? "new" : (editing?.id ?? "closed")}
-        value={editing}
-        onClose={() => setEditing(null)}
-        onSaved={(id) => {
-          setEditing(null);
-          setParams({ record: id });
-        }}
-        tracks={tracks}
-      />
     </div>
-  );
-}
-
-function LearningDetail({
-  topic,
-  progress,
-  onEdit,
-}: {
-  topic: TopicView;
-  progress?: WorkRecord;
-  onEdit: () => void;
-}) {
-  const { create, update, notify, preferences } = useWorkspace();
-  const [reflection, setReflection] = useState(progress?.body ?? "");
-  const [explanation, setExplanation] = useState(
-    field(progress, "explanation"),
-  );
-  const [example, setExample] = useState(field(progress, "example"));
-  const [exerciseCompleted, setExerciseCompleted] = useState(
-    boolField(progress, "exerciseCompleted"),
-  );
-  const [explained, setExplained] = useState(boolField(progress, "explained"));
-  const [recall, setRecall] = useState(
-    field(progress, "recallResult", "Not attempted"),
-  );
-  const [nextReviewDate, setNextReviewDate] = useState(
-    field(
-      progress,
-      "nextReview",
-      addDays(localDate(new Date(), preferences.timezone), 7),
-    ),
-  );
-  const [links, setLinks] = useState(progress?.links ?? []);
-  const [saving, setSaving] = useState(false);
-  async function save(createAction = false) {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const input = {
-        title: `${topic.title} · learning evidence`,
-        body: reflection,
-        links,
-        data: {
-          ...progress?.data,
-          category: "learning",
-          topicId: topic.id,
-          track: topic.track,
-          explanation,
-          example,
-          exerciseCompleted,
-          explained,
-          recallResult: recall,
-          nextReview: nextReviewDate,
-          lastReviewed: localDate(new Date(), preferences.timezone),
-        },
-      };
-      const result = progress
-        ? await update(progress.id, input)
-        : await create({ kind: "progress", ...input });
-      if (createAction)
-        await create({
-          kind: "action",
-          title: `Practise: ${topic.title}`,
-          body: topic.exercise,
-          links: [result.id, ...links],
-          data: {
-            status: "todo",
-            estimatedMinutes: 30,
-            firstStep: topic.exercise,
-            dueDate: nextReviewDate,
-            priority: "normal",
-            category: "learning",
-          },
-        });
-      notify(
-        createAction
-          ? "Evidence saved and a practice action added to Today."
-          : "Learning evidence saved.",
-        "success",
-      );
-    } catch (error) {
-      notify(
-        error instanceof Error
-          ? error.message
-          : "Could not save learning evidence.",
-        "error",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-  const url = safeUrl(topic.url);
-  return (
-    <Card className="learning-detail">
-      <div className="section-heading">
-        <Badge tone="blue">
-          {topic.week ? `WEEK ${topic.week}` : "FOUNDATIONS"}
-        </Badge>
-        <Button variant="ghost" onClick={onEdit}>
-          <Pencil size={16} /> Edit topic
-        </Button>
-      </div>
-      <h2>{topic.title}</h2>
-      <p className="topic-summary">{topic.summary}</p>
-      <div className="concept-block">
-        <span className="eyebrow">BEFORE YOU START</span>
-        <p>
-          {topic.prerequisites ||
-            "Add prerequisites that help you get started."}
-        </p>
-      </div>
-      {url && (
-        <a
-          className="resource-link"
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <BookOpen size={19} />
-          <span>{topic.resource || "Open learning resource"}</span>
-          <ExternalLink size={17} />
-        </a>
-      )}
-      <div className="exercise-block">
-        <Badge tone="lime">BUILD SOMETHING</Badge>
-        <h3>Your exercise</h3>
-        <p>
-          {topic.exercise ||
-            "Choose a small exercise and add it to this topic."}
-        </p>
-      </div>
-      <div className="concept-block">
-        <span className="eyebrow">RECALL WITHOUT LOOKING</span>
-        <p>
-          {topic.recall || "Explain the concept, a tradeoff and an example."}
-        </p>
-      </div>
-      {topic.patterns?.length ? (
-        <div className="chips">
-          {topic.patterns.map((pattern) => (
-            <Link
-              key={pattern}
-              className="pattern-link"
-              to={`/practice?pattern=${pattern}`}
-            >
-              {pattern.replace(/-/g, " ")} <ArrowRight size={13} />
-            </Link>
-          ))}
-        </div>
-      ) : null}
-      <h3>Your evidence of understanding</h3>
-      <div className="checklist">
-        <label>
-          <input
-            type="checkbox"
-            checked={exerciseCompleted}
-            onChange={(event) => setExerciseCompleted(event.target.checked)}
-          />{" "}
-          I completed the exercise
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={explained}
-            onChange={(event) => setExplained(event.target.checked)}
-          />{" "}
-          I can explain the idea without reading
-        </label>
-      </div>
-      <Field label="Explain it in your own words">
-        <Textarea
-          value={explanation}
-          onChange={(event) => setExplanation(event.target.value)}
-          placeholder="What is the central idea? What tradeoff matters?"
-          rows={3}
-        />
-      </Field>
-      <Field label="Exercise result and reflection">
-        <Textarea
-          value={reflection}
-          onChange={(event) => setReflection(event.target.value)}
-          placeholder="What did you build? What worked? What would you change?"
-          rows={3}
-        />
-      </Field>
-      <Field label="A real example / evidence link">
-        <Textarea
-          value={example}
-          onChange={(event) => setExample(event.target.value)}
-          placeholder="Connect this to a project or something you worked on."
-          rows={2}
-        />
-      </Field>
-      <div className="form-grid">
-        <Field label="Last recall">
-          <Select
-            value={recall}
-            onChange={(event) => setRecall(event.target.value)}
-          >
-            {[
-              "Not attempted",
-              "Needed notes",
-              "Explained with gaps",
-              "Explained independently",
-            ].map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Next review">
-          <Input
-            type="date"
-            value={nextReviewDate}
-            onChange={(event) => setNextReviewDate(event.target.value)}
-          />
-        </Field>
-      </div>
-      <Field label="Connected notes and work">
-        <RecordLinks
-          value={links}
-          onChange={setLinks}
-          excludeId={progress?.id}
-        />
-      </Field>
-      <div className="inline-actions">
-        <Button onClick={() => save()} disabled={saving}>
-          Save evidence
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => save(true)}
-          disabled={saving}
-        >
-          Save + add a practice action
-        </Button>
-      </div>
-    </Card>
-  );
-}
-
-function TopicEditor({
-  value,
-  onClose,
-  onSaved,
-  tracks,
-}: {
-  value: TopicView | "new" | null;
-  onClose: () => void;
-  onSaved: (id: string) => void;
-  tracks: { id: string; title: string }[];
-}) {
-  const { create, update, notify } = useWorkspace();
-  const topic = value && value !== "new" ? value : undefined;
-  const [title, setTitle] = useState(topic?.title ?? "");
-  const [track, setTrack] = useState(topic?.track ?? "dsa");
-  const [newTrack, setNewTrack] = useState("");
-  const [summary, setSummary] = useState(topic?.summary ?? "");
-  const [exercise, setExercise] = useState(topic?.exercise ?? "");
-  const [recall, setRecall] = useState(topic?.recall ?? "");
-  const [prerequisites, setPrerequisites] = useState(
-    topic?.prerequisites ?? "",
-  );
-  const [url, setUrl] = useState(topic?.url ?? "");
-  const [resource, setResource] = useState(topic?.resource ?? "");
-  const [saving, setSaving] = useState(false);
-  async function save() {
-    if (!title.trim() || (url && !safeUrl(url))) {
-      notify("Add a title and a valid resource URL.", "error");
-      return;
-    }
-    setSaving(true);
-    try {
-      const input = {
-        title: title.trim(),
-        body: summary,
-        data: {
-          ...topic?.record?.data,
-          category: "learning",
-          track: track === "__new" ? newTrack.trim() || "My track" : track,
-          exercise,
-          recall,
-          prerequisites,
-          url,
-          resource,
-          ...(!topic?.record && topic ? { seedId: topic.id } : {}),
-        },
-      };
-      const result = topic?.record
-        ? await update(topic.record.id, input)
-        : await create({ kind: "topic", ...input });
-      onSaved(topic?.id ?? result.id);
-    } catch (error) {
-      notify(String(error), "error");
-    } finally {
-      setSaving(false);
-    }
-  }
-  return (
-    <Modal
-      open={!!value}
-      onClose={onClose}
-      title={topic ? "Edit learning topic" : "Add a learning topic"}
-      size="wide"
-    >
-      <div className="stack">
-        <Field label="Topic title">
-          <Input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </Field>
-        <div className="form-grid">
-          <Field label="Track">
-            <Select
-              value={track}
-              onChange={(event) => setTrack(event.target.value)}
-            >
-              {tracks.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.title}
-                </option>
-              ))}
-              <option value="__new">Create a new track</option>
-            </Select>
-          </Field>
-          {track === "__new" && (
-            <Field label="New track name">
-              <Input
-                value={newTrack}
-                onChange={(event) => setNewTrack(event.target.value)}
-              />
-            </Field>
-          )}
-        </div>
-        <Field label="Explanation / summary">
-          <Textarea
-            value={summary}
-            onChange={(event) => setSummary(event.target.value)}
-            rows={3}
-          />
-        </Field>
-        <Field label="Prerequisites">
-          <Input
-            value={prerequisites}
-            onChange={(event) => setPrerequisites(event.target.value)}
-          />
-        </Field>
-        <Field label="Small exercise">
-          <Textarea
-            value={exercise}
-            onChange={(event) => setExercise(event.target.value)}
-            rows={3}
-          />
-        </Field>
-        <Field label="Recall question">
-          <Input
-            value={recall}
-            onChange={(event) => setRecall(event.target.value)}
-          />
-        </Field>
-        <div className="form-grid">
-          <Field label="Resource title">
-            <Input
-              value={resource}
-              onChange={(event) => setResource(event.target.value)}
-            />
-          </Field>
-          <Field label="Resource URL">
-            <Input
-              type="url"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-            />
-          </Field>
-        </div>
-        <Button onClick={save} disabled={saving}>
-          Save topic
-        </Button>
-      </div>
-    </Modal>
   );
 }

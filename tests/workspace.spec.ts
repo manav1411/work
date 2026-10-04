@@ -1,306 +1,435 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
 
-test.describe("shared workspace journeys", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() =>
-      sessionStorage.setItem("work-demo-active", "true"),
-    );
+async function openDemo(page: Page, route = "/home") {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("work-shell-test-initialized")) {
+      sessionStorage.setItem("work-demo-active", "true");
+      sessionStorage.setItem("work-shell-test-initialized", "true");
+    }
   });
-  test("career setup stays available after a first note without replacing it", async ({
-    page,
-  }) => {
-    await page.goto("/today");
-    await page.getByRole("heading", { name: "Hey, Manav." }).waitFor();
-    await page.evaluate(() => {
-      const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
-      const existing = state.records.find(
-        (record: { kind: string }) => record.kind === "note",
-      );
-      existing.title = "Synthetic existing capture";
-      existing.body = "Keep this note exactly as captured.";
-      state.records = [existing];
-      sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
-    });
-    await page.goto("/settings");
-    await page
-      .getByRole("button", { name: "Add career starter", exact: true })
-      .click();
-    await expect(
-      page.getByRole("button", { name: "Career starter added" }),
-    ).toBeDisabled();
-    expect(
-      await page.evaluate(
-        () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.length,
-      ),
-    ).toBe(12);
-    await page.goto("/notes");
-    await page
-      .getByRole("button", { name: /Synthetic existing capture/ })
-      .click();
-    await expect(page.getByLabel("Note content")).toHaveValue(
-      "Keep this note exactly as captured.",
-    );
-    await page.goto("/settings");
-    await expect(
-      page.getByRole("button", { name: "Career starter added" }),
-    ).toBeDisabled();
-    expect(
-      await page.evaluate(
-        () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.length,
-      ),
-    ).toBe(12);
+  await page.goto(route);
+  await page.locator("main h1").waitFor();
+}
+
+function legacyNote(): WorkRecord {
+  return {
+    id: "synthetic-retired-note",
+    kind: "note",
+    title: "Existing Notion preparation",
+    body: "Preserve this existing preparation and original file.",
+    tags: [],
+    links: [],
+    data: {},
+    version: 1,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    deletedAt: null,
+  };
+}
+
+test("four destinations and the account menu work with keyboard, pointer, and sign-out", async ({
+  page,
+}) => {
+  await page.route("**/api/session", (route) =>
+    route.fulfill({ json: { user: null, local: false, configured: false } }),
+  );
+  await openDemo(page);
+  const nav = page.getByRole("navigation", {
+    name: "Main navigation",
+    exact: true,
   });
-  test("keyboard capture, global search and a recovered focus session", async ({
-    page,
-  }) => {
-    await page.goto("/today");
-    await page.getByRole("heading", { name: "Hey, Manav." }).waitFor();
-    await page.keyboard.press("c");
-    const capture = page.getByRole("dialog", {
-      name: "Catch it before it goes",
-    });
-    await capture
-      .getByRole("button", { name: "Next step", exact: true })
-      .click();
-    await capture.getByLabel("Give it a name").fill("Synthetic shared capture");
-    await capture
-      .getByRole("button", { name: "Keep this", exact: true })
-      .click();
-    await expect(capture).not.toBeVisible();
-    await page.keyboard.press("Control+k");
-    const search = page.getByRole("dialog", { name: "Find your thread" });
-    await search.getByRole("textbox").fill("Synthetic shared capture");
-    await search
-      .getByRole("button", { name: /Synthetic shared capture/ })
-      .click();
-    await page.goto("/focus");
-    await page
-      .getByLabel("Action to focus on")
-      .selectOption({ label: "Synthetic shared capture" });
-    await page.getByRole("button", { name: "Start a little focus" }).click();
-    await page
-      .getByLabel("Your thinking, as you go")
-      .fill("A synthetic reflection worth keeping.");
-    await page.getByRole("button", { name: "Pause", exact: true }).click();
-    await page.reload();
-    await expect(page.getByLabel("Your thinking, as you go")).toHaveValue(
-      "A synthetic reflection worth keeping.",
-    );
-    await page.getByLabel("I finished the linked action").check();
-    await page.getByRole("button", { name: "Done for now" }).click();
-    const state = await page.evaluate(() =>
-      JSON.parse(sessionStorage.getItem("work-demo-v1")!),
-    );
-    expect(
-      state.records.find(
-        (row: { title: string; kind: string }) =>
-          row.title === "Synthetic shared capture" && row.kind === "action",
-      ).data.status,
-    ).toBe("done");
-    expect(
-      state.records.find((row: { kind: string }) => row.kind === "focus").body,
-    ).toContain("synthetic reflection");
+  await expect(nav.getByRole("link")).toHaveText([
+    "Home",
+    "Learn",
+    "Applications",
+    "Documents",
+  ]);
+  const account = page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Account: Demo" });
+  await account.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    page.getByRole("menuitem", { name: "Settings", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(
+    page.getByRole("menuitem", { name: "Leave demo", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(account).toBeFocused();
+  await account.click();
+  await page.locator("main h1").click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.keyboard.press("c");
+  await page.keyboard.press("Control+k");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await account.click();
+  await page.getByRole("menuitem", { name: "Settings", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole("heading", { name: /^Settings/ })).toBeVisible();
+  await account.click();
+  await page.getByRole("menuitem", { name: "Leave demo", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => sessionStorage.getItem("work-demo-active")),
+  ).toBeNull();
+});
+
+test("mobile navigation fits, traps drawer focus, and returns focus on close", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openDemo(page, "/settings");
+  await expect(
+    page
+      .getByRole("navigation", { name: "Mobile navigation" })
+      .getByRole("link"),
+  ).toHaveText(["Home", "Learn", "Applications", "Documents"]);
+  const trigger = page.getByRole("button", {
+    name: "Open navigation",
+    exact: true,
   });
-  test("import, skip duplicates, undo, recover trash and restore an additive backup", async ({
-    page,
-  }) => {
-    await page.goto("/settings/import-export");
-    const upload = {
-      name: "synthetic-note.md",
-      mimeType: "text/markdown",
-      buffer: Buffer.from(
-        "# Synthetic import\n\nA safe sample for recovery tests.",
-      ),
-    };
-    await page
-      .getByLabel("Choose import files", { exact: true })
-      .setInputFiles(upload);
-    await page.getByRole("button", { name: "Import 1 records" }).click();
+  await trigger.click();
+  const drawer = page.getByRole("dialog", { name: "Navigation", exact: true });
+  await expect(drawer).toBeVisible();
+  await expect(
+    drawer.getByRole("link", { name: "Work home", exact: true }),
+  ).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(
+    drawer.getByRole("button", { name: "Account: Demo" }),
+  ).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await page
+    .locator(".mobile-account")
+    .getByRole("button", { name: "Account: Demo" })
+    .click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  for (const route of [
+    "/home",
+    "/learn",
+    "/applications",
+    "/documents",
+    "/settings",
+  ]) {
+    await page.goto(route);
+    await page.locator("main h1").waitFor();
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
+      .toBeLessThanOrEqual(390);
     await expect(
-      page.getByText("1 created · 0 updated · 0 skipped.", { exact: true }),
-    ).toBeVisible();
-    await page
-      .getByLabel("Choose import files", { exact: true })
-      .setInputFiles(upload);
-    await page.getByRole("button", { name: "Import 1 records" }).click();
-    await expect(
-      page.getByText("0 created · 0 updated · 1 skipped.", { exact: true }),
-    ).toBeVisible();
-    await page
-      .getByRole("button", { name: "Undo import", exact: true })
-      .first()
-      .click();
-    await page
-      .getByRole("dialog")
-      .getByRole("button", { name: "Confirm", exact: true })
-      .click();
-    await page.getByRole("button", { name: "Restore", exact: true }).click();
-    await expect(
-      page.getByRole("button", { name: "Restore", exact: true }),
+      page.getByRole("heading", { name: "This page could not load" }),
     ).toHaveCount(0);
-    const archive = await page.evaluate(() => {
-      const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
-      return {
-        format: "work-export",
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        records: state.records,
-        revisions: state.revisions,
-        attachments: state.attachments,
-        preferences: state.preferences,
-      };
+  }
+});
+
+test("compact preferences persist without altering existing records", async ({
+  page,
+}) => {
+  await openDemo(page, "/settings");
+  const before = await page.evaluate(
+    () => JSON.parse(sessionStorage.getItem("work-demo-v1")!).records,
+  );
+  await page
+    .getByLabel("Timezone", { exact: true })
+    .fill("America/Los_Angeles");
+  await page
+    .getByLabel("LeetCode username", { exact: true })
+    .fill("https://example.com/not-a-profile");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".toast-error")).toContainText("LeetCode");
+  await page
+    .getByLabel("LeetCode username", { exact: true })
+    .fill("https://leetcode.com/u/synthetic_engineer/");
+  await page.getByLabel("Reduce motion", { exact: true }).check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByRole("status", { name: "" }).filter({ hasText: /^Saved$/ }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Timezone", { exact: true })).toHaveValue(
+    "America/Los_Angeles",
+  );
+  await expect(
+    page.getByLabel("LeetCode username", { exact: true }),
+  ).toHaveValue("synthetic_engineer");
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-reduce-motion",
+    "true",
+  );
+  expect(
+    await page.evaluate(
+      () => JSON.parse(sessionStorage.getItem("work-demo-v1")!).records,
+    ),
+  ).toEqual(before);
+  await expect(
+    page.getByRole("button", { name: /career starter/i }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Choose import files")).toHaveCount(0);
+});
+
+test("legacy aliases preserve selected context and retired records remain exportable", async ({
+  page,
+}) => {
+  await openDemo(page, "/settings");
+  const note = legacyNote();
+  await page.evaluate((row) => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    state.records.push(row);
+    state.records.push({
+      ...row,
+      id: "legacy-resume-file",
+      kind: "asset",
+      title: "Retired PDF résumé",
+      data: { type: "resume" },
     });
-    const oldCount = archive.records.length;
-    await page.getByLabel("Choose Work backup").setInputFiles({
+    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+  }, note);
+  await page.goto("/today");
+  await expect(page).toHaveURL(/\/home$/);
+  await page.goto("/assets");
+  await expect(page).toHaveURL(/\/documents$/);
+  await page.goto("/assets?record=legacy-resume-file");
+  await expect(page).toHaveURL(
+    /\/settings\?legacy=assets&record=legacy-resume-file#recovery$/,
+  );
+  await expect(page.locator(".legacy-recovery-note")).toContainText(
+    "Retired PDF résumé",
+  );
+  await page.goto("/practice?record=two-sum");
+  await expect(page).toHaveURL(/\/learn\?view=roadmap&problem=two-sum$/);
+  await page.goto("/focus");
+  await expect(page).toHaveURL(/\/learn$/);
+  await page.goto(`/notes?record=${note.id}`);
+  await expect(page).toHaveURL(
+    /\/settings\?legacy=notes&record=synthetic-retired-note#recovery$/,
+  );
+  await expect(page.locator(".legacy-recovery-note")).toContainText(note.title);
+  await expect(page.getByLabel("Note content")).toHaveCount(0);
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download backup", exact: true })
+    .click();
+  const downloaded = await download;
+  const backup = JSON.parse(await readFile((await downloaded.path())!, "utf8"));
+  expect(
+    backup.records.find((row: WorkRecord) => row.id === note.id).body,
+  ).toBe(note.body);
+});
+
+test("full backups restore goals and legacy files additively and repeated restores stay idempotent", async ({
+  page,
+}) => {
+  await openDemo(page, "/settings");
+  const note = legacyNote();
+  await page.evaluate((row) => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    state.records.push(row);
+    state.attachments.push({
+      id: "synthetic-original-file",
+      recordId: row.id,
+      filename: "original-preparation.txt",
+      contentType: "text/plain",
+      size: 17,
+      createdAt: row.createdAt,
+    });
+    state.files["synthetic-original-file"] = btoa("Original contents");
+    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+  }, note);
+  await page.reload();
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download full backup", exact: true })
+    .click();
+  const file = await download;
+  const archive = JSON.parse(await readFile((await file.path())!, "utf8"));
+  expect(archive.version).toBe(2);
+  expect(
+    archive.attachments.find(
+      (row: { id: string }) => row.id === "synthetic-original-file",
+    ).base64,
+  ).toBe(Buffer.from("Original contents").toString("base64"));
+  const restore = async () => {
+    await page.getByLabel("Choose Work backup", { exact: true }).setInputFiles({
       name: "work-backup.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(archive)),
     });
     await page
-      .getByRole("button", { name: "Restore as separate archive" })
+      .getByRole("button", { name: "Restore backup", exact: true })
       .click();
     await page
-      .getByRole("dialog")
+      .getByRole("dialog", { name: "Restore this backup?" })
       .getByRole("button", { name: "Confirm", exact: true })
       .click();
-    await expect
-      .poll(() =>
-        page.evaluate(
-          () =>
-            JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.length,
-        ),
-      )
-      .toBe(oldCount * 2);
-    expect(
-      await page.evaluate(
-        (ids) =>
-          ids.every((id: string) =>
-            JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.some(
-              (row: { id: string }) => row.id === id,
-            ),
-          ),
-        archive.records.map((row: { id: string }) => row.id),
-      ),
-    ).toBe(true);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  };
+  await restore();
+  const restored = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("work-demo-v1")!),
+  );
+  expect(restored.records.length).toBe(archive.records.length * 2);
+  expect(restored.goals.length).toBe(archive.goals.length * 2);
+  expect(
+    restored.records.some(
+      (row: WorkRecord) => row.id === note.id && row.body === note.body,
+    ),
+  ).toBe(true);
+  expect(restored.attachments.length).toBe(archive.attachments.length * 2);
+  const count = restored.records.length;
+  await restore();
+  expect(
+    await page.evaluate(
+      () => JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.length,
+    ),
+  ).toBe(count);
+  const versionOne = { ...archive, version: 1 };
+  delete versionOne.goals;
+  await page.getByLabel("Choose Work backup", { exact: true }).setInputFiles({
+    name: "work-backup-v1.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(versionOne)),
   });
-  test("saved preferences change theme and dates without changing records", async ({
-    page,
-  }) => {
-    await page.goto("/settings");
-    await page
-      .getByLabel("What should we call you?")
-      .fill("Synthetic Engineer");
-    await page.getByLabel("Theme", { exact: true }).selectOption("dark");
-    await page
-      .getByLabel("Timezone", { exact: true })
-      .fill("America/Los_Angeles");
-    await page.getByLabel("Reduce motion and animated interactions").check();
-    await page.getByRole("button", { name: "Save my preferences" }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await page.reload();
-    await expect(page.getByLabel("What should we call you?")).toHaveValue(
-      "Synthetic Engineer",
-    );
-    await expect(page.locator("html")).toHaveAttribute(
-      "data-reduce-motion",
-      "true",
-    );
-  });
-  test("every launch area fits a phone and renders without page errors", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    const errors: string[] = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    for (const route of [
-      "today",
-      "focus",
-      "learn",
-      "practice",
-      "interviews",
-      "companies",
-      "applications",
-      "network",
-      "career",
-      "evidence",
-      "projects",
-      "assets",
-      "notes",
-      "resources",
-      "review",
-      "settings",
-      "settings/import-export",
-    ]) {
-      await page.goto(`/${route}`);
-      await page.locator("main h1").waitFor();
-      await expect
-        .poll(() => page.evaluate(() => document.documentElement.scrollWidth))
-        .toBeLessThanOrEqual(390);
-      await expect(page.getByText("This page needs a fresh start")).toHaveCount(
-        0,
-      );
-    }
-    expect(errors).toEqual([]);
-  });
+  await page
+    .getByRole("button", { name: "Restore backup", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Restore this backup?" })
+    .getByRole("button", { name: "Confirm", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const restoredLegacy = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("work-demo-v1")!),
+  );
+  expect(restoredLegacy.records.length).toBe(count + archive.records.length);
+  expect(restoredLegacy.goals.length).toBe(restored.goals.length);
+  await page.getByText("Saved records and files", { exact: true }).click();
+  await expect(
+    page.getByRole("button", {
+      name: "Download original-preparation.txt",
+      exact: true,
+    }),
+  ).toHaveCount(3);
+  const originalDownload = page.waitForEvent("download");
+  await page
+    .getByRole("button", {
+      name: "Download original-preparation.txt",
+      exact: true,
+    })
+    .first()
+    .click();
+  const original = await originalDownload;
+  expect(await readFile((await original.path())!, "utf8")).toBe(
+    "Original contents",
+  );
 });
 
-test("private local API edits survive reconnect and queued writes retain their links", async ({
+test("device drafts survive reload, export, and retry while sign-out waits for sync", async ({
   page,
 }) => {
-  test.skip(
-    !!process.env.CI && process.env.WORK_TEST_LOCAL !== "true",
-    "CI demo tests are independent of runtime credentials; backend tests cover storage.",
-  );
-  const session = await page.request.get("/api/session");
-  const identity = await session.json();
-  test.skip(!identity.local, "Only emulated local fixtures may run this test.");
-  const prefix = `Synthetic offline ${crypto.randomUUID()}`;
-  const created: string[] = [];
-  try {
-    await page.goto("/notes");
-    await page.getByRole("button", { name: "New note", exact: true }).click();
-    await page.getByLabel("Note title", { exact: true }).fill(prefix);
-    await page.getByRole("button", { name: "Save now", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("Saved");
-    const id = new URL(page.url()).searchParams.get("record")!;
-    created.push(id);
-    await page.route("**/api/records/**", (route) =>
-      route.request().method() === "PATCH"
-        ? route.abort("internetdisconnected")
-        : route.continue(),
-    );
-    await page
-      .getByLabel("Note content", { exact: true })
-      .fill("Synthetic offline body, retained on this device.");
-    await page.getByRole("button", { name: "Save now", exact: true }).click();
-    await expect(page.getByRole("status")).toContainText("sync pending");
-    await page.unroute("**/api/records/**");
-    await page
-      .getByRole("link", { name: "Make it yours", exact: true })
-      .click();
-    await page.getByRole("heading", { name: "Make it yours." }).waitFor();
-    const sync = page.getByRole("button", { name: "Try syncing", exact: true });
-    if (await sync.count()) await sync.click();
-    await expect(
-      page.getByRole("heading", { name: /Your device drafts/ }),
-    ).toHaveCount(0);
-    await expect
-      .poll(
-        async () =>
-          (await (await page.request.get(`/api/records/${id}`)).json()).record
-            .body,
-      )
-      .toBe("Synthetic offline body, retained on this device.");
-  } finally {
-    for (const id of created) {
-      await page.request
-        .delete(`/api/records/${id}`, { timeout: 2000 })
-        .catch(() => undefined);
-      await page.request
-        .delete(`/api/records/${id}/permanent`, { timeout: 2000 })
-        .catch(() => undefined);
+  let offline = true;
+  let signedOut = false;
+  const account = {
+    id: "synthetic-offline-account",
+    name: "Synthetic Engineer",
+    email: "synthetic@example.invalid",
+  };
+  let application: WorkRecord = {
+    ...legacyNote(),
+    id: "synthetic-application",
+    kind: "application",
+    title: "Synthetic Company — Engineer",
+    body: "",
+    links: ["preserved-link"],
+    data: { company: "Synthetic Company", role: "Engineer", stage: "Saved" },
+  };
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    if (url.pathname === "/api/session")
+      return route.fulfill({
+        json: {
+          user: signedOut ? null : account,
+          configured: true,
+          local: false,
+        },
+      });
+    if (url.pathname === "/api/preferences")
+      return route.fulfill({ json: { preferences: DEFAULT_PREFERENCES } });
+    if (url.pathname === "/api/records")
+      return route.fulfill({ json: { records: [application] } });
+    if (url.pathname === "/api/connectors")
+      return route.fulfill({ json: { connections: [] } });
+    if (
+      url.pathname === `/api/records/${application.id}` &&
+      method === "PATCH"
+    ) {
+      if (offline) return route.abort("internetdisconnected");
+      const patch = route.request().postDataJSON();
+      delete patch.version;
+      application = {
+        ...application,
+        ...patch,
+        version: application.version + 1,
+      };
+      return route.fulfill({ json: { record: application } });
     }
-  }
+    if (url.pathname === "/api/auth/sign-out") {
+      signedOut = true;
+      return route.fulfill({ json: { success: true } });
+    }
+    return route.fulfill({
+      status: 404,
+      json: { error: "Unexpected test request" },
+    });
+  });
+  await page.goto(`/applications?record=${application.id}`);
+  await page
+    .getByRole("button", { name: "Edit application", exact: true })
+    .click();
+  const editor = page.getByRole("dialog", {
+    name: "Edit application",
+    exact: true,
+  });
+  await editor.getByLabel("Stage", { exact: true }).selectOption("Applied");
+  await editor
+    .getByRole("button", { name: "Save application", exact: true })
+    .click();
+  await expect(editor).not.toBeVisible();
+  await page.goto("/settings");
+  await expect(
+    page.getByRole("heading", { name: /Unsynced changes/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.locator(".toast-error")).toContainText("unsynced");
+  expect(signedOut).toBe(false);
+  const download = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Download device drafts", exact: true })
+    .click();
+  const archive = await download;
+  const drafts = JSON.parse(await readFile((await archive.path())!, "utf8"));
+  expect(drafts.drafts[0].patch.data.stage).toBe("Applied");
+  expect(drafts.drafts[0].patch.links).toEqual(["preserved-link"]);
+  offline = false;
+  await page.getByRole("button", { name: "Retry sync", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: /Unsynced changes/ }),
+  ).toHaveCount(0);
+  expect(application.data.stage).toBe("Applied");
+  expect(application.links).toEqual(["preserved-link"]);
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  expect(signedOut).toBe(true);
 });

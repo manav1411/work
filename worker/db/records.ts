@@ -55,6 +55,7 @@ export async function getRecord(
   owner: string,
   recordId: string,
   includeDeleted = false,
+  includeUnavailable = false,
 ): Promise<WorkRecord> {
   const row = await db
     .prepare(
@@ -62,7 +63,12 @@ export async function getRecord(
     )
     .bind(recordId, owner)
     .first<RecordRow>();
-  if (!row) throw new ApiError(404, "NOT_FOUND", "This record was not found.");
+  if (
+    !row ||
+    (!includeUnavailable &&
+      JSON.parse(row.data).connectorSource?.available === false)
+  )
+    throw new ApiError(404, "NOT_FOUND", "This record was not found.");
   return fromRow(row);
 }
 
@@ -495,7 +501,7 @@ export async function writeRecord(
   const original =
     expectedVersion === undefined
       ? null
-      : await getRecord(db, owner, record.id, true);
+      : await getRecord(db, owner, record.id, true, true);
   const originalReferences = original
     ? dataReferences(original.data)
     : { records: [], files: [] };

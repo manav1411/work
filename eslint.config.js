@@ -8,6 +8,7 @@ export default tseslint.config(
       "dist/**",
       "node_modules/**",
       ".wrangler/**",
+      ".private/**",
       "playwright-report/**",
       "test-results/**",
       "worker-configuration.d.ts",

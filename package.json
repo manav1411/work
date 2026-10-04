@@ -15,12 +15,13 @@
     "format:check": "prettier --check src worker shared tests scripts *.ts *.js package.json wrangler.jsonc",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "ci:build": "npm run check && npm test && npm run build",
+    "test:runtime": "node scripts/check-connectors-runtime.mjs",
+    "ci:build": "npm run check && npm test && npm run build && npm run test:runtime",
     "db:local": "wrangler d1 migrations apply DB --local --config wrangler.jsonc",
     "db:staging": "wrangler d1 migrations apply DB --remote --env staging --config wrangler.jsonc",
-    "deploy": "npm run build && node scripts/check-build.mjs production && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
-    "deploy:ci": "node scripts/check-build.mjs production && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
-    "deploy:staging": "CLOUDFLARE_ENV=staging npm run build && node scripts/check-build.mjs staging && wrangler d1 migrations apply DB --remote --env staging --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
+    "deploy": "npm run build && node scripts/check-build.mjs production && npm run test:runtime && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
+    "deploy:ci": "node scripts/check-build.mjs production && npm run test:runtime && wrangler d1 migrations apply DB --remote --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
+    "deploy:staging": "CLOUDFLARE_ENV=staging npm run build && node scripts/check-build.mjs staging && npm run test:runtime && wrangler d1 migrations apply DB --remote --env staging --config wrangler.jsonc && wrangler deploy --config dist/work/wrangler.json",
     "cf:types": "wrangler types"
   },
   "dependencies": {

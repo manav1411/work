@@ -1,6 +1,37 @@
 # Verification log
 
-Checked 3 October 2026. This log distinguishes local verification from the account-dependent production release gates.
+## Simplification implementation: 4 October 2026
+
+- The reduced product is implemented in this working tree and has not been deployed or migrated to a remote database from this turn.
+- `npm run check` passes. `npm test` passes: 127 tests across 12 files. `npm run format:check` passes. `npm run build` passes, including the production binding guard.
+- `npm run test:e2e` passes: 21 browser journeys covering the four destinations, mobile navigation, Learn foundations and timer persistence, Overleaf destinations, applications/interviews, goals/timeline editing, sign-out, legacy recovery, backups, and offline drafts.
+- `npm run test:runtime` passes against the built Worker with isolated D1/R2 and synthetic outbound fixtures. It covers goal ownership, optimistic conflicts, idempotent creation/restoration, learning-source caching and stale fallback, shared task writes, retired webhook/suggestion routes, and retained connector recovery.
+- The source proxy uses Workerd-compatible manual redirect handling and rejects redirected learning responses before accepting data. No source request forwards private Work data, cookies, or Work credentials.
+- Existing records, revisions, files, and connector data remain additive and recoverable. The optional Settings migration report only offers explicit conversion of projects with stable, dated milestones; it does not infer goals from ambiguous legacy text.
+
+Entries below describe earlier connector work and published environments. They are historical context, not evidence that this simplification has been deployed.
+
+Launch checked 3 October 2026; connector release checked 4 October 2026. This log distinguishes local verification and published preview checks from authenticated provider release gates.
+
+## Notion connection fix: 4 October 2026
+
+- Reproduced the reported token-connection 500 by executing the previously built application inside workerd. The runtime rejects `redirect: "error"` before sending the Notion request. Earlier Node fetch stubs accepted that option and missed the failure.
+- Changed connector requests to `redirect: "manual"`, retaining response-status checks so redirects are rejected without forwarding credentials. Notion token verification now uses the existing bounded provider client, returning specific errors for invalid tokens and upstream failures instead of unexpected 500s.
+- Added `npm run test:runtime`, which runs the built application inside workerd with isolated D1/R2 and synthetic outbound provider responses. It verifies internal Notion token connection, encrypted storage using the auth-secret fallback, credential decryption during discovery, selected-page sync, public GitHub/LeetCode requests, invalid tokens, rejected redirects, malformed responses, outages, and preservation of an existing connection after failed reconnects. CI and all deployment scripts require this check before publishing.
+- Type/lint checks, formatting, 96 unit/integration tests, build environment guards, and the new runtime check passed. No client interface changed in this fix; the earlier 22 browser checks remain the browser evidence for the release.
+- Deployed staging version `3bb99825-ed71-4fe8-88d1-4961eed64014`, then production version `7b4cb5d1-741d-44b3-b9d1-6626ace7478c`. No database migration was needed. Both health checks passed; production authentication remains configured, anonymous connector access returns 401, and the connector page returns 200.
+- Production still has 15 records and three attachments. No connection was saved by the failed attempt. The owner's real Notion token was neither accessed nor logged; a live connection retry remains the account-specific confirmation.
+
+## Connector release: 4 October 2026
+
+- Local validation passed: type/lint checks, formatting, 96 unit/integration tests, 22 browser tests, and the client/Worker build. Connector tests cover owner isolation, OAuth state, verified webhook delivery, sync leases, protected source fields, provider outages/rate limits, retained Work context, independent Notion file copies, submitted PDF preservation, credential redaction, disconnected restore, and reconnect identity.
+- Migration `0003_connectors.sql` applied successfully to the separate staging and production databases. Production had 15 records and three attachments before release, and the same counts after release; no private titles, text, file bytes, or credentials were printed. The new production connection table starts empty.
+- Staging version: `6889aadc-7866-4b73-a560-b9971c55d9a7`. Production version: `3657b282-3e60-4b09-a88d-5c8de1478c20`. Both were deployed through the CLI after their build binding/fixture guards passed, with a 15-minute Cron Trigger. The previous production version was `41dd2499-4b31-44b5-87ff-37a998b8028c`; the additive migration remains compatible with that Worker.
+- All four connector browser journeys passed against each published environment's synthetic preview, including GitHub context/reconnect, LeetCode observations/actions, Notion annotation/copy editing, and narrow-screen Overleaf asset links. These preview interactions did not write career records to the remote databases or authorize provider accounts.
+- Production `/connectors` returns 200 with CSP/security headers; health reports `production` with authentication configured, and the anonymous session remains signed out with `local: false`. Anonymous connector/activity requests return 401, a cross-origin change returns 403, and an unsigned Notion webhook returns 403. Staging reports `staging` with authentication disabled and rejects private anonymous access. Production has no pending migrations.
+- Production retains its existing GitHub sign-in secrets. Notion OAuth and the dedicated repository GitHub App have not been registered/configured by this release; production offers the internal Notion token flow through the existing server-side encryption configuration. Public profiles and Overleaf links need no additional provider secret. Live selected-source requests and OAuth callbacks still need account-specific verification. See [connector setup](connectors-setup.md).
+
+This release was a CLI deployment. The earlier verified Git-triggered build below remains historical evidence; no new GitHub push or build was performed for the connector release.
 
 ## Completed checks
 

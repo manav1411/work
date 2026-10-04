@@ -2,13 +2,35 @@ import {
   DEFAULT_PREFERENCES,
   type Attachment,
   type RecordInput,
+  type RecordPatch,
   type RecordRevision,
   type UserPreferences,
   type WorkRecord,
 } from "../../shared/model";
 import { dataReferences, detachDataReferences } from "../../shared/references";
+import {
+  goalInputSchema,
+  goalBackupSchema,
+  checkpointSchema,
+  newGoal,
+  goalProgress,
+  sourceCheckpointHistory,
+  type Goal,
+} from "../../shared/goals";
+import { demoGoals } from "./demo-goals";
+import {
+  legacyGoalId,
+  legacyMappingReport,
+  legacyProjectInput,
+  legacySelectionSchema,
+} from "../../shared/simplification";
 import { DEMO_EXTRAS, STARTER_RECORDS } from "../content/starter";
 import { ApiError, type ApiAdapter } from "./api";
+import {
+  assertDemoProviderPatch,
+  createDemoConnectorHandler,
+  type DemoConnectorState,
+} from "./demo-connectors";
 
 interface DemoBatch {
   id: string;
@@ -21,6 +43,7 @@ interface DemoBatch {
   changes: { id: string; version: number; before: WorkRecord | null }[];
 }
 interface DemoState {
+  goals?: Goal[];
   records: WorkRecord[];
   preferences: UserPreferences;
   revisions: RecordRevision[];
@@ -31,6 +54,7 @@ interface DemoState {
     string,
     { restored: number; attachments: number; warnings: string[] }
   >;
+  connectors?: DemoConnectorState;
 }
 interface ImportItem {
   sourceId: string;
@@ -88,6 +112,7 @@ export function createDemoStore() {
       /* A full preview storage must not destroy the live workspace. */
     }
   };
+  state.goals ??= demoGoals();
   const record = (id: string) => {
     const found = state.records.find((item) => item.id === id);
     if (!found) throw new ApiError("Record not found.", 404);
@@ -156,10 +181,166 @@ export function createDemoStore() {
     typeof init?.body === "string"
       ? (JSON.parse(init.body) as Record<string, unknown>)
       : {};
+  const connectorHandler = createDemoConnectorHandler({
+    getRecords: () => state.records,
+    createRecord: (input) => {
+      const created = makeRecord(input);
+      state.records.push(created);
+      persist();
+      return created;
+    },
+    updateRecord: (recordId, patch) => {
+      const previous = record(recordId);
+      revisions(structuredClone(previous));
+      const next: WorkRecord = {
+        ...previous,
+        ...patch,
+        id: previous.id,
+        kind: previous.kind,
+        version: previous.version + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      state.records = state.records.map((item) =>
+        item.id === previous.id ? next : item,
+      );
+      persist();
+      return next;
+    },
+    getConnectorState: () => state.connectors,
+    setConnectorState: (next) => {
+      state.connectors = next;
+      persist();
+    },
+  });
   const adapter: ApiAdapter = async (path, init) => {
+    if (path.startsWith("/api/connectors/suggestions"))
+      throw new ApiError("Suggestions have been retired.", 410);
+    const connectorResult = await connectorHandler(path, init);
+    if (connectorResult.handled) {
+      persist();
+      return connectorResult.value;
+    }
     const url = new URL(path, "https://demo.invalid");
     const method = init?.method ?? "GET";
     const body = parse(init);
+    if (url.pathname === "/api/goals" && method === "GET")
+      return { goals: state.goals!.filter((goal) => !goal.deletedAt) };
+    if (url.pathname === "/api/goals" && method === "POST") {
+      const parsed = goalInputSchema.safeParse(body);
+      if (!parsed.success)
+        throw new ApiError(parsed.error.issues[0].message, 400);
+      const goal = newGoal(parsed.data);
+      state.goals!.push(goal);
+      persist();
+      return { goal };
+    }
+    if (url.pathname === "/api/goals/legacy" && method === "GET")
+      return legacyMappingReport(state.records, state.goals!, "demo");
+    if (url.pathname === "/api/goals/legacy" && method === "POST") {
+      const parsed = legacySelectionSchema.safeParse(body);
+      if (!parsed.success)
+        throw new ApiError("Choose a valid project selection.", 400);
+      const created: Goal[] = [];
+      for (const selection of parsed.data.selected) {
+        const source = state.records.find(
+          (item) => item.id === selection.recordId,
+        );
+        if (!source) throw new ApiError("This project was not found.", 404);
+        if (source.version !== selection.version)
+          throw new ApiError(
+            "A selected project changed. Load the mapping report again.",
+            409,
+          );
+        const candidate = legacyProjectInput(source);
+        if (!candidate.input) throw new ApiError(candidate.reason, 400);
+        const id = await legacyGoalId("demo", source.id);
+        if (!state.goals!.some((goal) => goal.id === id))
+          created.push({ ...newGoal(candidate.input), id });
+      }
+      state.goals!.push(...created);
+      persist();
+      return {
+        created: created.length,
+        skipped: parsed.data.selected.length - created.length,
+        goalIds: created.map((goal) => goal.id),
+        report: await legacyMappingReport(state.records, state.goals!, "demo"),
+      };
+    }
+    if (url.pathname.startsWith("/api/goals/")) {
+      const goalId = url.pathname.split("/")[3],
+        before = state.goals!.find(
+          (goal) => goal.id === goalId && !goal.deletedAt,
+        );
+      if (!before) throw new ApiError("Goal not found.", 404);
+      const at = new Date().toISOString();
+      if (method === "DELETE") {
+        state.goals = state.goals!.map((goal) =>
+          goal.id === goalId
+            ? { ...goal, deletedAt: at, version: goal.version + 1 }
+            : goal,
+        );
+        persist();
+        return { deleted: true };
+      }
+      let next: Goal;
+      if (url.pathname.endsWith("/checkpoint")) {
+        const parsed = checkpointSchema.safeParse(body);
+        if (!parsed.success)
+          throw new ApiError("Invalid progress measurement.", 400);
+        const input = parsed.data;
+        if (!["curriculum", "problems", "leetcode"].includes(before.measure))
+          throw new ApiError("This goal uses manual progress.", 400);
+        if (Date.parse(input.at) > Date.now() + 300_000)
+          throw new ApiError("A checkpoint cannot be in the future.", 400);
+        if (
+          (input.measure !== undefined && input.measure !== before.measure) ||
+          (input.scope !== undefined && input.scope !== before.scope)
+        )
+          throw new ApiError(
+            "This goal's progress source changed. Reload and try again.",
+            409,
+          );
+        const checkpoints = sourceCheckpointHistory(before, input);
+        if (!checkpoints) return { goal: before };
+        next = {
+          ...before,
+          value: input.value,
+          checkpoints,
+          version: before.version + 1,
+          updatedAt: at,
+        };
+      } else {
+        if (body.version !== before.version)
+          throw new ApiError("This goal changed. Reload and try again.", 409);
+        const { version: _version, ...fields } = body;
+        void _version;
+        const parsed = goalInputSchema.safeParse(fields);
+        if (!parsed.success)
+          throw new ApiError(parsed.error.issues[0].message, 400);
+        next = {
+          ...before,
+          ...parsed.data,
+          version: before.version + 1,
+          updatedAt: at,
+        };
+        if (goalProgress(next).value !== goalProgress(before).value)
+          next.checkpoints = [
+            ...before.checkpoints,
+            {
+              value: goalProgress(next).value,
+              at,
+              unit: next.unit,
+              measure: next.measure,
+              scope: next.scope,
+            },
+          ].slice(-1000);
+      }
+      state.goals = state.goals!.map((goal) =>
+        goal.id === goalId ? next : goal,
+      );
+      persist();
+      return { goal: next };
+    }
     if (url.pathname === "/api/session")
       return {
         user: { id: "demo", name: "Manav", email: "Preview workspace" },
@@ -286,6 +467,7 @@ export function createDemoStore() {
             "This record changed. Keep your draft and reload the latest version.",
             409,
           );
+        assertDemoProviderPatch(previous, body as RecordPatch);
         revisions(structuredClone(previous));
         const next = {
           ...previous,
@@ -323,9 +505,10 @@ export function createDemoStore() {
     if (url.pathname === "/api/export")
       return {
         format: "work-export",
-        version: 1,
+        version: 2,
         exportedAt: new Date().toISOString(),
         records: state.records,
+        goals: state.goals,
         revisions: state.revisions,
         preferences: state.preferences,
         attachments: state.attachments.map((item) => ({
@@ -492,7 +675,9 @@ export function createDemoStore() {
     }
     if (url.pathname === "/api/restore") {
       const fingerprint =
-        String(body.exportedAt) + JSON.stringify(body.records);
+        String(body.exportedAt) +
+        JSON.stringify(body.records) +
+        JSON.stringify(body.goals ?? []);
       if (state.restored?.[fingerprint]) return state.restored[fingerprint];
       const payload = body.records as WorkRecord[];
       const files = (body.attachments ?? []) as (Attachment & {
@@ -558,10 +743,16 @@ export function createDemoStore() {
         ...DEFAULT_PREFERENCES,
         ...(body.preferences as UserPreferences),
       };
+      const restoredGoals = goalBackupSchema
+        .array()
+        .parse(body.goals ?? [])
+        .map((goal) => ({ ...goal, id: crypto.randomUUID() }));
+      state.goals!.push(...restoredGoals);
       const result = {
         restored: payload.length,
         attachments: files.length,
         warnings,
+        goals: restoredGoals,
       };
       state.restored = { ...state.restored, [fingerprint]: result };
       persist();

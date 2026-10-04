@@ -214,9 +214,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       } catch (failure) {
         if (active)
           setError(
-            failure instanceof Error
-              ? failure.message
-              : "Workspace could not load.",
+            failure instanceof Error ? failure.message : "Work could not load.",
           );
       } finally {
         if (active) setLoading(false);
@@ -539,7 +537,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setError("");
       await refresh();
-      notify("Everything is synced.");
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 409) {
         setError(
@@ -576,7 +573,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(async () => {
     if (outboxRef.current.length)
       throw new ApiError(
-        "You have unsynced work. Sync it or export your device drafts in Settings before signing out.",
+        "You have unsynced changes. Sync them or download device drafts in Settings before signing out.",
         409,
       );
     if (mode !== "demo")

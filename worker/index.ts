@@ -7,6 +7,12 @@ import {
 } from "../shared/model";
 import { authConfigured, createAuth, resolveSession } from "./auth";
 import { ApiError, now, type Env, type Variables } from "./env";
+import { connectorRoutes } from "./connectors/routes";
+import { goalRoutes } from "./goals";
+import { goalMigrationRoutes } from "./goal-migration";
+import { learningRoutes } from "./learning";
+import { assertNativeInput, assertProviderPatch } from "./connectors/store";
+import { ProviderFailure } from "./connectors/providers";
 import {
   applicationFileStatements,
   assertChanged,
@@ -81,7 +87,12 @@ app.use("*", async (context, next) => {
 });
 
 app.use("/api/*", async (context, next) => {
-  if (!["GET", "HEAD", "OPTIONS"].includes(context.req.method)) {
+  if (
+    !["GET", "HEAD", "OPTIONS"].includes(context.req.method) &&
+    !/^\/api\/connectors\/webhooks\/(?:github|notion)(?:\/[a-f0-9-]{36})?$/.test(
+      new URL(context.req.url).pathname,
+    )
+  ) {
     const origin = context.req.header("Origin");
     const expected = new URL(context.req.url).origin;
     if (origin && origin !== expected && origin !== context.env.APP_ORIGIN)
@@ -186,11 +197,24 @@ app.on(["GET", "POST"], "/api/auth/*", async (context) => {
   return createAuth(context.env).handler(context.req.raw);
 });
 
+// Retired collections are no longer refreshed by provider deliveries.
+app.all("/api/connectors/webhooks/*", (context) =>
+  context.json(
+    {
+      error: {
+        code: "RETIRED",
+        message: "Connector webhooks have been retired.",
+      },
+    },
+    410,
+  ),
+);
+
 // Every route below resolves identity from the request; clients never supply owner IDs.
 app.use("/api/*", async (context, next) => {
   const path = new URL(context.req.url).pathname;
   const known =
-    /^\/api\/(records(?:\/batch|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
+    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|connectors(?:\/.*)?|records(?:\/batch|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
       path,
     );
   if (!known)
@@ -207,11 +231,16 @@ app.use("/api/*", async (context, next) => {
   await next();
 });
 
+app.route("/api/connectors", connectorRoutes);
+app.route("/api/goals/legacy", goalMigrationRoutes);
+app.route("/api/goals", goalRoutes);
+app.route("/api/learning", learningRoutes);
+
 app.get("/api/records", async (context) => {
   const includeDeleted = context.req.query("includeDeleted") === "true";
   const kind = context.req.query("kind");
   const rows = await context.env.DB.prepare(
-    `SELECT * FROM records WHERE owner_id=? ${includeDeleted ? "" : "AND deleted_at IS NULL"} ${kind ? "AND kind=?" : ""} ORDER BY updated_at DESC`,
+    `SELECT * FROM records WHERE owner_id=? AND COALESCE(json_extract(data,'$.connectorSource.available'),1)!=0 ${includeDeleted ? "" : "AND deleted_at IS NULL"} ${kind ? "AND kind=?" : ""} ORDER BY updated_at DESC`,
   )
     .bind(context.get("user").id, ...(kind ? [kind] : []))
     .all<RecordRow>();
@@ -237,6 +266,7 @@ app.post("/api/records/batch", async (context) => {
   );
   if (state.response) return context.json(state.response);
   const records = payload.records.map((input) => newRecord(input));
+  for (const input of payload.records) assertNativeInput(input.data);
   const allLinks = [...new Set(records.flatMap((record) => record.links))];
   await validateLinks(context.env.DB, owner, allLinks);
   await validateDataReferences(context.env.DB, owner, {
@@ -272,6 +302,7 @@ app.post("/api/records/batch", async (context) => {
 
 app.post("/api/records", async (context) => {
   const input = parse(recordSchema, await readJson(context.req.raw));
+  assertNativeInput(input.data);
   const owner = context.get("user").id;
   const state = await checkIdempotency(
     context.env.DB,
@@ -346,6 +377,7 @@ app.patch("/api/records/:id", async (context) => {
     version: before.version + 1,
     updatedAt: now(),
   };
+  assertProviderPatch(before, patch);
   // A recorded stage move is historical evidence, not just the current label.
   if (
     record.kind === "application" &&
@@ -512,7 +544,7 @@ app.get("/api/search", async (context) => {
   const expression = searchExpression(query);
   if (!expression) return context.json({ records: [] });
   const rows = await context.env.DB.prepare(
-    "SELECT r.* FROM records_fts JOIN records r ON r.id=records_fts.id WHERE records_fts MATCH ? AND r.owner_id=? AND records_fts.owner_id=? AND r.deleted_at IS NULL ORDER BY bm25(records_fts),r.updated_at DESC LIMIT 60",
+    "SELECT r.* FROM records_fts JOIN records r ON r.id=records_fts.id WHERE records_fts MATCH ? AND r.owner_id=? AND records_fts.owner_id=? AND r.deleted_at IS NULL AND COALESCE(json_extract(r.data,'$.connectorSource.available'),1)!=0 ORDER BY bm25(records_fts),r.updated_at DESC LIMIT 60",
   )
     .bind(expression, context.get("user").id, context.get("user").id)
     .all<RecordRow>();
@@ -522,7 +554,7 @@ app.get("/api/records/:id/related", async (context) => {
   const owner = context.get("user").id;
   await getRecord(context.env.DB, owner, context.req.param("id"));
   const rows = await context.env.DB.prepare(
-    "SELECT DISTINCT r.* FROM records r JOIN record_links l ON (r.id=l.target_id OR r.id=l.source_id) AND r.owner_id=l.owner_id WHERE l.owner_id=? AND (l.source_id=? OR l.target_id=?) AND r.id!=? AND r.deleted_at IS NULL",
+    "SELECT DISTINCT r.* FROM records r JOIN record_links l ON (r.id=l.target_id OR r.id=l.source_id) AND r.owner_id=l.owner_id WHERE l.owner_id=? AND (l.source_id=? OR l.target_id=?) AND r.id!=? AND r.deleted_at IS NULL AND COALESCE(json_extract(r.data,'$.connectorSource.available'),1)!=0",
   )
     .bind(
       owner,
@@ -755,6 +787,14 @@ app.notFound(async (context) => {
   return context.text("Work assets are built with Vite.", 404);
 });
 app.onError((error, context) => {
+  if (error instanceof ProviderFailure) {
+    if (error.status === 429)
+      context.header("Retry-After", String(error.retryAfterSeconds));
+    return context.json(
+      { error: { code: "PROVIDER_UNAVAILABLE", message: error.message } },
+      error.status as 400,
+    );
+  }
   if (error instanceof ApiError)
     return context.json(
       {
@@ -790,4 +830,6 @@ app.onError((error, context) => {
 });
 
 export { app };
-export default app;
+export default {
+  fetch: app.fetch,
+};

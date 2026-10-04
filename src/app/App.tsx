@@ -3,6 +3,8 @@ import {
   Suspense,
   lazy,
   useEffect,
+  useId,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -18,77 +20,29 @@ import {
 } from "react-router-dom";
 import {
   ArrowRight,
-  ArrowUpRight,
   BookOpen,
   BriefcaseBusiness,
-  CalendarDays,
   Check,
   ChevronDown,
-  ChevronRight,
-  Cloud,
-  Code2,
-  Command,
-  Compass,
   FileText,
-  Folder,
   Home,
-  Lightbulb,
+  LogOut,
   Menu,
-  MessageSquare,
-  NotebookPen,
-  Plus,
-  Search,
   Settings2,
-  Sparkles,
-  Users,
   X,
 } from "lucide-react";
 import { GitHubIcon as Github } from "../components/GitHubIcon";
-import { KIND_LABELS, recordUrl, type RecordKind } from "../../shared/model";
-import {
-  Badge,
-  Button,
-  EmptyState,
-  Field,
-  Input,
-  Modal,
-  RecordLinks,
-  Select,
-  Textarea,
-} from "../components/ui";
+import { field } from "../../shared/model";
+import { Button, EmptyState } from "../components/ui";
 import { jsonRequest, request } from "../lib/api";
 import { useWorkspace } from "../lib/workspace";
 import { TodayPage } from "../features/home/TodayPage";
-import { FocusPage } from "../features/home/FocusPage";
+import { getDocumentLinks } from "../features/assets/documentLinks";
+import "./shell.css";
 
-const NotesPage = lazy(() =>
-  import("../features/notes/NotesPage").then((module) => ({
-    default: module.NotesPage,
-  })),
-);
 const LearnPage = lazy(() =>
   import("../features/prepare/LearnPage").then((module) => ({
     default: module.LearnPage,
-  })),
-);
-const PracticePage = lazy(() =>
-  import("../features/prepare/PracticePage").then((module) => ({
-    default: module.PracticePage,
-  })),
-);
-const InterviewsPage = lazy(() =>
-  import("../features/prepare/InterviewsPage").then((module) => ({
-    default: module.InterviewsPage,
-  })),
-);
-const ResourcesPage = lazy(() =>
-  import("../features/prepare/ResourcesPage").then((module) => ({
-    default: module.ResourcesPage,
-  })),
-);
-const CompaniesPage = lazy(() =>
-  import("../features/search/CompaniesPage").then((module) => ({
-    default: module.CompaniesPage,
   })),
 );
 const ApplicationsPage = lazy(() =>
@@ -96,34 +50,9 @@ const ApplicationsPage = lazy(() =>
     default: module.ApplicationsPage,
   })),
 );
-const NetworkPage = lazy(() =>
-  import("../features/search/NetworkPage").then((module) => ({
-    default: module.NetworkPage,
-  })),
-);
 const AssetsPage = lazy(() =>
   import("../features/assets/AssetsPage").then((module) => ({
     default: module.AssetsPage,
-  })),
-);
-const CareerPage = lazy(() =>
-  import("../features/career/CareerPage").then((module) => ({
-    default: module.CareerPage,
-  })),
-);
-const EvidencePage = lazy(() =>
-  import("../features/career/EvidencePage").then((module) => ({
-    default: module.EvidencePage,
-  })),
-);
-const ProjectsPage = lazy(() =>
-  import("../features/career/ProjectsPage").then((module) => ({
-    default: module.ProjectsPage,
-  })),
-);
-const ReviewPage = lazy(() =>
-  import("../features/career/ReviewPage").then((module) => ({
-    default: module.ReviewPage,
   })),
 );
 const SettingsPage = lazy(() =>
@@ -133,46 +62,10 @@ const SettingsPage = lazy(() =>
 );
 
 const NAV = [
-  {
-    label: "",
-    items: [
-      { to: "/today", label: "Today", icon: Home },
-      { to: "/focus", label: "Focus", icon: Sparkles },
-    ],
-  },
-  {
-    label: "GET READY",
-    items: [
-      { to: "/learn", label: "Learn", icon: BookOpen },
-      { to: "/practice", label: "Practice", icon: Code2 },
-      { to: "/interviews", label: "Interviews", icon: MessageSquare },
-    ],
-  },
-  {
-    label: "MAKE YOUR MOVE",
-    items: [
-      { to: "/companies", label: "Companies", icon: Compass },
-      { to: "/applications", label: "Applications", icon: BriefcaseBusiness },
-      { to: "/network", label: "Your people", icon: Users },
-    ],
-  },
-  {
-    label: "BUILD YOUR STORY",
-    items: [
-      { to: "/career", label: "Your direction", icon: ArrowUpRight },
-      { to: "/evidence", label: "Work evidence", icon: Lightbulb },
-      { to: "/projects", label: "Projects", icon: Folder },
-      { to: "/assets", label: "Career assets", icon: FileText },
-    ],
-  },
-  {
-    label: "KEEP IT TOGETHER",
-    items: [
-      { to: "/notes", label: "Notes", icon: NotebookPen },
-      { to: "/resources", label: "Resources", icon: BookOpen },
-      { to: "/review", label: "Weekly review", icon: CalendarDays },
-    ],
-  },
+  { to: "/home", label: "Home", icon: Home },
+  { to: "/learn", label: "Learn", icon: BookOpen },
+  { to: "/applications", label: "Applications", icon: BriefcaseBusiness },
+  { to: "/documents", label: "Documents", icon: FileText },
 ];
 
 class PageBoundary extends Component<
@@ -186,11 +79,11 @@ class PageBoundary extends Component<
   render() {
     return this.state.failed ? (
       <EmptyState
-        title="This page needs a fresh start"
-        description="Your saved workspace is safe. Reload to return to it."
+        title="This page could not load"
+        description="Reload to retry. Saved records remain available."
         action={
-          <Button onClick={() => location.reload()}>
-            Reload workspace
+          <Button onClick={() => window.location.reload()}>
+            Reload
             <ArrowRight size={16} />
           </Button>
         }
@@ -203,190 +96,285 @@ class PageBoundary extends Component<
 
 function Loading() {
   return (
-    <div className="loading-state">
+    <div className="loading-state" role="status">
       <div className="work-symbol">
         w<span>↗</span>
       </div>
-      <p>Making room for your next move…</p>
+      <p>Loading…</p>
     </div>
   );
 }
 
 function Login() {
-  const { openDemo, configured, error, notify } = useWorkspace();
+  const { openDemo, configured, error } = useWorkspace();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [failureMessage, setFailureMessage] = useState("");
   const login = async () => {
     setBusy(true);
+    setFailureMessage("");
     try {
       const response = await request<{ url: string }>(
         "/api/auth/sign-in/social",
         jsonRequest("POST", {
           provider: "github",
-          callbackURL: `${location.origin}/today`,
+          callbackURL: `${window.location.origin}/home`,
         }),
       );
-      if (!response.url) throw new Error("Sign-in is not ready yet.");
-      location.assign(response.url);
+      if (!response.url) throw new Error("Sign-in is unavailable.");
+      window.location.assign(response.url);
     } catch (failure) {
-      notify(
+      setFailureMessage(
         failure instanceof Error ? failure.message : "Could not start sign-in.",
-        "error",
       );
       setBusy(false);
     }
   };
   return (
-    <main className="login-page">
-      <header>
-        <Link to="/" className="brand brand-light">
-          <span className="brand-word">
-            work<span>↗</span>
-          </span>
-          <span className="brand-tag">MAKE YOUR NEXT MOVE</span>
-        </Link>
-        <Badge tone="lime">YOUR CAREER, YOUR WAY</Badge>
-      </header>
-      <section className="login-layout">
-        <div className="login-intro">
-          <p className="eyebrow">A LITTLE MOMENTUM. A BIGGER CHAPTER.</p>
-          <h1>
-            Good things
-            <br />
-            take <span>work</span>
-            <i>.</i>
-          </h1>
-          <p>
-            Your ideas, interview prep, applications, and the work you're proud
-            of. Finally, in one place.
+    <main className="work-signin-page">
+      <Link to="/" className="brand signin-brand" aria-label="Work">
+        <span className="brand-word">
+          work<span>↗</span>
+        </span>
+      </Link>
+      <section className="signin-card">
+        <div className="signin-mark" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <span>↗</span>
+        </div>
+        <h1>Sign in</h1>
+        <Button disabled={!configured || busy} onClick={() => void login()}>
+          <Github size={18} />
+          {busy ? "Opening GitHub…" : "Sign in with GitHub"}
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            openDemo();
+            navigate("/home");
+          }}
+        >
+          Open demo
+          <ArrowRight size={17} />
+        </Button>
+        {!configured && (
+          <p className="field-hint">
+            Sign-in is unavailable in this environment. You can open the demo.
           </p>
-          <div className="login-actions">
-            <Button disabled={!configured || busy} onClick={() => void login()}>
-              <Github size={18} />
-              {busy ? "Opening GitHub…" : "Your private workspace"}
-              <ArrowRight size={19} />
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                openDemo();
-                navigate("/today");
-              }}
-            >
-              Take a look around
-              <ArrowUpRight size={18} />
-            </Button>
-          </div>
-          {!configured && (
-            <p className="login-setup-note">
-              Private sign-in is being set up. The preview is ready to explore.
-            </p>
-          )}
-          {error && <p className="notice notice-warning">{error}</p>}
-          <div className="login-promise">
-            <Check size={15} />
-            Private by default<span>•</span>
-            <Check size={15} />
-            Made for real progress
-          </div>
-        </div>
-        <div className="login-art" aria-hidden="true">
-          <div className="art-note">
-            <span>ONE USEFUL THING</span>
-            <strong>
-              What's your
-              <br />
-              next move?
-            </strong>
-            <div>
-              <i />
-              Write a first sentence
-            </div>
-            <div>
-              <i />
-              Make a little progress
-            </div>
-            <div>
-              <i />
-              Pick it up tomorrow
-            </div>
-            <b>↗</b>
-          </div>
-          <div className="art-sticker">
-            LET'S
-            <br />
-            GO<span>✳</span>
-          </div>
-          <div className="art-label">
-            less scattered.
-            <br />
-            <strong>more started.</strong>
-          </div>
-          <span className="art-plus">+</span>
-          <span className="art-cross">✳</span>
-        </div>
+        )}
+        {(failureMessage || error) && (
+          <p className="notice notice-warning" role="alert">
+            {failureMessage || error}
+          </p>
+        )}
       </section>
-      <footer>
-        Made for the next chapter.<span>Learning · Doing · Becoming</span>
-      </footer>
     </main>
   );
 }
 
-function Shell() {
-  const {
-    user,
-    mode,
-    records,
-    pending,
-    error,
-    preferences,
-    toasts,
-    dismissToast,
-  } = useWorkspace();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [captureOpen, setCaptureOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
+function AccountMenu({ className = "" }: { className?: string }) {
+  const { user, mode, signOut, notify } = useWorkspace();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const firstFocus = useRef<"first" | "last">("first");
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const menuId = useId();
   const location = useLocation();
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const items =
+      menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
+    items?.[firstFocus.current === "last" ? items.length - 1 : 0]?.focus();
+    const outside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  const name =
+    mode === "demo" ? "Demo" : user?.name || user?.email || "Account";
+  return (
+    <div
+      ref={root}
+      className={`account-control ${className}`}
+      onBlur={(event) => {
+        if (
+          event.relatedTarget &&
+          !event.currentTarget.contains(event.relatedTarget as Node)
+        )
+          setOpen(false);
+      }}
+    >
+      <button
+        ref={trigger}
+        className="account-trigger"
+        aria-label={`Account: ${name}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        onClick={() => {
+          firstFocus.current = "first";
+          setOpen(!open);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            firstFocus.current = event.key === "ArrowUp" ? "last" : "first";
+            setOpen(true);
+          }
+          if (event.key === "Escape") close();
+        }}
+      >
+        <span className="account-avatar" aria-hidden="true">
+          {name.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="account-name">{name}</span>
+        <ChevronDown size={15} />
+      </button>
+      {open && (
+        <div
+          ref={menu}
+          id={menuId}
+          className="account-menu"
+          role="menu"
+          aria-label="Account"
+          onKeyDown={(event) => {
+            const items = [
+              ...(menu.current?.querySelectorAll<HTMLElement>(
+                '[role="menuitem"]',
+              ) ?? []),
+            ];
+            const index = items.indexOf(document.activeElement as HTMLElement);
+            if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? items.length - 1
+                    : (index +
+                        (event.key === "ArrowDown" ? 1 : -1) +
+                        items.length) %
+                      items.length;
+              items[next]?.focus();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.stopPropagation();
+              close();
+            }
+          }}
+        >
+          {user?.email && mode !== "demo" && (
+            <p className="account-email" role="presentation">
+              {user.email}
+            </p>
+          )}
+          <Link role="menuitem" to="/settings" onClick={() => setOpen(false)}>
+            <Settings2 size={16} />
+            Settings
+          </Link>
+          <button
+            role="menuitem"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void signOut().catch((failure) => {
+                notify(
+                  failure instanceof Error
+                    ? failure.message
+                    : "Could not sign out.",
+                  "error",
+                );
+                setBusy(false);
+                close();
+              });
+            }}
+          >
+            <LogOut size={16} />
+            {busy
+              ? "Signing out…"
+              : mode === "demo"
+                ? "Leave demo"
+                : "Sign out"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Shell() {
+  const { pending, error, toasts, dismissToast } = useWorkspace();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileViewport, setMobileViewport] = useState(
+    () => window.matchMedia("(max-width: 760px)").matches,
+  );
+  const sidebar = useRef<HTMLElement>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const location = useLocation();
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const resize = () => {
+      setMobileViewport(media.matches);
+      if (!media.matches) setMobileOpen(false);
+    };
+    media.addEventListener("change", resize);
+    return () => media.removeEventListener("change", resize);
+  }, []);
   useEffect(() => {
     setMobileOpen(false);
     window.scrollTo({ top: 0 });
   }, [location.pathname]);
   useEffect(() => {
-    const handle = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement;
-      const typing =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        target.isContentEditable;
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusables = () =>
+      [
+        ...(sidebar.current?.querySelectorAll<HTMLElement>(
+          'a, button:not([disabled]), [tabindex="0"]',
+        ) ?? []),
+      ].filter((item) => item.getClientRects().length);
+    focusables()[0]?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
         event.preventDefault();
-        setSearchOpen(true);
+        setMobileOpen(false);
       }
-      if (
-        !typing &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        event.key.toLowerCase() === "c"
-      ) {
-        event.preventDefault();
-        setCaptureOpen(true);
+      if (event.key === "Tab") {
+        const items = focusables();
+        const first = items[0];
+        const last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
       }
-      if (event.key === "Escape") setMobileOpen(false);
     };
-    window.addEventListener("keydown", handle);
-    return () => window.removeEventListener("keydown", handle);
-  }, []);
-  const current = NAV.flatMap((group) => group.items).find((item) =>
-    location.pathname.startsWith(item.to),
-  );
-  const actionCount = records.filter(
-    (record) => record.kind === "action" && record.data.status !== "done",
-  ).length;
+    document.addEventListener("keydown", keydown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", keydown);
+      menuTrigger.current?.focus();
+    };
+  }, [mobileOpen]);
   return (
-    <div className="workspace-shell">
+    <div className="workspace-shell simple-shell">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
@@ -397,125 +385,78 @@ function Shell() {
           onClick={() => setMobileOpen(false)}
         />
       )}
-      <aside className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}>
-        <Link to="/today" className="brand">
-          <span className="brand-word">
-            work<span>↗</span>
-          </span>
-          <span className="brand-tag">MAKE YOUR NEXT MOVE</span>
-        </Link>
-        <div className="sidebar-space">
-          <span className="space-avatar">
-            {(preferences.displayName || user?.name || "M")[0].toUpperCase()}
-          </span>
-          <div>
-            <strong>{preferences.displayName || user?.name}'s workspace</strong>
-            <small>
-              {mode === "demo"
-                ? "Preview · just this tab"
-                : "A little more you, every day"}
-            </small>
-          </div>
-          <ChevronDown size={14} />
+      <aside
+        ref={sidebar}
+        id="primary-sidebar"
+        className={`sidebar ${mobileOpen ? "sidebar-open" : ""}`}
+        role={mobileOpen ? "dialog" : undefined}
+        aria-modal={mobileOpen || undefined}
+        aria-label="Navigation"
+        aria-hidden={(mobileViewport && !mobileOpen) || undefined}
+        inert={(mobileViewport && !mobileOpen) || undefined}
+      >
+        <div className="sidebar-brand-row">
+          <Link to="/home" className="brand" aria-label="Work home">
+            <span className="brand-word">
+              work<span>↗</span>
+            </span>
+          </Link>
+          <button
+            className="simple-nav-close"
+            aria-label="Close navigation"
+            onClick={() => setMobileOpen(false)}
+          >
+            <X size={20} />
+          </button>
         </div>
         <nav aria-label="Main navigation">
-          {NAV.map((group) => (
-            <div className="nav-group" key={group.label}>
-              {group.label && <p>{group.label}</p>}
-              {group.items.map((item) => (
-                <NavLink
-                  to={item.to}
-                  key={item.to}
-                  className={({ isActive }) =>
-                    `nav-link ${isActive ? "nav-link-active" : ""}`
-                  }
-                >
-                  <item.icon size={18} strokeWidth={1.7} />
-                  <span>{item.label}</span>
-                  {item.to === "/today" && actionCount > 0 && (
-                    <span className="nav-count">{actionCount}</span>
-                  )}
-                </NavLink>
-              ))}
-            </div>
+          {NAV.map((item) => (
+            <NavLink
+              to={item.to}
+              key={item.to}
+              className={({ isActive }) =>
+                `nav-link ${isActive ? "nav-link-active" : ""}`
+              }
+            >
+              <item.icon size={19} strokeWidth={1.8} />
+              <span>{item.label}</span>
+            </NavLink>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button
-            className="sidebar-capture"
-            onClick={() => setCaptureOpen(true)}
-          >
-            <Plus size={17} />
-            <span>Catch a thought</span>
-            <kbd>C</kbd>
-          </button>
-          <NavLink to="/settings" className="nav-link">
-            <Settings2 size={17} />
-            <span>Make it yours</span>
-          </NavLink>
-          <div className="sidebar-sync">
-            <span className="status-dot" />
-            {mode === "demo"
-              ? "Preview workspace"
-              : pending
-                ? `${pending} change${pending === 1 ? "" : "s"} to sync`
-                : "Your work, kept safe"}
-            <Cloud size={14} />
-          </div>
+          <AccountMenu />
         </div>
       </aside>
-      <div className="workspace-main">
-        <header className="workspace-topbar">
-          <div className="topbar-breadcrumb">
-            <Button
-              variant="ghost"
-              className="icon-button mobile-menu"
-              aria-label="Open navigation"
-              onClick={() => setMobileOpen(true)}
-            >
-              <Menu size={21} />
-            </Button>
-            <span>YOUR WORKSPACE</span>
-            <ChevronRight size={13} />
-            <strong>{current?.label ?? "Settings"}</strong>
-          </div>
+      <div className="workspace-main" inert={mobileOpen || undefined}>
+        <header className="simple-mobile-header">
           <button
-            className="global-search-trigger"
-            onClick={() => setSearchOpen(true)}
+            ref={menuTrigger}
+            className="simple-menu-trigger"
+            aria-label="Open navigation"
+            aria-expanded={mobileOpen}
+            aria-controls="primary-sidebar"
+            onClick={() => setMobileOpen(true)}
           >
-            <Search size={16} />
-            <span>Find a thought, a plan, a next step…</span>
-            <kbd>
-              <Command size={11} />K
-            </kbd>
+            <Menu size={22} />
           </button>
-          <button
-            className="topbar-capture"
-            aria-label="Quick capture"
-            onClick={() => setCaptureOpen(true)}
-          >
-            <Plus size={17} />
-          </button>
+          <Link to="/home" className="mobile-work-brand" aria-label="Work home">
+            work<span>↗</span>
+          </Link>
+          <AccountMenu className="mobile-account" />
         </header>
-        {mode === "demo" && (
-          <div className="demo-banner">
-            <Sparkles size={15} />
-            <span>
-              Preview workspace. Sample records and edits stay in this tab.
-            </span>
-            <button
-              onClick={() => {
-                sessionStorage.removeItem("work-demo-active");
-                locationReload();
-              }}
-            >
-              Your private workspace
-              <ArrowRight size={13} />
-            </button>
-          </div>
-        )}
         <main id="main-content" className="page-container">
-          {error && <div className="notice notice-warning">{error}</div>}
+          {pending > 0 && (
+            <Link className="pending-changes" to="/settings#device-drafts">
+              {pending} unsynced change{pending === 1 ? "" : "s"}. Review in
+              Settings
+              <ArrowRight size={13} />
+            </Link>
+          )}
+          {error && (
+            <div className="notice notice-warning" role="alert">
+              {error}
+            </div>
+          )}
           <PageBoundary key={location.pathname}>
             <Suspense fallback={<Loading />}>
               <Outlet />
@@ -523,26 +464,18 @@ function Shell() {
           </PageBoundary>
         </main>
       </div>
-      <nav className="mobile-nav" aria-label="Mobile navigation">
-        <NavLink to="/today">
-          <Home size={19} />
-          Today
-        </NavLink>
-        <button onClick={() => setCaptureOpen(true)}>
-          <Plus size={20} />
-          Capture
-        </button>
-        <button onClick={() => setSearchOpen(true)}>
-          <Search size={19} />
-          Find
-        </button>
-        <button onClick={() => setMobileOpen(true)}>
-          <Menu size={20} />
-          More
-        </button>
+      <nav
+        className="mobile-nav"
+        aria-label="Mobile navigation"
+        inert={mobileOpen || undefined}
+      >
+        {NAV.map((item) => (
+          <NavLink to={item.to} key={item.to}>
+            <item.icon size={19} />
+            {item.label}
+          </NavLink>
+        ))}
       </nav>
-      <QuickCapture open={captureOpen} onClose={() => setCaptureOpen(false)} />
-      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
       <div className="toast-stack" aria-live="polite">
         {toasts.map((toast) => (
           <div className={`toast toast-${toast.tone}`} key={toast.id}>
@@ -552,7 +485,7 @@ function Shell() {
               ) : toast.tone === "success" ? (
                 <Check size={17} />
               ) : (
-                <Cloud size={17} />
+                "i"
               )}
             </span>
             <p>{toast.message}</p>
@@ -569,248 +502,77 @@ function Shell() {
   );
 }
 
-function locationReload() {
-  window.location.assign("/");
+function Redirect({ to }: { to: string }) {
+  const location = useLocation();
+  return <Navigate replace to={`${to}${location.search}${location.hash}`} />;
 }
 
-function QuickCapture({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  const { create, notify } = useWorkspace();
-  const [kind, setKind] = useState<RecordKind>("note");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [links, setLinks] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const navigate = useNavigate();
-  const save = async (andOpen = false) => {
-    if (!title.trim() && !body.trim()) return;
-    setBusy(true);
-    try {
-      const data =
-        kind === "action"
-          ? {
-              status: "todo",
-              firstStep: body,
-              estimatedMinutes: 15,
-              priority: "normal",
-            }
-          : kind === "achievement"
-            ? { verified: false }
-            : kind === "resource"
-              ? { url: body.trim(), category: "Saved link" }
-              : { collection: "Inbox" };
-      const record = await create({
-        kind,
-        title: title.trim() || body.trim().split("\n")[0].slice(0, 100),
-        body,
-        links,
-        data,
-      });
-      setTitle("");
-      setBody("");
-      setLinks([]);
-      onClose();
-      notify("Caught. You can organise it later.");
-      if (andOpen) navigate(recordUrl(record));
-    } catch (error) {
-      notify(
-        error instanceof Error ? error.message : "Could not capture this.",
-        "error",
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Catch it before it goes"
-      description="A thought, an action, a small win. Put it down; sort it later."
-    >
-      <form
-        className="stack"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void save();
-        }}
-      >
-        <div className="capture-types">
-          {[
-            { value: "note", icon: NotebookPen, label: "Thought" },
-            { value: "action", icon: Check, label: "Next step" },
-            { value: "achievement", icon: Lightbulb, label: "Work win" },
-            { value: "resource", icon: BookOpen, label: "Link" },
-          ].map((item) => (
-            <button
-              type="button"
-              className={kind === item.value ? "active" : ""}
-              key={item.value}
-              onClick={() => setKind(item.value as RecordKind)}
-            >
-              <item.icon size={17} />
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <Field label="Give it a name">
-          <Input
-            autoFocus
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder={
-              kind === "action"
-                ? "One useful thing I could do…"
-                : "A thought worth keeping…"
-            }
-          />
-        </Field>
-        <Field label={kind === "resource" ? "URL" : "Put it down"}>
-          <Textarea
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            rows={5}
-            placeholder={
-              kind === "achievement"
-                ? "What happened? What did you contribute?"
-                : "No need to make it perfect."
-            }
-          />
-        </Field>
-        <RecordLinks value={links} onChange={setLinks} />
-        <div className="modal-actions">
-          <Button
-            variant="secondary"
-            type="button"
-            disabled={busy || (!title.trim() && !body.trim())}
-            onClick={() => void save(true)}
-          >
-            Save & open
-            <ArrowUpRight size={15} />
-          </Button>
-          <Button
-            type="submit"
-            disabled={busy || (!title.trim() && !body.trim())}
-          >
-            {busy ? "Saving…" : "Keep this"}
-            <Check size={16} />
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+function LegacyRedirect({ kind }: { kind: string }) {
+  const location = useLocation();
+  const source = new URLSearchParams(location.search);
+  const params = new URLSearchParams({ legacy: kind });
+  const record =
+    source.get("record") ||
+    source.get("selected") ||
+    location.pathname.split("/").filter(Boolean)[1];
+  if (record) params.set("record", record);
+  return <Navigate replace to={`/settings?${params.toString()}#recovery`} />;
 }
 
-function GlobalSearch({
-  open,
-  onClose,
-}: {
-  open: boolean;
-  onClose: () => void;
-}) {
-  const { records, notify } = useWorkspace();
-  const [query, setQuery] = useState("");
-  const [kind, setKind] = useState("all");
-  const [results, setResults] = useState(records);
-  const navigate = useNavigate();
-  useEffect(() => {
-    if (!open) return;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      if (!query.trim())
-        setResults(
-          records
-            .slice()
-            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-            .slice(0, 20),
-        );
-      else
-        void request<{ records: typeof records }>(
-          `/api/search?q=${encodeURIComponent(query.trim())}`,
-          { signal: controller.signal },
-        )
-          .then((response) => setResults(response.records))
-          .catch((error) => {
-            if (!controller.signal.aborted) notify(String(error), "error");
-          });
-    }, 200);
-    return () => {
-      clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [open, query, records, notify]);
-  const filtered = results.filter(
-    (record) => kind === "all" || record.kind === kind,
-  );
+function AssetsRedirect() {
+  const { records, preferences } = useWorkspace();
+  const location = useLocation();
+  const params = new URLSearchParams(location.search);
+  const id = params.get("record") || params.get("selected");
+  const documents = getDocumentLinks(records, preferences);
+  if (
+    id &&
+    documents.resume.record?.id !== id &&
+    documents.coverLetter.record?.id !== id
+  )
+    return <LegacyRedirect kind="assets" />;
+  return <Redirect to="/documents" />;
+}
+
+function PracticeRedirect() {
+  const location = useLocation();
+  const { records } = useWorkspace();
+  const source = new URLSearchParams(location.search);
+  const requested =
+    source.get("problem") || source.get("record") || source.get("selected");
+  const record = records.find((item) => item.id === requested);
+  const slug = record
+    ? field(record, "problemSlug") || field(record, "problemId")
+    : requested;
+  if (record && !slug) return <LegacyRedirect kind="practice" />;
+  const params = new URLSearchParams({ view: "roadmap" });
+  if (slug) params.set("problem", slug);
+  return <Navigate replace to={`/learn?${params.toString()}`} />;
+}
+
+function InterviewsRedirect() {
+  const { records } = useWorkspace();
+  const location = useLocation();
+  const source = new URLSearchParams(location.search);
+  const id =
+    source.get("interview") || source.get("record") || source.get("selected");
+  const record = records.find((item) => item.id === id);
+  if (record?.kind === "story" || source.get("tab") === "stories")
+    return <LegacyRedirect kind="stories" />;
+  const applicationId =
+    source.get("application") ||
+    field(record, "applicationId") ||
+    records.find(
+      (item) => item.kind === "application" && record?.links.includes(item.id),
+    )?.id;
+  const params = new URLSearchParams();
+  if (applicationId) params.set("record", applicationId);
+  if (id) params.set("interview", id);
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Find your thread"
-      description="Search across notes, opportunities, preparation, and work evidence."
-      size="wide"
-    >
-      <div className="stack">
-        <div className="toolbar">
-          <div className="input-with-icon grow">
-            <Search size={18} />
-            <Input
-              autoFocus
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              aria-label="Search workspace"
-              placeholder="A company, a concept, a note…"
-            />
-          </div>
-          <Select
-            aria-label="Filter search by type"
-            value={kind}
-            onChange={(event) => setKind(event.target.value)}
-          >
-            <option value="all">Everything</option>
-            {Object.entries(KIND_LABELS).map(([value, label]) => (
-              <option value={value} key={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="search-results">
-          {filtered.slice(0, 40).map((record) => (
-            <button
-              className="search-result"
-              key={record.id}
-              onClick={() => {
-                onClose();
-                navigate(recordUrl(record));
-              }}
-            >
-              <span className="search-result-kind">
-                {KIND_LABELS[record.kind]}
-              </span>
-              <span>
-                <strong>{record.title}</strong>
-                <small>
-                  {record.body.replace(/[#*_`]/g, "").slice(0, 120)}
-                </small>
-              </span>
-              <ArrowUpRight size={17} />
-            </button>
-          ))}
-          {filtered.length === 0 && (
-            <EmptyState
-              title="No thread yet"
-              description="Try another term or capture something new."
-            />
-          )}
-        </div>
-      </div>
-    </Modal>
+    <Navigate
+      replace
+      to={`/applications${params.size ? `?${params.toString()}` : ""}`}
+    />
   );
 }
 
@@ -821,32 +583,42 @@ export default function App() {
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Navigate to="/today" replace />} />
-        <Route path="today" element={<TodayPage />} />
-        <Route path="focus" element={<FocusPage />} />
-        <Route path="notes" element={<NotesPage />} />
+        <Route index element={<Navigate to="/home" replace />} />
+        <Route path="home" element={<TodayPage />} />
         <Route path="learn" element={<LearnPage />} />
-        <Route path="practice" element={<PracticePage />} />
-        <Route path="interviews" element={<InterviewsPage />} />
-        <Route path="resources" element={<ResourcesPage />} />
-        <Route path="companies" element={<CompaniesPage />} />
         <Route path="applications" element={<ApplicationsPage />} />
-        <Route path="network" element={<NetworkPage />} />
-        <Route path="assets" element={<AssetsPage />} />
-        <Route path="career" element={<CareerPage />} />
-        <Route path="evidence" element={<EvidencePage />} />
-        <Route path="projects" element={<ProjectsPage />} />
-        <Route path="review" element={<ReviewPage />} />
+        <Route path="documents" element={<AssetsPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
+        <Route path="today" element={<Redirect to="/home" />} />
+        <Route path="assets" element={<AssetsRedirect />} />
+        <Route path="focus" element={<Redirect to="/learn" />} />
+        <Route path="practice" element={<PracticeRedirect />} />
+        <Route path="interviews" element={<InterviewsRedirect />} />
+        {[
+          "notes",
+          "resources",
+          "companies",
+          "network",
+          "career",
+          "evidence",
+          "projects",
+          "review",
+          "connectors",
+        ].map((kind) => (
+          <Route
+            key={kind}
+            path={`${kind}/*`}
+            element={<LegacyRedirect kind={kind} />}
+          />
+        ))}
         <Route
           path="*"
           element={
             <EmptyState
-              title="That page wandered off"
-              description="You can always return to your next move."
+              title="Page not found"
               action={
-                <Link className="button button-primary" to="/today">
-                  Back to Today
+                <Link className="button button-primary" to="/home">
+                  Home
                   <ArrowRight size={17} />
                 </Link>
               }

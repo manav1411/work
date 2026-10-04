@@ -1,0 +1,241 @@
+import { useId, useState, type FormEvent } from "react";
+import { field, type WorkRecord } from "../../../shared/model";
+import { Button, Field, Input, Modal, Select } from "../../components/ui";
+import { webDestination } from "../assets/documentLinks";
+import { isoToZonedInput, zonedDateTimeToISO } from "../prepare/helpers";
+import { errorMessage } from "./domain";
+import { useSavingWorkspace as useWorkspace } from "./useSaving";
+import "./applications.css";
+import { applicationCompany } from "./applicationRecords";
+export { associatedInterviews, interviewTime } from "./applicationRecords";
+
+interface InterviewEditorProps {
+  record?: WorkRecord;
+  applicationId?: string;
+  open: boolean;
+  onClose: () => void;
+}
+
+export function InterviewEditor(props: InterviewEditorProps) {
+  return (
+    <Modal
+      open={props.open}
+      onClose={props.onClose}
+      title={props.record ? "Edit interview" : "Schedule interview"}
+    >
+      {props.open && (
+        <InterviewForm
+          key={`${props.record?.id || "new"}:${props.record?.version || 0}:${props.applicationId || ""}`}
+          {...props}
+        />
+      )}
+    </Modal>
+  );
+}
+
+function InterviewForm({
+  record,
+  applicationId,
+  onClose,
+}: InterviewEditorProps) {
+  const { records, preferences, create, update, pending } = useWorkspace();
+  const applications = records.filter(
+    (item) => item.kind === "application" && !item.deletedAt,
+  );
+  const existingApplicationId =
+    field(record, "applicationId") ||
+    applications.find((item) => record?.links.includes(item.id))?.id ||
+    "";
+  const [chosenApplicationId, setApplicationId] = useState(
+    applicationId || existingApplicationId,
+  );
+  const [title, setTitle] = useState(record?.title || "");
+  const [timezone, setTimezone] = useState(
+    field(record, "timezone", preferences.timezone),
+  );
+  const [time, setTime] = useState(
+    isoToZonedInput(field(record, "startsAt"), timezone),
+  );
+  const [meetingUrl, setMeetingUrl] = useState(field(record, "meetingUrl"));
+  const [sourceUrl, setSourceUrl] = useState(field(record, "sourceUrl"));
+  const [status, setStatus] = useState(field(record, "status", "Scheduled"));
+  const [error, setError] = useState("");
+  const datalistId = useId();
+  const application = applications.find(
+    (item) => item.id === chosenApplicationId,
+  );
+  const statuses = [
+    ...new Set(["Scheduled", "Completed", "Cancelled", "Rescheduling", status]),
+  ];
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    setError("");
+    try {
+      const startsAt = zonedDateTimeToISO(time, timezone);
+      for (const [label, value] of [
+        ["Meeting URL", meetingUrl],
+        ["Source URL", sourceUrl],
+      ]) {
+        if (value.trim() && !webDestination(value))
+          throw new Error(
+            `${label} must be an http or https URL without embedded credentials.`,
+          );
+      }
+      const savedTitle =
+        title.trim() || (application ? `${application.title} — interview` : "");
+      if (!savedTitle)
+        throw new Error(
+          "Give the appointment a name or choose an application.",
+        );
+      const links = [
+        ...new Set([
+          ...(record?.links || []).filter(
+            (id) => !applications.some((item) => item.id === id),
+          ),
+          ...(chosenApplicationId ? [chosenApplicationId] : []),
+        ]),
+      ];
+      const input = {
+        title: savedTitle,
+        links,
+        data: {
+          ...record?.data,
+          startsAt,
+          timezone: timezone.trim(),
+          applicationId: chosenApplicationId,
+          meetingUrl: webDestination(meetingUrl),
+          sourceUrl: webDestination(sourceUrl),
+          status,
+        },
+      };
+      if (record) await update(record.id, input);
+      else await create({ kind: "interview", ...input });
+      onClose();
+    } catch (failure) {
+      setError(errorMessage(failure));
+    }
+  }
+
+  return (
+    <form className="stack" onSubmit={(event) => void save(event)}>
+      {!applicationId && (
+        <Field label="Application">
+          <Select
+            value={chosenApplicationId}
+            onChange={(event) => setApplicationId(event.target.value)}
+          >
+            <option value="">Standalone appointment</option>
+            {applications.map((item) => (
+              <option key={item.id} value={item.id}>
+                {applicationCompany(item, records)
+                  ? `${applicationCompany(item, records)} — ${item.title}`
+                  : item.title}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+      {!application && (
+        <Field label="Appointment name">
+          <Input
+            required
+            autoFocus
+            value={title}
+            maxLength={240}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Mock interview"
+          />
+        </Field>
+      )}
+      <Field label="Date and local time">
+        <Input
+          type="datetime-local"
+          required
+          value={time}
+          onChange={(event) => setTime(event.target.value)}
+          autoFocus={!!application}
+        />
+      </Field>
+      <Field label="Timezone">
+        <Input
+          required
+          value={timezone}
+          list={datalistId}
+          maxLength={80}
+          onChange={(event) => setTimezone(event.target.value)}
+        />
+        <datalist id={datalistId}>
+          {[
+            preferences.timezone,
+            "Australia/Melbourne",
+            "America/Los_Angeles",
+            "America/New_York",
+            "Europe/London",
+            "UTC",
+          ]
+            .filter((zone, index, all) => all.indexOf(zone) === index)
+            .map((zone) => (
+              <option key={zone}>{zone}</option>
+            ))}
+        </datalist>
+      </Field>
+      <Field label="Meeting URL">
+        <Input
+          type="url"
+          value={meetingUrl}
+          maxLength={2048}
+          onChange={(event) => setMeetingUrl(event.target.value)}
+          placeholder="Optional"
+        />
+      </Field>
+      <details className="application-optional" open={!!record || undefined}>
+        <summary>Details</summary>
+        <div className="stack">
+          {application && (
+            <Field label="Interview title">
+              <Input
+                value={title}
+                maxLength={240}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder={`${application.title} — interview`}
+              />
+            </Field>
+          )}
+          <Field label="Status">
+            <Select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              {statuses.map((value) => (
+                <option key={value}>{value}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Source URL">
+            <Input
+              type="url"
+              maxLength={2048}
+              value={sourceUrl}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              placeholder="Optional"
+            />
+          </Field>
+        </div>
+      </details>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="inline-actions">
+        <Button type="submit" disabled={!!pending}>
+          {pending ? "Saving…" : "Save interview"}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}

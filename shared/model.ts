@@ -182,36 +182,58 @@ export const KIND_LABELS: Record<RecordKind, string> = {
 };
 
 export const KIND_ROUTES: Record<RecordKind, string> = {
-  action: "/today",
-  note: "/notes",
-  company: "/companies",
+  action: "/settings",
+  note: "/settings",
+  company: "/settings",
   application: "/applications",
-  contact: "/network",
-  interview: "/interviews",
-  story: "/interviews",
-  practice: "/practice",
+  contact: "/settings",
+  interview: "/applications",
+  story: "/settings",
+  practice: "/learn",
   topic: "/learn",
   progress: "/learn",
-  achievement: "/evidence",
-  project: "/projects",
-  asset: "/assets",
-  path: "/career",
-  decision: "/career",
-  review: "/review",
-  focus: "/focus",
-  resource: "/resources",
-  rotation: "/career",
+  achievement: "/settings",
+  project: "/settings",
+  asset: "/documents",
+  path: "/settings",
+  decision: "/settings",
+  review: "/settings",
+  focus: "/settings",
+  resource: "/settings",
+  rotation: "/settings",
 };
 
 export const recordUrl = (record: WorkRecord): string => {
+  const recovery = `/settings?legacy=${record.kind}&record=${encodeURIComponent(record.id)}#recovery`;
   if (
     record.kind === "practice" ||
     (record.kind === "progress" && record.data.category === "problem")
+  ) {
+    const slug = field(record, "problemSlug") || field(record, "problemId");
+    return slug
+      ? `/learn?view=roadmap&problem=${encodeURIComponent(slug)}`
+      : recovery;
+  }
+  if (record.kind === "progress") return recovery;
+  if (record.kind === "topic") {
+    const track = field(record, "track");
+    return track ? `/learn?track=${encodeURIComponent(track)}` : recovery;
+  }
+  if (record.kind === "interview")
+    return `/applications?interview=${encodeURIComponent(record.id)}`;
+  if (
+    record.kind === "asset" &&
+    !(
+      record.data.documentDefault === true ||
+      /^https:\/\/(www\.)?overleaf\.com\//.test(
+        field(record, "sourceUrl") || field(record, "overleaf"),
+      )
+    )
   )
-    return `/practice?record=${encodeURIComponent(field(record, "problemId", record.id))}`;
-  if (record.kind === "progress")
-    return `/learn?record=${encodeURIComponent(field(record, "topicId", record.id))}`;
-  return `${KIND_ROUTES[record.kind]}?record=${encodeURIComponent(record.id)}`;
+    return recovery;
+  return KIND_ROUTES[record.kind] === "/settings"
+    ? recovery
+    : `${KIND_ROUTES[record.kind]}?record=${encodeURIComponent(record.id)}`;
 };
 
 export function localDate(

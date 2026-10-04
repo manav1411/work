@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { DEFAULT_PREFERENCES } from "../shared/model";
+import { DEMO_STATS, DEMO_WEEKS } from "../src/features/learn/demo";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -6,326 +8,305 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("notes save, recover a device draft, restore history and preview an attachment", async ({
+test("demo Learn opens slides and shared homework without external calls or journals", async ({
   page,
 }) => {
-  await page.goto("/notes");
-  await page.getByRole("button", { name: "New note", exact: true }).click();
-  await page
-    .getByLabel("Note title", { exact: true })
-    .fill("A synthetic engineering note");
-  await page
-    .getByLabel("Note content", { exact: true })
-    .fill("## Original explanation\n\nA useful invariant.");
-  await page.getByRole("button", { name: "Save now", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Saved");
-  const recordId = new URL(page.url()).searchParams.get("record")!;
-  await page
-    .getByLabel("Note content", { exact: true })
-    .fill("## Revised explanation\n\nA clearer invariant.");
-  await page.getByRole("button", { name: "Save now", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Saved");
-  await page.getByRole("button", { name: "History", exact: true }).click();
-  await page.getByRole("button", { name: /Version 2 ·/ }).click();
-  await page.getByRole("button", { name: "Restore this version" }).click();
-  await expect(page.getByLabel("Note content", { exact: true })).toHaveValue(
-    "## Original explanation\n\nA useful invariant.",
-  );
-  await page.evaluate((id) => {
-    const store = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
-    const record = store.records.find((item: { id: string }) => item.id === id);
-    localStorage.setItem(
-      `work:note-draft:demo:demo:${id}`,
-      JSON.stringify({
-        title: record.title,
-        body: "A recovered draft that never synced.",
-        collection: record.data.collection,
-        tags: record.tags.join(", "),
-        links: record.links,
-        version: record.version,
-        savedAt: "2026-10-02T10:00:00Z",
-      }),
-    );
-  }, recordId);
-  await page.reload();
-  await page
-    .getByRole("button", { name: "Recover draft", exact: true })
-    .click();
-  await expect(page.getByLabel("Note content", { exact: true })).toHaveValue(
-    "A recovered draft that never synced.",
-  );
-  await expect(page.getByRole("status")).toContainText("Saved");
-  await page.locator(".attachment-upload input").setInputFiles({
-    name: "synthetic-pixel.png",
-    mimeType: "image/png",
-    buffer: Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=",
-      "base64",
-    ),
+  const sourceRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/api\/learning\/|manavdodia\.com\/api\//.test(request.url()))
+      sourceRequests.push(request.url());
   });
+  await page.goto("/learn");
   await expect(
-    page.getByRole("link", { name: "synthetic-pixel.png", exact: true }),
+    page.getByRole("heading", { name: "Learn.", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Preview synthetic-pixel.png", exact: true })
+  await expect(page.locator(".learn-week-card")).toHaveCount(12);
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+  const week = page.locator(".learn-week-card").first();
+  await week.getByRole("button", { name: "Slides", exact: true }).click();
+  const slides = page.getByRole("dialog");
+  await expect(
+    slides.getByText("Demo slide deck.", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(
+    slides.getByRole("heading", { name: "Binary search", exact: true }),
+  ).toBeVisible();
+  await slides.getByRole("button", { name: "Topic 2", exact: true }).click();
+  await expect(
+    slides.getByRole("heading", { name: "Complexity", exact: true }),
+  ).toBeVisible();
+  await slides
+    .getByRole("button", { name: "Close dialog", exact: true })
     .click();
-  await expect(
-    page.getByRole("dialog", { name: "synthetic-pixel.png" }).getByRole("img"),
-  ).toBeVisible();
-});
-
-test("a recovered draft conflicts safely with a newer saved version", async ({
-  page,
-}) => {
-  await page.goto("/notes");
-  await page.getByRole("button", { name: "New note", exact: true }).click();
-  await page.getByLabel("Note title", { exact: true }).fill("Conflict test");
-  await page
-    .getByLabel("Note content", { exact: true })
-    .fill("Newest saved content.");
-  await page.getByRole("button", { name: "Save now", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Saved");
-  const recordId = new URL(page.url()).searchParams.get("record")!;
-  await page.evaluate((id) => {
-    const store = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
-    const record = store.records.find((item: { id: string }) => item.id === id);
-    localStorage.setItem(
-      `work:note-draft:demo:demo:${id}`,
-      JSON.stringify({
-        title: record.title,
-        body: "Older device draft.",
-        collection: "Inbox",
-        tags: "",
-        links: [],
-        version: record.version - 1,
-        savedAt: "2026-10-01T10:00:00Z",
-      }),
-    );
-  }, recordId);
-  await page.reload();
-  await page.getByRole("button", { name: "Recover draft" }).click();
-  await expect(
-    page.getByText("This note changed elsewhere.", { exact: true }),
-  ).toBeVisible();
-  await page.getByText("View the latest saved note", { exact: true }).click();
-  await expect(
-    page
-      .locator(".notice-warning")
-      .getByText("Newest saved content.", { exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", {
-      name: "Save my draft as a new revision",
+  await week.getByRole("button", { name: "Homework", exact: true }).click();
+  const homework = page.getByRole("dialog");
+  await homework
+    .getByRole("checkbox", {
+      name: "Run a Python solution locally",
       exact: true,
     })
+    .check();
+  await expect(
+    homework.getByRole("checkbox", {
+      name: "Run a Python solution locally",
+      exact: true,
+    }),
+  ).toBeChecked();
+  await expect(
+    homework.getByRole("link", { name: "Binary Search", exact: true }),
+  ).toHaveAttribute("href", "https://leetcode.com/problems/binary-search/");
+  await expect(homework.getByRole("textbox")).toHaveCount(0);
+  await homework
+    .getByRole("button", { name: "Close dialog", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("Saved");
-  const content = await page.evaluate(
-    (id) =>
-      JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
-        (item: { id: string }) => item.id === id,
-      ).body,
-    recordId,
-  );
-  expect(content).toBe("Older device draft.");
-});
-
-test("learning records evidence and creates a linked action", async ({
-  page,
-}) => {
-  await page.goto("/learn?record=dsa-week-1");
-  await page.getByLabel("I completed the exercise").check();
-  await page.getByLabel("I can explain the idea without reading").check();
+  await page.reload();
   await page
-    .getByLabel("Explain it in your own words", { exact: true })
-    .fill("Maintain a sorted search interval and shrink it each step.");
-  await page
-    .getByLabel("Exercise result and reflection", { exact: true })
-    .fill(
-      "Implemented lower_bound with tests for duplicates and empty inputs.",
-    );
-  await page.getByLabel("Next review", { exact: true }).fill("2030-10-09");
-  await page
-    .getByRole("button", { name: "Save + add a practice action", exact: true })
+    .locator(".learn-week-card")
+    .first()
+    .getByRole("button", { name: "Homework", exact: true })
     .click();
   await expect(
-    page.getByText("Evidence saved and a practice action added to Today.", {
+    page.getByRole("dialog").getByRole("checkbox", {
+      name: "Run a Python solution locally",
+      exact: true,
+    }),
+  ).toBeChecked();
+  expect(sourceRequests).toEqual([]);
+});
+
+test("Pomodoro pauses and persists one timer through reload and the homework context", async ({
+  page,
+}) => {
+  await page.goto("/learn");
+  const timer = page.locator(".learn-context-bar .learn-pomodoro");
+  await timer.getByRole("button", { name: "Start timer", exact: true }).click();
+  await expect(
+    timer.getByRole("button", { name: "Pause timer", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    timer.getByRole("button", { name: "Pause timer", exact: true }),
+  ).toBeVisible();
+  await page
+    .locator(".learn-week-card")
+    .first()
+    .getByRole("button", { name: "Homework", exact: true })
+    .click();
+  const homeworkTimer = page.getByRole("dialog").locator(".learn-pomodoro");
+  await expect(
+    homeworkTimer.getByRole("button", { name: "Pause timer", exact: true }),
+  ).toBeVisible();
+  await homeworkTimer
+    .getByRole("button", { name: "Pause timer", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await expect(
+    timer.getByRole("button", { name: "Start timer", exact: true }),
+  ).toBeVisible();
+  await timer.getByRole("button", { name: "Reset timer", exact: true }).click();
+  await expect(timer.getByLabel("Pomodoro time remaining")).toHaveText("25:00");
+  await timer
+    .getByRole("button", { name: "Timer settings", exact: true })
+    .click();
+  await timer.getByLabel("Work minutes", { exact: true }).fill("30");
+  await timer.getByLabel("Break minutes", { exact: true }).fill("7");
+  await timer.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(timer.getByLabel("Pomodoro time remaining")).toHaveText("30:00");
+  await timer.getByRole("button", { name: "Break", exact: true }).click();
+  await expect(timer.getByLabel("Break time remaining")).toHaveText("07:00");
+});
+
+test("an expired saved timer finishes accurately after a background interval", async ({
+  page,
+}) => {
+  await page.goto("/learn");
+  await page.getByRole("button", { name: "Start timer", exact: true }).click();
+  await page.evaluate(() => {
+    const key = Object.keys(localStorage).find((key) =>
+      key.startsWith("work-pomodoro:"),
+    )!;
+    const state = JSON.parse(localStorage.getItem(key)!);
+    state.endsAt = Date.now() - 5000;
+    localStorage.setItem(key, JSON.stringify(state));
+  });
+  await page.reload();
+  await expect(page.getByLabel("Pomodoro time remaining")).toHaveText("00:00");
+  await expect(page.getByText("Complete", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Start timer", exact: true }),
+  ).toBeVisible();
+});
+
+test("roadmap and homework use the same confirmed problem history", async ({
+  page,
+}) => {
+  await page.goto("/learn?view=roadmap&problem=binary-search");
+  await expect(
+    page.getByRole("heading", { name: "NeetCode 150", exact: true }),
+  ).toBeVisible();
+  const popover = page.locator(".learn-roadmap-popover");
+  await expect(
+    popover.getByRole("link", { name: "Binary Search", exact: true }),
+  ).toBeVisible();
+  await expect(popover.getByLabel("Confirmed solve")).toHaveCount(1);
+  await page.getByRole("button", { name: "Weeks", exact: true }).click();
+  await page
+    .locator(".learn-week-card")
+    .first()
+    .getByRole("button", { name: "Homework", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog").getByLabel("Confirmed solve"),
+  ).toHaveCount(1);
+});
+
+test("mobile topics scroll with no scrollbar and roadmap uses readable rows", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/learn");
+  const tabs = page.getByRole("tablist", {
+    name: "Learning topics",
+    exact: true,
+  });
+  const dimensions = await tabs.evaluate((element) => ({
+    width: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    scrollbar: getComputedStyle(element).scrollbarWidth,
+    webkitDisplay: getComputedStyle(element, "::-webkit-scrollbar").display,
+  }));
+  expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.width);
+  expect(dimensions.scrollbar).toBe("none");
+  expect(dimensions.webkitDisplay).toBe("none");
+  await page.getByRole("tab", { name: "DSA & Python", exact: true }).focus();
+  await page.keyboard.press("End");
+  await expect(
+    page.getByRole("tab", {
+      name: "Security-informed engineering",
+      exact: true,
+    }),
+  ).toBeFocused();
+  expect(await tabs.evaluate((element) => element.scrollLeft)).toBeGreaterThan(
+    0,
+  );
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+  await page.goto("/learn?view=roadmap&problem=binary-search");
+  await expect(
+    page
+      .locator(".learn-roadmap-list")
+      .getByRole("link", { name: "Binary Search", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("signed-in Learn uses authored source content and rolls back failed shared task writes", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    sessionStorage.removeItem("work-demo-active");
+  });
+  let sourceTask = false;
+  let failWrite = false;
+  const fresh = { fetchedAt: "2026-10-04T00:00:00.000Z", stale: false };
+  const sourceWeek = {
+    ...DEMO_WEEKS[0],
+    title: "Live authored curriculum",
+    slides: [{ content: "# Live authored slide" }],
+    tasks: [{ id: "live-task", label: "Shared live task" }],
+  };
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/session")
+      return route.fulfill({
+        json: {
+          user: {
+            id: "synthetic-learn-owner",
+            name: "Synthetic",
+            email: "synthetic@example.invalid",
+          },
+          local: false,
+          configured: true,
+        },
+      });
+    if (path === "/api/preferences")
+      return route.fulfill({
+        json: {
+          preferences: {
+            ...DEFAULT_PREFERENCES,
+            leetcode: "https://leetcode.com/u/synthetic-handle/",
+          },
+        },
+      });
+    if (path === "/api/records")
+      return route.fulfill({ json: { records: [] } });
+    if (path === "/api/learning/content")
+      return route.fulfill({
+        json: { data: { weeks: [sourceWeek] }, source: fresh },
+      });
+    if (path === "/api/learning/stats")
+      return route.fulfill({
+        json: {
+          data: { ...DEMO_STATS, username: "synthetic-handle" },
+          username: "synthetic-handle",
+          configured: true,
+          source: fresh,
+        },
+      });
+    if (path === "/api/learning/progress") {
+      if (route.request().method() === "POST") {
+        expect(route.request().postDataJSON()).toEqual({
+          taskId: "live-task",
+          done: !sourceTask,
+        });
+        if (failWrite)
+          return route.fulfill({
+            status: 502,
+            json: { error: "Shared task could not be saved." },
+          });
+        sourceTask = !sourceTask;
+      }
+      return route.fulfill({
+        json: {
+          data: { tasks: { "live-task": sourceTask } },
+          username: "synthetic-handle",
+          configured: true,
+          source: fresh,
+        },
+      });
+    }
+    return route.fulfill({ json: { goals: [], connections: [], records: [] } });
+  });
+  await page.goto("/learn");
+  await expect(
+    page.getByRole("heading", {
+      name: "Live authored curriculum",
       exact: true,
     }),
   ).toBeVisible();
-  await page.goto("/today");
-  await expect(
-    page
-      .getByText("Practise: Python for DSA & Binary Search", { exact: true })
-      .first(),
-  ).toBeVisible();
-  const state = await page.evaluate(() =>
-    JSON.parse(sessionStorage.getItem("work-demo-v1")!),
+  await expect(page.locator(".learn-week-card")).toHaveCount(1);
+  await page.getByRole("button", { name: "Homework", exact: true }).click();
+  const task = page
+    .getByRole("dialog")
+    .getByRole("checkbox", { name: "Shared live task", exact: true });
+  await task.check();
+  await expect(task).toBeEnabled();
+  expect(sourceTask).toBe(true);
+  failWrite = true;
+  await task.uncheck();
+  await expect(task).toBeChecked();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Shared task could not be saved.",
   );
-  const evidence = state.records.find(
-    (record: { kind: string; data: { topicId?: string } }) =>
-      record.kind === "progress" && record.data.topicId === "dsa-week-1",
-  );
-  expect(evidence.data.exerciseCompleted).toBe(true);
-  expect(evidence.data.nextReview).toBe("2030-10-09");
-});
-
-test("practice preserves multiple attempts and an editable review schedule", async ({
-  page,
-}) => {
-  await page.goto("/practice");
-  await page
-    .getByRole("button", { name: "Custom problem", exact: true })
-    .click();
-  await page
-    .getByLabel("Problem title", { exact: true })
-    .fill("Synthetic prefix sum exercise");
-  await page
-    .getByLabel("External URL (optional)", { exact: true })
-    .fill("https://example.com/problem");
-  await page.getByLabel("Pattern", { exact: true }).fill("prefix-sums");
-  await page.getByRole("button", { name: "Save problem", exact: true }).click();
-  await page.getByRole("button", { name: "Log attempt", exact: true }).click();
-  await page.getByLabel("Minutes spent", { exact: true }).fill("18");
-  await page
-    .getByLabel("Approach and invariant", { exact: true })
-    .fill("Use cumulative totals to answer range queries.");
-  await page
-    .getByLabel("Time and space complexity", { exact: true })
-    .fill("O(n) build, O(1) per query, O(n) space.");
-  await page
-    .getByLabel("Confidence at explaining", { exact: true })
-    .selectOption("4");
-  await page.getByLabel("Next review", { exact: true }).fill("2030-10-09");
-  await page
-    .getByRole("button", { name: "Save attempt + review", exact: true })
-    .click();
-  await expect(
-    page.getByText("Independent · 18 min", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Log attempt", exact: true }).click();
-  await page.getByLabel("Outcome", { exact: true }).selectOption("Hinted");
-  await page
-    .getByLabel("Hints / help used", { exact: true })
-    .fill("Needed a reminder about the base prefix.");
-  await page
-    .getByRole("button", { name: "Save attempt + review", exact: true })
-    .click();
-  await expect(page.locator(".attempt-card")).toHaveCount(2);
-  await page
-    .getByLabel("Next problem review", { exact: true })
-    .fill("2030-11-01");
-  await page
-    .getByRole("button", { name: "Update schedule", exact: true })
-    .click();
-  await page.reload();
-  await expect(page.locator(".attempt-card")).toHaveCount(2);
-  await expect(
-    page.getByLabel("Next problem review", { exact: true }),
-  ).toHaveValue("2030-11-01");
-});
-
-test("an application schedules a timezone-aware interview with preparation and calendar export", async ({
-  page,
-}) => {
-  await page.goto("/today");
-  await expect(page.locator(".demo-banner")).toBeVisible();
-  const applicationId = await page.evaluate(
-    () =>
-      JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
-        (item: { kind: string }) => item.kind === "application",
-      ).id as string,
-  );
-  await page.goto(`/interviews?application=${applicationId}`);
-  await expect(
-    page.getByRole("dialog", { name: "Schedule interview", exact: true }),
-  ).toBeVisible();
-  await page
-    .getByLabel("Interview title", { exact: true })
-    .fill("Synthetic Pacific interview");
-  await page
-    .getByLabel("Date and local time", { exact: true })
-    .fill("2030-05-11T09:30");
-  await page
-    .getByLabel("Timezone", { exact: true })
-    .fill("America/Los_Angeles");
-  await page
-    .getByRole("button", { name: "Save interview", exact: true })
-    .click();
-  await expect(
-    page
-      .getByRole("heading", {
-        name: "Synthetic Pacific interview",
-        exact: true,
-      })
-      .first(),
-  ).toBeVisible();
-  await page
-    .getByLabel("Questions to ask", { exact: true })
-    .fill("What does production ownership look like for this team?");
-  await page.getByLabel("Read the role description", { exact: true }).check();
-  await page
-    .getByRole("button", { name: "Save preparation / reflection", exact: true })
-    .click();
-  const download = page.waitForEvent("download");
-  await page
-    .getByRole("button", { name: "Add to calendar", exact: true })
-    .click();
-  expect((await download).suggestedFilename()).toBe("interview.ics");
-  const interview = await page.evaluate(() =>
-    JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
-      (item: { title: string }) => item.title === "Synthetic Pacific interview",
-    ),
-  );
-  expect(interview.data.startsAt).toBe("2030-05-11T16:30:00.000Z");
-  expect(interview.links).toContain(applicationId);
-  expect(interview.data.checklist).toContain("Read the role description");
-});
-
-test("STAR stories and mock feedback turn experience into a specific next action", async ({
-  page,
-}) => {
-  await page.goto("/interviews");
-  await page.getByRole("tab", { name: /Story bank/ }).click();
-  await page.getByRole("button", { name: "Add a story", exact: true }).click();
-  await page
-    .getByLabel("Story title", { exact: true })
-    .fill("Synthetic incident ownership story");
-  await page
-    .getByLabel("Situation — concise context", { exact: true })
-    .fill("A toy service became unreliable.");
-  await page
-    .getByLabel("Action — what you personally did and why", { exact: true })
-    .fill("I reproduced the failure and proposed a small, verified fix.");
-  await page
-    .getByLabel("Result — outcome and supporting evidence", { exact: true })
-    .fill("The regression scenario passed.");
-  await page.getByRole("button", { name: "Save story", exact: true }).click();
-  await expect(
-    page
-      .locator(".story-detail")
-      .getByText("The regression scenario passed.", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("tab", { name: /Mocks & feedback/ }).click();
-  await page.getByRole("button", { name: "Log a mock", exact: true }).click();
-  await page
-    .getByLabel("Session title", { exact: true })
-    .fill("Synthetic coding mock");
-  await page
-    .getByLabel("Clarifies requirements and examples", { exact: true })
-    .selectOption("4");
-  await page
-    .getByLabel("Concrete observations / feedback", { exact: true })
-    .fill("The invariant was unclear despite a correct solution.");
-  await page
-    .getByRole("button", { name: "Save mock feedback", exact: true })
-    .click();
-  await page
-    .getByLabel("Action from feedback", { exact: true })
-    .fill("Explain one invariant aloud");
-  await page.getByRole("button", { name: "Add to Today", exact: true }).click();
-  await page.goto("/today");
-  await expect(
-    page.getByText("Explain one invariant aloud", { exact: true }).first(),
-  ).toBeVisible();
 });

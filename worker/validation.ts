@@ -52,7 +52,7 @@ const data = z
       if (!item || typeof item !== "object") return;
       for (const [key, child] of Object.entries(item)) {
         if (
-          /^(url|website|sourceUrl|jobUrl|overleaf|linkedin|github|demoUrl|repoUrl)$/i.test(
+          /^(url|website|sourceUrl|jobUrl|overleaf|linkedin|github|demoUrl|repoUrl|resumeUrl|coverLetterUrl|notionUrl|meetingUrl)$/i.test(
             key,
           ) &&
           typeof child === "string" &&

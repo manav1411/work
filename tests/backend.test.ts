@@ -21,7 +21,12 @@ import type { WorkspaceExport } from "../worker/import-export";
 
 let miniflare: Miniflare;
 let env: Env;
-const migration = ["0001_workspace.sql", "0002_submitted_files.sql"]
+const migration = [
+  "0001_workspace.sql",
+  "0002_submitted_files.sql",
+  "0003_connectors.sql",
+  "0004_simplification.sql",
+]
   .map((filename) =>
     readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
   )
@@ -1703,5 +1708,193 @@ describe("private files, migration and backups", () => {
         }
       ).record.links,
     ).toEqual([]);
+  });
+});
+
+describe("private goals and reduced product", () => {
+  it("never seeds personal goals, preserves concurrent drafts, and rejects foreign edits", async () => {
+    expect(await (await request("/api/goals")).json()).toEqual({ goals: [] });
+    const createInput = {
+      title: "Finish a project",
+      targetDate: "2026-11-01",
+      measure: "manual",
+      target: 10,
+      value: 2,
+    };
+    const createHeaders = { "Idempotency-Key": crypto.randomUUID() };
+    const response = await request(
+      "/api/goals",
+      "POST",
+      createInput,
+      createHeaders,
+    );
+    expect(response.status).toBe(201);
+    const { goal } = (await response.json()) as {
+      goal: import("../shared/goals").Goal;
+    };
+    expect(
+      await (
+        await request("/api/goals", "POST", createInput, createHeaders)
+      ).json(),
+    ).toEqual({ goal });
+    await foreignRecord();
+    await env.DB.prepare(
+      "INSERT INTO goals(id,owner_id,payload,version,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+    )
+      .bind(
+        "foreign-goal",
+        "other-user",
+        JSON.stringify({ ...goal, id: "foreign-goal" }),
+        1,
+        goal.createdAt,
+        goal.updatedAt,
+      )
+      .run();
+    expect(
+      ((await (await request("/api/goals")).json()) as { goals: unknown[] })
+        .goals,
+    ).toHaveLength(1);
+    const {
+      id: _id,
+      createdAt: _created,
+      updatedAt: _updated,
+      deletedAt: _deleted,
+      checkpoints: _points,
+      version,
+      ...input
+    } = goal;
+    void _id;
+    void _created;
+    void _updated;
+    void _deleted;
+    void _points;
+    const updates = await Promise.all([
+      request(`/api/goals/${goal.id}`, "PATCH", {
+        ...input,
+        value: 3,
+        version,
+      }),
+      request(`/api/goals/${goal.id}`, "PATCH", {
+        ...input,
+        value: 4,
+        version,
+      }),
+    ]);
+    expect(updates.map((item) => item.status).sort()).toEqual([200, 409]);
+    expect(
+      (await request("/api/goals/foreign-goal", "PATCH", { ...input, version }))
+        .status,
+    ).toBe(404);
+    expect((await request("/api/goals/foreign-goal", "DELETE")).status).toBe(
+      404,
+    );
+    expect(
+      (
+        await request(
+          "/api/goals",
+          "GET",
+          undefined,
+          {},
+          { ...env, LOCAL_DEV_AUTH: "false" },
+        )
+      ).status,
+    ).toBe(401);
+  });
+  it("records fresh source changes once and round-trips goals, checkpoints and legacy content", async () => {
+    const response = await request("/api/goals", "POST", {
+      title: "Solve a collection",
+      measure: "problems",
+      target: 10,
+    });
+    const { goal } = (await response.json()) as {
+      goal: import("../shared/goals").Goal;
+    };
+    const at = "2026-10-01T00:00:00Z";
+    expect(
+      (
+        await request(`/api/goals/${goal.id}/checkpoint`, "POST", {
+          value: 3,
+          at,
+        })
+      ).status,
+    ).toBe(200);
+    await request(`/api/goals/${goal.id}/checkpoint`, "POST", { value: 3, at });
+    await request(`/api/goals/${goal.id}/checkpoint`, "POST", {
+      value: 1,
+      at: "2026-09-30T00:00:00Z",
+    });
+    expect(
+      (
+        await request(`/api/goals/${goal.id}/checkpoint`, "POST", {
+          value: 8,
+          at,
+          measure: "problems",
+          scope: "new-collection",
+        })
+      ).status,
+    ).toBe(409);
+    const note = await create("Legacy note stays recoverable");
+    const backup = (await (
+      await request("/api/export")
+    ).json()) as WorkspaceExport;
+    expect(backup.version).toBe(2);
+    expect(backup.goals?.[0]).toMatchObject({
+      value: 3,
+      checkpoints: [{ value: 3, at }],
+    });
+    expect(backup.records.some((record) => record.id === note.id)).toBe(true);
+    const restore = (await (
+      await request("/api/restore", "POST", backup)
+    ).json()) as { goals: import("../shared/goals").Goal[] };
+    expect(restore.goals[0].id).not.toBe(goal.id);
+    expect(restore.goals[0].checkpoints).toEqual(backup.goals?.[0].checkpoints);
+    expect(
+      await (await request("/api/restore", "POST", backup)).json(),
+    ).toEqual(restore);
+    expect(
+      ((await (await request("/api/goals")).json()) as { goals: unknown[] })
+        .goals,
+    ).toHaveLength(2);
+    const legacy = { ...backup, version: 1 };
+    delete legacy.goals;
+    expect((await request("/api/restore", "POST", legacy)).status).toBe(201);
+    expect((await request(`/api/goals/${goal.id}`, "DELETE")).status).toBe(200);
+    const retained = (await (
+      await request("/api/export")
+    ).json()) as WorkspaceExport;
+    expect(
+      retained.goals?.find((item) => item.id === goal.id)?.deletedAt,
+    ).toBeTruthy();
+  });
+  it("rejects unsafe new document destinations and has no suggestion API", async () => {
+    for (const key of [
+      "resumeUrl",
+      "coverLetterUrl",
+      "notionUrl",
+      "meetingUrl",
+    ]) {
+      expect(
+        (
+          await request("/api/records", "POST", {
+            kind: "application",
+            title: "X",
+            data: { [key]: "javascript:alert(1)" },
+          })
+        ).status,
+      ).toBe(400);
+    }
+    expect((await request("/api/connectors/suggestions")).status).toBe(404);
+    expect(
+      (await request("/api/connectors/webhooks/notion/x", "POST", {})).status,
+    ).toBe(410);
+    expect(
+      (
+        await request("/api/goals", "POST", {
+          title: "X",
+          startDate: "2026-11-01",
+          targetDate: "2026-10-01",
+        })
+      ).status,
+    ).toBe(400);
   });
 });
