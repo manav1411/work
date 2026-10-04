@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { RECORD_KINDS } from "../shared/model";
 import { ApiError } from "./env";
+import { recordDataError } from "../shared/record-contract";
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 export const MAX_BODY_CHARS = 500_000;
 export const attachmentTypes = new Set([
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "image/png",
   "image/jpeg",
   "image/webp",
@@ -52,7 +54,7 @@ const data = z
       if (!item || typeof item !== "object") return;
       for (const [key, child] of Object.entries(item)) {
         if (
-          /^(url|website|sourceUrl|jobUrl|overleaf|linkedin|github|demoUrl|repoUrl|resumeUrl|coverLetterUrl|notionUrl|meetingUrl)$/i.test(
+          /^(url|website|sourceUrl|jobUrl|careersUrl|overleaf|linkedin|github|demoUrl|repoUrl|resumeUrl|coverLetterUrl|notionUrl|meetingUrl)$/i.test(
             key,
           ) &&
           typeof child === "string" &&
@@ -85,7 +87,12 @@ const fields = {
 };
 export const recordSchema = z
   .object({ kind: z.enum(RECORD_KINDS), ...fields })
-  .strict();
+  .strict()
+  .superRefine((record, context) => {
+    const error = recordDataError(record.kind, record.data);
+    if (error)
+      context.addIssue({ code: "custom", path: ["data"], message: error });
+  });
 export const patchSchema = z
   .object({
     title: fields.title.optional(),

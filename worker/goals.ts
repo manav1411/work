@@ -28,6 +28,7 @@ interface GoalRow {
 }
 export function goalFromRow(row: GoalRow): Goal {
   return {
+    directionId: "",
     ...JSON.parse(row.payload),
     id: row.id,
     version: row.version,
@@ -112,6 +113,25 @@ async function saveGoal(
   return goalFromRow(row);
 }
 const routes = new Hono<{ Bindings: Env; Variables: Variables }>();
+async function validateDirection(
+  db: D1Database,
+  owner: string,
+  directionId: string,
+) {
+  if (!directionId) return;
+  const record = await db
+    .prepare(
+      "SELECT id FROM records WHERE owner_id=? AND id=? AND kind IN ('path','rotation','decision')",
+    )
+    .bind(owner, directionId)
+    .first();
+  if (!record)
+    throw new ApiError(
+      400,
+      "INVALID_DIRECTION",
+      "Choose a career path, stream, or decision in your workspace.",
+    );
+}
 routes.get("/", async (c) =>
   c.json({ goals: await listGoals(c.env.DB, c.get("user").id) }),
 );
@@ -125,6 +145,7 @@ routes.post("/", async (c) => {
     input,
   );
   if (state.response) return c.json(state.response);
+  await validateDirection(c.env.DB, owner, input.directionId);
   const goal = newGoal(input);
   try {
     await c.env.DB.batch([
@@ -154,6 +175,7 @@ routes.patch("/:id", async (c) => {
       "This goal changed in another session. Your draft is still open.",
     );
   const at = new Date().toISOString();
+  await validateDirection(c.env.DB, owner, fields.directionId);
   const progress = goalProgress({ ...before, ...fields });
   const previous = goalProgress(before);
   const checkpoints =

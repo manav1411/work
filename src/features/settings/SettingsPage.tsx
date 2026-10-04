@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Download,
@@ -8,18 +8,7 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import {
-  connectorName,
-  type ConnectorConnection,
-  type ConnectorsResponse,
-} from "../../../shared/connectors";
-import {
-  KIND_LABELS,
-  localDate,
-  type Attachment,
-  type UserPreferences,
-  type WorkRecord,
-} from "../../../shared/model";
+import { localDate, type UserPreferences } from "../../../shared/model";
 import {
   Button,
   Card,
@@ -27,15 +16,17 @@ import {
   Input,
   Modal,
   PageHeader,
+  Select,
 } from "../../components/ui";
-import {
-  downloadFile,
-  getAttachmentUrl,
-  jsonRequest,
-  request,
-} from "../../lib/api";
+import { downloadFile, jsonRequest, request } from "../../lib/api";
 import { useWorkspace } from "../../lib/workspace";
-import type { LegacyMappingReport } from "../../../shared/simplification";
+import { editorDraftsFor, type EditorDraft } from "../../lib/device-drafts";
+import {
+  downloadWorkBackup,
+  previewWorkBackup,
+  restoreWorkBackup,
+  type WorkBackupPreview,
+} from "../../lib/backup";
 import "./settings.css";
 
 interface DeviceDraft {
@@ -44,11 +35,6 @@ interface DeviceDraft {
   method: string;
   input?: Record<string, unknown>;
   patch?: Record<string, unknown>;
-}
-interface ArchiveInventory {
-  records: WorkRecord[];
-  attachments: Attachment[];
-  goals?: unknown[];
 }
 type Confirmation = {
   title: string;
@@ -117,7 +103,6 @@ export function SettingsPage() {
     records,
     notify,
     refresh,
-    restore,
     savePreferences,
     signOut,
     syncOutbox,
@@ -129,24 +114,17 @@ export function SettingsPage() {
   const [username, setUsername] = useState(
     leetCodeHandle(preferences.leetcode),
   );
-  const profileTouched = useRef(false);
   const [busy, setBusy] = useState("");
   const [saveStatus, setSaveStatus] = useState("");
   const [drafts, setDrafts] = useState<DeviceDraft[]>([]);
-  const [backup, setBackup] = useState<Record<string, unknown> | null>(null);
+  const [editorDrafts, setEditorDrafts] = useState<EditorDraft[]>([]);
+  const [backup, setBackup] = useState<WorkBackupPreview | null>(null);
   const [backupName, setBackupName] = useState("");
-  const [inventory, setInventory] = useState<ArchiveInventory | null>(null);
-  const [inventoryError, setInventoryError] = useState("");
-  const [migration, setMigration] = useState<LegacyMappingReport | null>(null);
-  const [migrationSelection, setMigrationSelection] = useState<string[]>([]);
-  const [connections, setConnections] = useState<ConnectorConnection[]>([]);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [confirmText, setConfirmText] = useState("");
   const legacy = new URLSearchParams(location.search).get("legacy");
   const requestedId = new URLSearchParams(location.search).get("record");
-  const requestedRecord =
-    inventory?.records.find((record) => record.id === requestedId) ||
-    records.find((record) => record.id === requestedId);
+  const requestedRecord = records.find((record) => record.id === requestedId);
 
   useEffect(() => {
     setForm({ ...preferences });
@@ -154,6 +132,7 @@ export function SettingsPage() {
   }, [preferences]);
   useEffect(() => {
     if (!user) return;
+    setEditorDrafts(editorDraftsFor(user.id, records));
     try {
       const value: unknown = JSON.parse(
         localStorage.getItem(`work-outbox:${user.id}`) ?? "[]",
@@ -163,30 +142,6 @@ export function SettingsPage() {
       setDrafts([]);
     }
   }, [pending, user, records]);
-  useEffect(() => {
-    let active = true;
-    void request<ConnectorsResponse>("/api/connectors")
-      .then((response) => {
-        if (active)
-          setConnections(
-            response.connections.filter(
-              (connection) => connection.status !== "disconnected",
-            ),
-          );
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [mode]);
-  useEffect(() => {
-    if (preferences.leetcode || profileTouched.current) return;
-    const connection = connections.find((item) => item.provider === "leetcode");
-    if (connection)
-      setUsername(
-        leetCodeHandle(connection.config.username || connection.label),
-      );
-  }, [connections, preferences.leetcode]);
   useEffect(() => {
     if (
       location.pathname.endsWith("import-export") ||
@@ -224,126 +179,39 @@ export function SettingsPage() {
         throw new Error("Enter a valid timezone, such as Australia/Melbourne.");
       }
       const handle = leetCodeHandle(username);
-      if (handle && !/^[A-Za-z0-9_-]{1,30}$/.test(handle))
+      if (handle && !/^[A-Za-z0-9_-]{1,40}$/.test(handle))
         throw new Error("Enter a valid LeetCode username or profile URL.");
       await savePreferences({
         timezone: form.timezone.trim(),
         reducedMotion: form.reducedMotion,
+        theme: form.theme,
         leetcode: handle
           ? `https://leetcode.com/u/${encodeURIComponent(handle)}/`
           : "",
       });
-      if (
-        !handle &&
-        connections.some((connection) => connection.provider === "leetcode")
-      ) {
-        await request(
-          "/api/connectors/leetcode",
-          jsonRequest("DELETE", { retention: "keep" }),
-        );
-        setConnections((rows) =>
-          rows.filter((row) => row.provider !== "leetcode"),
-        );
-      }
       setSaveStatus("Saved");
     });
-  const exportBackup = (metadataOnly = false) =>
+  const exportBackup = () =>
     run("export", async () => {
-      const archive = await request<Record<string, unknown>>(
-        `/api/export${metadataOnly ? "?files=false" : ""}`,
-      );
-      downloadFile(
-        JSON.stringify(archive, null, 2),
-        `work-${metadataOnly ? "metadata-" : ""}backup-${localDate(new Date(), preferences.timezone)}.json`,
-        "application/json",
-      );
-      notify(
-        metadataOnly
-          ? "Metadata downloaded. File contents are not included."
-          : "Backup downloaded.",
-      );
+      await downloadWorkBackup(mode);
+      notify("Backup download started.");
     });
   const readBackup = (file?: File) =>
     run("backup-preview", async () => {
       if (!file) return;
-      if (file.size > 30 * 1024 * 1024)
-        throw new Error("Select a backup smaller than 30 MB.");
-      const value: unknown = JSON.parse(await file.text());
-      if (
-        !value ||
-        typeof value !== "object" ||
-        !("format" in value) ||
-        value.format !== "work-export" ||
-        !("version" in value) ||
-        ![1, 2].includes(Number(value.version)) ||
-        !("records" in value) ||
-        !Array.isArray(value.records)
-      )
-        throw new Error("Choose a supported Work backup (version 1 or 2).");
-      setBackup(value as Record<string, unknown>);
+      setBackup(null);
+      setBackup(await previewWorkBackup(file));
       setBackupName(file.name);
     });
-  const loadInventory = async () => {
-    setInventoryError("");
-    try {
-      setInventory(await request<ArchiveInventory>("/api/export?files=false"));
-    } catch (error) {
-      setInventoryError(
-        error instanceof Error ? error.message : "Could not load saved data.",
-      );
-    }
-  };
-  const loadMigration = async () => {
-    try {
-      setMigration(await request<LegacyMappingReport>("/api/goals/legacy"));
-    } catch (error) {
-      notify(
-        error instanceof Error
-          ? error.message
-          : "Could not load the migration report.",
-        "error",
-      );
-    }
-  };
-  const migrateProjects = async () => {
-    if (!migrationSelection.length || !migration) return;
-    await run("migrate-projects", async () => {
-      const selected = migration.entries
-        .filter(
-          (entry) =>
-            migrationSelection.includes(entry.record.id) && entry.goalInput,
-        )
-        .map((entry) => ({
-          recordId: entry.record.id,
-          version: entry.record.version,
-        }));
-      if (!selected.length) return;
-      const result = await request<{
-        report: LegacyMappingReport;
-        created: number;
-      }>("/api/goals/legacy", jsonRequest("POST", { selected }));
-      setMigration(result.report);
-      setMigrationSelection([]);
-      await refresh();
-      notify(
-        `Moved ${result.created} project${result.created === 1 ? "" : "s"} into goals.`,
-      );
-    });
-  };
   const restoreBackup = async () => {
     if (!backup) return;
-    const result = await request<{
-      restored: number;
-      attachments: number;
-      warnings: string[];
-    }>("/api/restore", jsonRequest("POST", backup));
+    const result = await restoreWorkBackup(backup, mode);
     notify(
       `Restored ${result.restored} records and ${result.attachments} files.`,
     );
     result.warnings.forEach((warning) => notify(warning, "info"));
     setBackup(null);
     await refresh();
-    if (inventory) await loadInventory();
   };
   const downloadDrafts = () =>
     downloadFile(
@@ -353,6 +221,7 @@ export function SettingsPage() {
           exportedAt: new Date().toISOString(),
           ownerId: user?.id,
           drafts,
+          editorDrafts,
         },
         null,
         2,
@@ -364,14 +233,6 @@ export function SettingsPage() {
     setConfirmText("");
     setConfirmation(value);
   };
-  const recordCounts = inventory?.records.reduce<Record<string, number>>(
-    (counts, record) => {
-      counts[KIND_LABELS[record.kind]] =
-        (counts[KIND_LABELS[record.kind]] || 0) + 1;
-      return counts;
-    },
-    {},
-  );
   return (
     <div className="page-stack simple-settings">
       <PageHeader title="Settings" />
@@ -394,23 +255,28 @@ export function SettingsPage() {
           </Button>
         </Card>
       )}
-      {pending > 0 && (
+      {(pending > 0 || editorDrafts.length > 0) && (
         <Card id="device-drafts" className="stack">
           <h2>
-            Unsynced changes <span className="settings-count">{pending}</span>
+            Device drafts{" "}
+            <span className="settings-count">
+              {pending + editorDrafts.length}
+            </span>
           </h2>
           <p className="muted">
             These changes are stored on this device. Download them before
             clearing browser data or leaving your account.
           </p>
           <div className="inline-actions">
-            <Button
-              disabled={!!busy}
-              onClick={() => void run("sync", syncOutbox)}
-            >
-              <RotateCcw size={16} />
-              Retry sync
-            </Button>
+            {pending > 0 && (
+              <Button
+                disabled={!!busy}
+                onClick={() => void run("sync", syncOutbox)}
+              >
+                <RotateCcw size={16} />
+                Retry sync
+              </Button>
+            )}
             <Button
               variant="secondary"
               disabled={!!busy}
@@ -450,6 +316,35 @@ export function SettingsPage() {
                   }
                 >
                   Discard change
+                </Button>
+              </div>
+            </details>
+          ))}
+          {editorDrafts.map((draft) => (
+            <details className="draft-conflict" key={draft.key}>
+              <summary>{draft.title}</summary>
+              <pre>{draft.value}</pre>
+              <div className="inline-actions">
+                <Link className="button button-secondary" to={draft.url}>
+                  Review draft
+                </Link>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    confirm({
+                      title: "Discard this editor draft?",
+                      description:
+                        "Download device drafts first if you need a copy. Saved records remain available.",
+                      action: async () => {
+                        localStorage.removeItem(draft.key);
+                        setEditorDrafts(
+                          editorDraftsFor(user?.id ?? "", records),
+                        );
+                      },
+                    })
+                  }
+                >
+                  Discard draft
                 </Button>
               </div>
             </details>
@@ -501,6 +396,20 @@ export function SettingsPage() {
                 <option value="UTC" />
               </datalist>
             </Field>
+            <Field label="Appearance">
+              <Select
+                value={form.theme}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    theme: event.target.value as UserPreferences["theme"],
+                  })
+                }
+              >
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </Select>
+            </Field>
             <Field
               label="LeetCode username"
               hint="Learn uses your public solve history."
@@ -510,7 +419,6 @@ export function SettingsPage() {
                 autoComplete="off"
                 maxLength={200}
                 onChange={(event) => {
-                  profileTouched.current = true;
                   setUsername(event.target.value);
                 }}
                 placeholder="Username or profile URL"
@@ -535,10 +443,6 @@ export function SettingsPage() {
               </span>
             </div>
           </form>
-          <div className="settings-destinations">
-            <Link to="/learn">Learn</Link>
-            <Link to="/documents">Overleaf documents</Link>
-          </div>
         </Card>
         <Card className="stack" id="recovery">
           <h2>Backup & recovery</h2>
@@ -546,19 +450,25 @@ export function SettingsPage() {
             Backups include records, revisions, goals, settings, and saved
             files, including retired sections.
           </p>
+          {(pending > 0 || editorDrafts.length > 0) && (
+            <p className="field-hint">
+              Device drafts are separate from the saved backup. Download them
+              above before clearing browser data.
+            </p>
+          )}
           <Button disabled={!!busy} onClick={() => void exportBackup()}>
             <Download size={16} />
-            {busy === "export" ? "Downloading…" : "Download full backup"}
+            {busy === "export" ? "Downloading…" : "Download backup"}
           </Button>
           <label
             className={`button button-secondary file-input-label ${busy ? "backup-input-disabled" : ""}`}
           >
             <Upload size={16} />
-            Choose a backup to restore
+            Restore backup
             <input
               type="file"
               disabled={!!busy}
-              accept=".json,application/json"
+              accept=".tar,.json,application/x-tar,application/json"
               aria-label="Choose Work backup"
               onChange={(event) => {
                 void readBackup(event.target.files?.[0]);
@@ -572,12 +482,23 @@ export function SettingsPage() {
                 <FileText size={16} />
                 {backupName}
                 <span>
-                  {(backup.records as unknown[]).length} records
-                  {Array.isArray(backup.goals)
-                    ? ` · ${backup.goals.length} goals`
+                  {backup.manifest.records.length} records
+                  {Array.isArray(backup.manifest.goals)
+                    ? ` · ${backup.manifest.goals.length} goals`
                     : ""}
                 </span>
               </p>
+              {backup.manifest.attachments.some((file) => file.missing) && (
+                <p role="alert" className="notice notice-warning">
+                  This backup is missing contents for{" "}
+                  {
+                    backup.manifest.attachments.filter((file) => file.missing)
+                      .length
+                  }{" "}
+                  file(s). Their metadata will be retained; the missing bytes
+                  cannot be recovered from this backup.
+                </p>
+              )}
               <div className="inline-actions">
                 <Button
                   disabled={!!busy || pending > 0}
@@ -607,251 +528,8 @@ export function SettingsPage() {
               )}
             </div>
           )}
-          <details
-            className="settings-recovery-details"
-            onToggle={(event) => {
-              if (event.currentTarget.open && !inventory) void loadInventory();
-            }}
-          >
-            <summary>Saved records and files</summary>
-            <div className="stack">
-              <p className="field-hint">
-                Full backups embed up to 20 MB of files. For larger collections,
-                download metadata and the original files below.
-              </p>
-              <Button
-                variant="secondary"
-                disabled={!!busy}
-                onClick={() => void exportBackup(true)}
-              >
-                <Download size={16} />
-                Download metadata
-              </Button>
-              {inventoryError && (
-                <div className="notice notice-warning">
-                  {inventoryError}
-                  <Button variant="ghost" onClick={() => void loadInventory()}>
-                    Retry
-                  </Button>
-                </div>
-              )}
-              {inventory ? (
-                <>
-                  <p className="settings-record-summary">
-                    {Object.entries(recordCounts || {})
-                      .map(
-                        ([kind, count]) =>
-                          `${count} ${kind.toLowerCase()}${count === 1 ? "" : "s"}`,
-                      )
-                      .join(" · ") || "No saved records"}
-                    {inventory.goals?.length
-                      ? ` · ${inventory.goals.length} goals`
-                      : ""}
-                  </p>
-                  {inventory.attachments.length > 0 && (
-                    <div className="settings-file-list">
-                      {inventory.attachments.map((attachment) => (
-                        <div key={attachment.id}>
-                          <span>
-                            <strong>{attachment.filename}</strong>
-                            <small>
-                              {
-                                inventory.records.find(
-                                  (record) => record.id === attachment.recordId,
-                                )?.title
-                              }{" "}
-                              · {(attachment.size / 1024).toFixed(0)} KB
-                            </small>
-                          </span>
-                          <Button
-                            variant="ghost"
-                            disabled={!!busy}
-                            onClick={() =>
-                              void run("download-file", async () => {
-                                const url = await getAttachmentUrl(
-                                  attachment.id,
-                                );
-                                const anchor = document.createElement("a");
-                                anchor.href = url;
-                                anchor.download = attachment.filename;
-                                document.body.appendChild(anchor);
-                                anchor.click();
-                                anchor.remove();
-                              })
-                            }
-                          >
-                            <Download size={16} />
-                            <span className="sr-only">
-                              Download {attachment.filename}
-                            </span>
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {inventory.records.some((record) => record.deletedAt) && (
-                    <div className="stack settings-trash">
-                      <h3>Deleted records</h3>
-                      {inventory.records
-                        .filter((record) => record.deletedAt)
-                        .map((record) => (
-                          <div className="settings-data-row" key={record.id}>
-                            <div>
-                              <strong>{record.title}</strong>
-                              <p>{KIND_LABELS[record.kind]}</p>
-                            </div>
-                            <Button
-                              variant="secondary"
-                              disabled={!!busy}
-                              onClick={() =>
-                                void run("trash-restore", async () => {
-                                  await restore(record.id);
-                                  await loadInventory();
-                                  notify("Record restored.");
-                                })
-                              }
-                            >
-                              <RotateCcw size={14} />
-                              Restore
-                            </Button>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </>
-              ) : (
-                !inventoryError && (
-                  <p role="status" className="muted">
-                    Loading saved data…
-                  </p>
-                )
-              )}
-              <details
-                onToggle={(event) => {
-                  if (event.currentTarget.open && !migration)
-                    void loadMigration();
-                }}
-              >
-                <summary>Dated project milestones</summary>
-                <div className="stack">
-                  <p className="field-hint">
-                    Review exact milestones from retired project records and
-                    choose which ones to copy into the Home timeline. Originals
-                    stay unchanged.
-                  </p>
-                  {migration ? (
-                    <>
-                      {migration.entries
-                        .filter(
-                          (entry) =>
-                            entry.disposition === "candidate" &&
-                            entry.goalInput,
-                        )
-                        .map((entry) => (
-                          <label
-                            className="settings-data-row"
-                            key={entry.record.id}
-                          >
-                            <span>
-                              <input
-                                type="checkbox"
-                                checked={migrationSelection.includes(
-                                  entry.record.id,
-                                )}
-                                onChange={(event) =>
-                                  setMigrationSelection((current) =>
-                                    event.target.checked
-                                      ? [...current, entry.record.id]
-                                      : current.filter(
-                                          (id) => id !== entry.record.id,
-                                        ),
-                                  )
-                                }
-                              />
-                              <strong>{entry.record.title}</strong>
-                              <small>
-                                {entry.goalInput!.milestones.length} dated
-                                milestone
-                                {entry.goalInput!.milestones.length === 1
-                                  ? ""
-                                  : "s"}
-                              </small>
-                            </span>
-                          </label>
-                        ))}
-                      {!migration.entries.some(
-                        (entry) => entry.disposition === "candidate",
-                      ) && (
-                        <p className="muted">
-                          No unconverted project with exact dated milestones was
-                          found.
-                        </p>
-                      )}
-                      <Button
-                        disabled={!!busy || !migrationSelection.length}
-                        onClick={() => void migrateProjects()}
-                      >
-                        Move selected milestones to goals
-                      </Button>
-                    </>
-                  ) : (
-                    <p className="muted">Loading migration report…</p>
-                  )}
-                </div>
-              </details>
-            </div>
-          </details>
         </Card>
       </div>
-      {connections.length > 0 && (
-        <details className="settings-existing-connections">
-          <summary>Existing connections</summary>
-          <Card className="stack">
-            <p className="muted">
-              Remove saved connections you no longer use. Imported records and
-              files remain recoverable.
-            </p>
-            {connections.map((connection) => (
-              <div className="settings-data-row" key={connection.id}>
-                <div>
-                  <strong>{connectorName(connection.provider)}</strong>
-                  <p>{connection.label}</p>
-                </div>
-                <Button
-                  variant="secondary"
-                  disabled={!!busy}
-                  onClick={() =>
-                    confirm({
-                      title: `Remove ${connectorName(connection.provider)} connection?`,
-                      description:
-                        "This removes its saved access credentials. Existing imported records and files are kept.",
-                      action: async () => {
-                        const result = await request<{ warning?: string }>(
-                          `/api/connectors/${connection.provider}`,
-                          jsonRequest("DELETE", { retention: "keep" }),
-                        );
-                        if (result.warning) notify(result.warning, "info");
-                        if (
-                          connection.provider === "leetcode" &&
-                          !preferences.leetcode
-                        ) {
-                          profileTouched.current = true;
-                          setUsername("");
-                        }
-                        setConnections((rows) =>
-                          rows.filter((row) => row.id !== connection.id),
-                        );
-                      },
-                    })
-                  }
-                >
-                  Remove
-                </Button>
-              </div>
-            ))}
-          </Card>
-        </details>
-      )}
       {mode === "cloud" && (
         <details className="settings-account-security">
           <summary>Account deletion</summary>

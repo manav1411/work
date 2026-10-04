@@ -738,3 +738,60 @@
     animation: none;
   }
 }
+
+/* Restore the original saturated subject controls on both themes. */
+.learn-track-tabs {
+  padding-bottom: 6px;
+}
+.learn-track-tabs button {
+  background: var(--paper);
+  border-color: var(--ink);
+  color: var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  font-weight: 750;
+}
+.learn-track-tabs button.active {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.learn-subject-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.learn-subject-heading > p {
+  flex: 1;
+  min-width: 240px;
+  color: var(--muted);
+  margin: 8px 0;
+}
+.learn-editable-topics {
+  display: grid;
+  gap: 25px;
+  margin: 23px 0;
+}
+.learn-editable-topics > .learn-reading-card {
+  padding: 24px;
+  border: 1.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.learn-editable-topics .learn-reading-card > p {
+  color: var(--muted);
+}
+.learn-context-bar > h2 {
+  font-size: 18px;
+  margin: 0;
+}
+@media (max-width: 600px) {
+  .learn-editable-topics > .learn-reading-card {
+    padding: 18px;
+  }
+  .learn-subject-heading {
+    gap: 8px;
+  }
+}

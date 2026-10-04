@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
     state.records = [];
     sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
   });
-  await page.reload();
+  await page.goto("/direction");
 });
 
 test("goal progress persists and explicit completion never fabricates measurements", async ({
@@ -34,7 +34,6 @@ test("goal progress persists and explicit completion never fabricates measuremen
     .locator(".goal-card")
     .filter({ hasText: "Build portfolio" });
   await expect(card).toContainText("2 / 10 milestones");
-  await card.click();
   let detail = page.getByRole("dialog", {
     name: "Build portfolio",
     exact: true,
@@ -52,10 +51,6 @@ test("goal progress persists and explicit completion never fabricates measuremen
   await edit.getByLabel("Current progress", { exact: true }).fill("5");
   await edit.getByRole("button", { name: "Save goal", exact: true }).click();
   await page.reload();
-  await page
-    .locator(".goal-card")
-    .filter({ hasText: "Build portfolio" })
-    .click();
   detail = page.getByRole("dialog", { name: "Build portfolio", exact: true });
   await expect(detail.getByRole("progressbar")).toHaveAttribute(
     "aria-valuenow",
@@ -87,10 +82,6 @@ test("dated milestones use actual completion and removing a goal keeps its backu
     .click();
   await editor.getByLabel("Milestone", { exact: true }).nth(1).fill("Launch");
   await editor.getByRole("button", { name: "Save goal", exact: true }).click();
-  await page
-    .locator(".goal-card")
-    .filter({ hasText: "Release project" })
-    .click();
   const detail = page.getByRole("dialog", {
     name: "Release project",
     exact: true,
@@ -117,19 +108,42 @@ test("dated milestones use actual completion and removing a goal keeps its backu
   expect(goals[0].deletedAt).toBeTruthy();
 });
 
-test("Home rescheduling edits the same interview and its clickable timeline point", async ({
+test("Home has source-linked appointments with scheduling managed in Applications", async ({
   page,
 }) => {
+  await page.goto("/home");
+  await expect(
+    page.getByRole("button", { name: "Add interview", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Add goal", exact: true }),
+  ).toHaveCount(0);
+  await page.goto("/applications");
   await page
-    .getByRole("button", { name: "Add interview", exact: true })
+    .getByRole("button", { name: "New application", exact: true })
+    .first()
+    .click();
+  const application = page.getByRole("dialog", {
+    name: "New application",
+    exact: true,
+  });
+  await application
+    .getByLabel("Company", { exact: true })
+    .fill("Example Company");
+  await application
+    .getByLabel("Role", { exact: true })
+    .fill("Upcoming interview role");
+  await application
+    .getByRole("button", { name: "Save application", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Upcoming interview role", exact: true })
+    .getByRole("button", { name: "Schedule interview", exact: true })
     .click();
   let editor = page.getByRole("dialog", {
     name: "Schedule interview",
     exact: true,
   });
-  await editor
-    .getByLabel("Appointment name", { exact: true })
-    .fill("Mock appointment");
   const day = await page.evaluate(() => {
     const d = new Date();
     d.setDate(d.getDate() + 2);
@@ -137,19 +151,26 @@ test("Home rescheduling edits the same interview and its clickable timeline poin
   });
   await editor.getByLabel("Date and local time").fill(`${day}T10:00`);
   await editor.getByLabel("Timezone", { exact: true }).fill("UTC");
+  await editor.getByText("Details", { exact: true }).click();
+  await editor
+    .getByLabel("Interview title", { exact: true })
+    .fill("Mock appointment");
   await editor
     .getByRole("button", { name: "Save interview", exact: true })
     .click();
+  await page.goto("/home");
   const event = page
     .locator(".timeline-chart .timeline-event button")
     .filter({ hasText: "Mock appointment" });
   await expect(event).toBeVisible();
   await event.locator(".timeline-event-point").click();
+  await expect(page).toHaveURL(/\/applications\?interview=/);
   editor = page.getByRole("dialog", { name: "Edit interview", exact: true });
   await editor.getByLabel("Date and local time").fill(`${day}T12:00`);
   await editor
     .getByRole("button", { name: "Save interview", exact: true })
     .click();
+  await page.goto("/home");
   const localTime = await page.evaluate((date) => {
     const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
     return new Intl.DateTimeFormat("en-AU", {

@@ -1,3 +1,4 @@
+import { editorDraftsFor } from "./device-drafts";
 import {
   createContext,
   useCallback,
@@ -48,7 +49,11 @@ interface WorkspaceValue {
   configured: boolean;
   toasts: Toast[];
   create: (input: RecordInput) => Promise<WorkRecord>;
-  update: (id: string, patch: RecordPatch) => Promise<WorkRecord>;
+  update: (
+    id: string,
+    patch: RecordPatch,
+    expectedVersion?: number,
+  ) => Promise<WorkRecord>;
   remove: (id: string) => Promise<void>;
   restore: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
@@ -227,11 +232,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [openDemo, put, refresh]);
 
   useEffect(() => {
+    if (loading) return;
     document.documentElement.dataset.theme = preferences.theme;
+    try {
+      localStorage.setItem("work:theme", preferences.theme);
+    } catch {
+      /* Theme still applies to this session. */
+    }
     document.documentElement.dataset.reduceMotion = String(
       preferences.reducedMotion,
     );
-  }, [preferences.theme, preferences.reducedMotion]);
+  }, [preferences.theme, preferences.reducedMotion, loading]);
 
   const create = useCallback(
     async (input: RecordInput): Promise<WorkRecord> => {
@@ -272,11 +283,24 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const update = useCallback(
-    async (id: string, patch: RecordPatch): Promise<WorkRecord> => {
+    async (
+      id: string,
+      patch: RecordPatch,
+      expectedVersion?: number,
+    ): Promise<WorkRecord> => {
       const save = async (): Promise<WorkRecord> => {
         id = aliasesRef.current.get(id) ?? id;
         const previous = recordsRef.current.find((record) => record.id === id);
         if (!previous) throw new ApiError("Record no longer exists.", 404);
+        if (
+          expectedVersion !== undefined &&
+          previous.version !== expectedVersion
+        )
+          throw new ApiError(
+            "This record changed while you were editing. Review the latest saved text before saving your draft.",
+            409,
+            { record: previous },
+          );
         const queuedCreate = outboxRef.current.find(
           (item) => item.method === "create" && item.recordId === id,
         );
@@ -571,9 +595,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     };
   }, [refresh, syncOutbox, user]);
   const signOut = useCallback(async () => {
-    if (outboxRef.current.length)
+    if (
+      outboxRef.current.length ||
+      editorDraftsFor(userRef.current?.id ?? "").length
+    )
       throw new ApiError(
-        "You have unsynced changes. Sync them or download device drafts in Settings before signing out.",
+        "You have device drafts. Review or download and discard them in Settings before signing out.",
         409,
       );
     if (mode !== "demo")

@@ -1,4 +1,5 @@
 import type { Attachment } from "../shared/model";
+import { DOCX_TYPE } from "../shared/documents";
 import { ApiError, id, now, type Env } from "./env";
 import {
   attachmentFromRow,
@@ -8,12 +9,111 @@ import {
 } from "./db/records";
 import { attachmentTypes, filename, MAX_FILE_BYTES } from "./validation";
 
+/** Validate ZIP structure without extracting or executing uploaded document contents. */
+function validDocx(bytes: Uint8Array): boolean {
+  try {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let end = bytes.length - 22;
+    const lower = Math.max(0, end - 65_535);
+    for (; end >= lower; end--) {
+      if (
+        view.getUint32(end, true) === 0x06054b50 &&
+        end + 22 + view.getUint16(end + 20, true) === bytes.length
+      )
+        break;
+    }
+    if (
+      end < lower ||
+      view.getUint16(end + 4, true) ||
+      view.getUint16(end + 6, true)
+    )
+      return false;
+    const count = view.getUint16(end + 10, true);
+    if (!count || count > 4096 || count !== view.getUint16(end + 8, true))
+      return false;
+    const directorySize = view.getUint32(end + 12, true);
+    const directory = view.getUint32(end + 16, true);
+    if (directory + directorySize !== end) return false;
+    let position = directory;
+    let expanded = 0;
+    const names = new Set<string>();
+    const spans: [number, number][] = [];
+    const decode = new TextDecoder("utf-8", { fatal: true });
+    for (let entry = 0; entry < count; entry++) {
+      if (position + 46 > end || view.getUint32(position, true) !== 0x02014b50)
+        return false;
+      const flags = view.getUint16(position + 8, true);
+      const method = view.getUint16(position + 10, true);
+      const compressed = view.getUint32(position + 20, true);
+      const uncompressed = view.getUint32(position + 24, true);
+      const nameSize = view.getUint16(position + 28, true);
+      const extraSize = view.getUint16(position + 30, true);
+      const commentSize = view.getUint16(position + 32, true);
+      const local = view.getUint32(position + 42, true);
+      const next = position + 46 + nameSize + extraSize + commentSize;
+      if (
+        next > end ||
+        flags & 1 ||
+        ![0, 8].includes(method) ||
+        view.getUint16(position + 34, true)
+      )
+        return false;
+      const name = decode.decode(
+        bytes.subarray(position + 46, position + 46 + nameSize),
+      );
+      if (
+        !name ||
+        names.has(name) ||
+        name.startsWith("/") ||
+        name.includes("\\") ||
+        name.split("/").some((part) => [".", ".."].includes(part)) ||
+        // eslint-disable-next-line no-control-regex -- Reject unsafe control bytes in ZIP entry paths.
+        /[\u0000-\u001f]|vbaproject\.bin|activex\//i.test(name)
+      )
+        return false;
+      names.add(name);
+      expanded += uncompressed;
+      if (
+        expanded > 100 * 1024 * 1024 ||
+        local + 30 > directory ||
+        view.getUint32(local, true) !== 0x04034b50
+      )
+        return false;
+      const localNameSize = view.getUint16(local + 26, true);
+      const localExtraSize = view.getUint16(local + 28, true);
+      const localEnd = local + 30 + localNameSize + localExtraSize + compressed;
+      if (
+        localEnd > directory ||
+        view.getUint16(local + 8, true) !== method ||
+        view.getUint16(local + 6, true) & 1 ||
+        decode.decode(
+          bytes.subarray(local + 30, local + 30 + localNameSize),
+        ) !== name
+      )
+        return false;
+      spans.push([local, localEnd]);
+      position = next;
+    }
+    spans.sort((a, b) => a[0] - b[0]);
+    if (spans.some((span, index) => index > 0 && span[0] < spans[index - 1][1]))
+      return false;
+    return (
+      position === end &&
+      ["[Content_Types].xml", "_rels/.rels", "word/document.xml"].every(
+        (name) => names.has(name),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function validateFile(contentType: string, bytes: Uint8Array) {
   if (!attachmentTypes.has(contentType))
     throw new ApiError(
       415,
       "FILE_TYPE_NOT_ALLOWED",
-      "Upload a PDF, common image format, plain text, Markdown, CSV, or JSON.",
+      "Upload a PDF, DOCX, common image format, plain text, Markdown, CSV, or JSON.",
     );
   if (!bytes.length || bytes.length > MAX_FILE_BYTES)
     throw new ApiError(
@@ -26,6 +126,7 @@ export function validateFile(contentType: string, bytes: Uint8Array) {
   if (
     (contentType === "application/pdf" &&
       !starts(0x25, 0x50, 0x44, 0x46, 0x2d)) ||
+    (contentType === DOCX_TYPE && !validDocx(bytes)) ||
     (contentType === "image/png" &&
       !starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) ||
     (contentType === "image/jpeg" && !starts(0xff, 0xd8, 0xff)) ||

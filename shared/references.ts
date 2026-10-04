@@ -9,14 +9,24 @@ const recordKeys = new Set([
   "actionId",
   "decisionId",
   "recordId",
+  "sectionId",
+  "tabId",
+  "interviewId",
+  "directionId",
 ]);
 const fileKeys = new Set(["attachmentId", "primaryAttachmentId"]);
-const recordArrayKeys = new Set(["assetIds", "recordIds", "companyIds"]);
+const recordArrayKeys = new Set([
+  "assetIds",
+  "recordIds",
+  "companyIds",
+  "storyIds",
+]);
 
 function isRecordReference(key: string, value: string) {
   return (
     recordKeys.has(key) ||
-    (["problemId", "topicId"].includes(key) && /^[0-9a-f-]{36}$/i.test(value))
+    (["problemId", "topicId", "track"].includes(key) &&
+      /^[0-9a-f-]{36}$/i.test(value))
   );
 }
 
@@ -53,7 +63,7 @@ export function detachDataReferences(
   const visit = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(visit);
     if (!value || typeof value !== "object") return value;
-    return Object.fromEntries(
+    const result = Object.fromEntries(
       Object.entries(value).map(([key, child]) => {
         if (
           typeof child === "string" &&
@@ -69,6 +79,17 @@ export function detachDataReferences(
         return [key, visit(child)];
       }),
     );
+    const source = value as Record<string, unknown>;
+    if (
+      typeof source.applicationId === "string" &&
+      records.has(source.applicationId) &&
+      typeof source.stepId === "string" &&
+      source.stepId
+    ) {
+      result.previousStepId = source.stepId;
+      result.stepId = "";
+    }
+    return result;
   };
   return visit(data) as Record<string, unknown>;
 }

@@ -30,6 +30,8 @@ const migration = [
   "0002_submitted_files.sql",
   "0003_connectors.sql",
   "0004_simplification.sql",
+  "0005_workspace_improvements.sql",
+  "0006_backup_staging.sql",
 ]
   .map((filename) =>
     readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),

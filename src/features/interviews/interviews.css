@@ -1,0 +1,198 @@
+.interview-tabs {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 10px;
+  padding: 3px 4px 6px 0;
+  margin-bottom: 26px;
+}
+.interview-tabs::-webkit-scrollbar {
+  display: none;
+}
+.interview-tabs button {
+  flex: 0 0 auto;
+  padding: 11px 17px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  border-radius: 8px;
+  font-weight: 750;
+  font-size: 13px;
+}
+.interview-tabs button[aria-selected="true"] {
+  background: var(--blue);
+  color: white;
+}
+.interview-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 245px;
+  align-items: start;
+  gap: 28px;
+}
+.interview-intro {
+  padding: 24px;
+  border: 1.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  margin-bottom: 30px;
+}
+.interview-intro h3 {
+  margin: 0;
+}
+.interview-upcoming {
+  border-left: 1px solid var(--line);
+  padding-left: 22px;
+}
+.interview-upcoming h2 {
+  font-size: 17px;
+  margin: 0 0 16px;
+}
+.interview-upcoming-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  padding: 15px;
+  margin: 12px 0;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.interview-upcoming-card.active {
+  border-color: var(--blue);
+  box-shadow: 2px 2px 0 var(--blue);
+}
+.interview-upcoming-card span {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.interview-upcoming-card small {
+  color: var(--blue);
+  font-weight: 750;
+}
+.interview-upcoming details {
+  margin-top: 20px;
+  font-size: 12px;
+}
+.interview-upcoming summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.interview-story-bank {
+  margin: 28px 0;
+}
+.interview-story-filters {
+  display: flex;
+  gap: 12px;
+  margin: 18px 0;
+}
+.interview-story-filters input {
+  flex: 1;
+}
+.interview-story-filters select {
+  width: auto;
+  max-width: 220px;
+}
+.interview-story-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(310px, 100%), 1fr));
+  gap: 18px;
+  margin-top: 20px;
+}
+.interview-story-card {
+  --content-tone: var(--blue);
+  padding: 22px;
+  border: 1.5px solid var(--ink);
+  border-top: 6px solid var(--content-tone);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+.interview-story-content h3 {
+  font-size: 19px;
+  margin: 0 0 10px;
+}
+.interview-story-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 15px;
+}
+.interview-story-content h4 {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--blue);
+  margin: 17px 0 5px;
+}
+.interview-story-content .markdown {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.interview-story-card > .content-item-actions {
+  margin-top: 18px;
+}
+.interview-preparation-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.interview-preparation-heading h2 {
+  margin: 0;
+}
+.interview-preparation-heading p {
+  margin: 8px 0;
+}
+.interview-selected-stories {
+  margin-top: 32px;
+}
+.interview-story-picker {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 15px;
+}
+.interview-story-picker summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.interview-story-picker label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0 4px;
+}
+.interview-story-picker small {
+  margin-left: auto;
+  color: var(--muted);
+}
+@media (max-width: 1000px) {
+  .interview-workspace {
+    grid-template-columns: 1fr;
+  }
+  .interview-upcoming {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 24px 0 0;
+  }
+  .interview-upcoming-card {
+    max-width: 520px;
+  }
+}
+@media (max-width: 600px) {
+  .interview-intro,
+  .interview-story-card {
+    padding: 18px;
+  }
+  .interview-story-filters {
+    flex-direction: column;
+  }
+  .interview-story-filters select {
+    max-width: none;
+    width: 100%;
+  }
+}

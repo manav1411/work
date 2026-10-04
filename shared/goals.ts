@@ -55,6 +55,7 @@ export const goalFields = z
     targetDate: date.default(""),
     startDate: date.default(""),
     sourceUrl: destination.default(""),
+    directionId: z.string().max(120).default(""),
     measure: z
       .enum([
         "completion",
@@ -119,6 +120,7 @@ export const EMPTY_GOAL: GoalInput = {
   targetDate: "",
   startDate: "",
   sourceUrl: "",
+  directionId: "",
   measure: "completion",
   scope: "",
   target: 1,

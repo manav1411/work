@@ -1,3 +1,11 @@
+import {
+  downloadBackup,
+  beginBackupRestore,
+  stageBackupFile,
+  commitBackupRestore,
+  cancelBackupRestore,
+  cleanupOwnerBackupStaging,
+} from "./backup";
 import { Hono } from "hono";
 import { z } from "zod";
 import {
@@ -7,7 +15,7 @@ import {
 } from "../shared/model";
 import { authConfigured, createAuth, resolveSession } from "./auth";
 import { ApiError, now, type Env, type Variables } from "./env";
-import { connectorRoutes } from "./connectors/routes";
+import { recordContractStatements, validateRecordContract } from "./contracts";
 import { goalRoutes } from "./goals";
 import { goalMigrationRoutes } from "./goal-migration";
 import { learningRoutes } from "./learning";
@@ -214,7 +222,7 @@ app.all("/api/connectors/webhooks/*", (context) =>
 app.use("/api/*", async (context, next) => {
   const path = new URL(context.req.url).pathname;
   const known =
-    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|connectors(?:\/.*)?|records(?:\/batch|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
+    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|connectors(?:\/.*)?|records(?:\/batch|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|backup(?:\/restores(?:\/[^/]+(?:\/commit|\/files\/[^/]+)?)?)?|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
       path,
     );
   if (!known)
@@ -231,7 +239,24 @@ app.use("/api/*", async (context, next) => {
   await next();
 });
 
-app.route("/api/connectors", connectorRoutes);
+app.all("/api/connectors/*", (context) =>
+  context.json(
+    {
+      error: {
+        code: "RETIRED",
+        message:
+          "Connections have been retired. Existing imported records remain in your workspace and backups.",
+      },
+    },
+    410,
+  ),
+);
+app.all("/api/connectors", (context) =>
+  context.json(
+    { error: { code: "RETIRED", message: "Connections have been retired." } },
+    410,
+  ),
+);
 app.route("/api/goals/legacy", goalMigrationRoutes);
 app.route("/api/goals", goalRoutes);
 app.route("/api/learning", learningRoutes);
@@ -267,6 +292,8 @@ app.post("/api/records/batch", async (context) => {
   if (state.response) return context.json(state.response);
   const records = payload.records.map((input) => newRecord(input));
   for (const input of payload.records) assertNativeInput(input.data);
+  for (const record of records)
+    await validateRecordContract(context.env.DB, owner, record, records);
   const allLinks = [...new Set(records.flatMap((record) => record.links))];
   await validateLinks(context.env.DB, owner, allLinks);
   await validateDataReferences(context.env.DB, owner, {
@@ -284,6 +311,7 @@ app.post("/api/records/batch", async (context) => {
       ),
       ...bulkInsertLinks(context.env.DB, owner, records),
       ...applicationFileStatements(context.env.DB, owner, records),
+      ...recordContractStatements(context.env.DB, owner, records),
       ...idempotencyStatement(context.env.DB, owner, state, response),
     ]);
   } catch (error) {
@@ -312,6 +340,7 @@ app.post("/api/records", async (context) => {
   );
   if (state.response) return context.json(state.response);
   const record = newRecord(input);
+  await validateRecordContract(context.env.DB, owner, record);
   await validateLinks(context.env.DB, owner, record.links);
   await validateDataReferences(context.env.DB, owner, record.data);
   const response = { record };
@@ -323,6 +352,7 @@ app.post("/api/records", async (context) => {
       }),
       ...insertLinks(context.env.DB, owner, record),
       ...applicationFileStatements(context.env.DB, owner, [record]),
+      ...recordContractStatements(context.env.DB, owner, [record]),
       ...idempotencyStatement(context.env.DB, owner, state, response),
     ]);
   } catch (error) {
@@ -703,6 +733,50 @@ app.delete("/api/attachments/:id", async (context) => {
   return context.json({ deleted: true });
 });
 
+app.get("/api/backup", async (context) =>
+  downloadBackup(context.env, context.get("user").id),
+);
+app.post("/api/backup/restores", async (context) =>
+  context.json(
+    await beginBackupRestore(
+      context.env,
+      context.get("user").id,
+      await readJson(context.req.raw),
+    ),
+    201,
+  ),
+);
+app.put("/api/backup/restores/:restoreId/files/:fileId", async (context) =>
+  context.json(
+    await stageBackupFile(
+      context.env,
+      context.get("user").id,
+      context.req.param("restoreId"),
+      context.req.param("fileId"),
+      context.req.raw,
+    ),
+  ),
+);
+app.post("/api/backup/restores/:restoreId/commit", async (context) =>
+  context.json(
+    await commitBackupRestore(
+      context.env,
+      context.get("user").id,
+      context.req.param("restoreId"),
+    ),
+    201,
+  ),
+);
+app.delete("/api/backup/restores/:restoreId", async (context) =>
+  context.json(
+    await cancelBackupRestore(
+      context.env,
+      context.get("user").id,
+      context.req.param("restoreId"),
+    ),
+  ),
+);
+
 app.get("/api/export", async (context) => {
   const result = await exportWorkspace(
     context.env,
@@ -768,6 +842,7 @@ app.post("/api/account/delete", async (context) => {
     await context.env.FILES.delete(
       files.results.map((file) => file.object_key),
     );
+  await cleanupOwnerBackupStaging(context.env, owner);
   await context.env.DB.prepare("DELETE FROM user WHERE id=?").bind(owner).run();
   return context.json({ deleted: true });
 });

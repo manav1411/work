@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  recruitmentSteps,
+  remapRecruitmentSteps,
+} from "../shared/applications";
+import { backupStructureError } from "../shared/backup";
+import { recordDataError } from "../shared/record-contract";
 import { goalBackupSchema, type Goal } from "../shared/goals";
 import { bulkInsertGoals, listGoals } from "./goals";
 import {
@@ -84,7 +90,7 @@ function replaceAllLiteral(
 ): string {
   return value.split(oldValue).join(newValue);
 }
-function remapReferenceFields(
+export function remapReferenceFields(
   data: Record<string, unknown>,
   ids: Map<string, string>,
 ): Record<string, unknown> {
@@ -103,6 +109,11 @@ function remapReferenceFields(
     "topicId",
     "attachmentId",
     "primaryAttachmentId",
+    "interviewId",
+    "tabId",
+    "directionId",
+    "sectionId",
+    "track",
   ]);
   const visit = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(visit);
@@ -113,7 +124,7 @@ function remapReferenceFields(
           return [key, ids.get(item) || item];
         if (
           Array.isArray(item) &&
-          ["assetIds", "recordIds", "companyIds"].includes(key)
+          ["assetIds", "recordIds", "companyIds", "storyIds"].includes(key)
         )
           return [
             key,
@@ -653,7 +664,7 @@ const backupRecordSchema = recordSchema.extend({
   updatedAt: z.string().datetime(),
   deletedAt: z.string().datetime().nullable(),
 });
-const backupSchema = z
+export const backupSchema = z
   .object({
     format: z.literal("work-export"),
     version: z.union([z.literal(1), z.literal(2)]),
@@ -699,19 +710,158 @@ const backupSchema = z
   })
   .strict();
 
+export interface PreparedWorkspaceRestore {
+  recordIds: Map<string, string>;
+  attachmentIds: Map<string, string>;
+  attachments: AttachmentRow[];
+  idempotencyKey: string;
+  commitStatements?: (response: {
+    restored: number;
+    attachments: number;
+    warnings: string[];
+  }) => D1PreparedStatement[];
+}
+
+export function validateRestoredRelations(
+  records: WorkRecord[],
+  attachments: AttachmentRow[],
+  goals: Goal[],
+) {
+  const indexed = new Map(records.map((record) => [record.id, record]));
+  const files = new Map(attachments.map((file) => [file.id, file]));
+  const relation = (
+    value: unknown,
+    kinds: WorkRecord["kind"][],
+    category?: string,
+  ) => {
+    if (typeof value !== "string" || !value) return undefined;
+    const related = indexed.get(value);
+    if (
+      !related ||
+      !kinds.includes(related.kind) ||
+      (category && related.data.category !== category)
+    )
+      throw new ApiError(
+        400,
+        "INVALID_BACKUP",
+        "A restored relation points to a missing record or the wrong kind of record.",
+      );
+    return related;
+  };
+  for (const record of records) {
+    const error = recordDataError(record.kind, record.data);
+    if (error) throw new ApiError(400, "INVALID_BACKUP", error);
+    const refs = dataReferences(record.data);
+    if (
+      refs.records.some((value) => !indexed.has(value)) ||
+      refs.files.some((value) => !files.has(value))
+    )
+      throw new ApiError(
+        400,
+        "INVALID_BACKUP",
+        "The backup contains a structured reference to a missing record or file.",
+      );
+    if (record.kind === "application")
+      relation(record.data.companyId, ["company"]);
+    const scoped = [
+      "content-section",
+      "content-resource",
+      "interview-preparation",
+    ].includes(String(record.data.category));
+    const application =
+      record.kind === "interview" || scoped
+        ? relation(record.data.applicationId, ["application"])
+        : undefined;
+    const interview = scoped
+      ? relation(record.data.interviewId, ["interview"])
+      : undefined;
+    relation(record.data.directionId, ["path", "rotation", "decision"]);
+    if (
+      ["content-section", "content-resource"].includes(
+        String(record.data.category),
+      )
+    ) {
+      const topic = relation(record.data.topicId, ["topic"]);
+      if (
+        topic &&
+        !(
+          topic.data.category === "learn-topic" ||
+          (topic.data.category !== "learn-track" &&
+            typeof topic.data.track === "string" &&
+            topic.data.track)
+        )
+      )
+        throw new ApiError(
+          400,
+          "INVALID_BACKUP",
+          "Learning content references a track instead of a topic.",
+        );
+      relation(record.data.tabId, ["note"], "interview-tab");
+    }
+    if (Array.isArray(record.data.storyIds))
+      for (const value of record.data.storyIds) relation(value, ["story"]);
+    if (
+      application &&
+      interview &&
+      interview.data.applicationId !== application.id
+    )
+      throw new ApiError(
+        400,
+        "INVALID_BACKUP",
+        "Interview preparation references an interview from a different application.",
+      );
+    if (
+      record.data.stepId &&
+      (!application ||
+        !recruitmentSteps(application.data, true).some(
+          (step) => step.id === record.data.stepId,
+        ))
+    )
+      throw new ApiError(
+        400,
+        "INVALID_BACKUP",
+        "An appointment references a step outside its application process.",
+      );
+    const managedDocument =
+      record.kind === "asset" &&
+      (["resume", "letter", "document", "cover-letter"].includes(
+        String(record.data.type),
+      ) ||
+        record.data.documentDefault === true);
+    if (
+      managedDocument &&
+      record.data.primaryAttachmentId &&
+      files.get(String(record.data.primaryAttachmentId))?.record_id !==
+        record.id
+    )
+      throw new ApiError(
+        400,
+        "INVALID_BACKUP",
+        "A primary file belongs to a different document.",
+      );
+  }
+  for (const goal of goals)
+    relation(goal.directionId, ["path", "rotation", "decision"]);
+}
+
 export async function restoreWorkspace(
   env: Env,
   owner: string,
   input: unknown,
+  prepared?: PreparedWorkspaceRestore,
 ) {
   const backup = parse(backupSchema, input);
-  if (backup.attachments.length > 40)
+  if (!prepared && backup.attachments.length > 40)
     throw new ApiError(
       413,
       "RESTORE_TOO_MANY_FILES",
       "Split backups containing more than 40 attachments into smaller linked archives.",
     );
-  const ids = new Map(backup.records.map((record) => [record.id, id()]));
+  const structureError = backupStructureError(backup);
+  if (structureError) throw new ApiError(400, "INVALID_BACKUP", structureError);
+  const ids =
+    prepared?.recordIds ??
+    new Map(backup.records.map((record) => [record.id, id()]));
   if (new Set(backup.goals.map((goal) => goal.id)).size !== backup.goals.length)
     throw new ApiError(
       400,
@@ -731,11 +881,13 @@ export async function restoreWorkspace(
         "INVALID_BACKUP",
         "The backup contains a link to a missing record.",
       );
-  const key = `restore:${await hashValue(backup)}`;
+  const key = prepared?.idempotencyKey ?? `restore:${await hashValue(backup)}`;
   const state = await checkIdempotency(env.DB, owner, key, backup);
   if (state.response) return state.response;
-  const attachments: AttachmentRow[] = [];
-  const attachmentIds = new Map<string, string>();
+  const attachments: AttachmentRow[] = prepared
+    ? [...prepared.attachments]
+    : [];
+  const attachmentIds = prepared?.attachmentIds ?? new Map<string, string>();
   const warnings: string[] = [];
   try {
     for (const file of backup.attachments) {
@@ -746,6 +898,30 @@ export async function restoreWorkspace(
           "INVALID_BACKUP",
           "An attachment references a missing record.",
         );
+      if (prepared) {
+        const row = attachments.find(
+          (attachment) => attachment.id === attachmentIds.get(file.id),
+        );
+        if (
+          !row ||
+          row.owner_id !== owner ||
+          row.record_id !== recordId ||
+          row.filename !== file.filename ||
+          row.content_type !== file.contentType ||
+          row.size !== file.size ||
+          row.object_key !== `${owner}/${recordId}/${row.id}`
+        )
+          throw new ApiError(
+            400,
+            "INVALID_BACKUP",
+            "A staged file does not match this restore session.",
+          );
+        if (file.missing)
+          warnings.push(
+            `Attachment ${file.filename} has no file content in this backup. Its metadata is retained.`,
+          );
+        continue;
+      }
       if (!file.base64) {
         warnings.push(
           `Attachment ${file.filename} has no file content in this backup. Its metadata is retained.`,
@@ -803,13 +979,39 @@ export async function restoreWorkspace(
         );
       return body;
     };
-    const rewriteData = (data: Record<string, unknown>) => {
-      // Exact record-ID values in structured relation fields follow the restore.
+    const stepIds = new Map<string, Map<string, string>>();
+    for (const application of backup.records.filter(
+      (record) => record.kind === "application",
+    )) {
+      const mapping = new Map<string, string>();
+      for (const data of [
+        application.data,
+        ...backup.revisions
+          .filter((revision) => revision.recordId === application.id)
+          .map((revision) => revision.data),
+      ])
+        for (const step of recruitmentSteps(data, true))
+          if (!mapping.has(step.id)) mapping.set(step.id, id());
+      stepIds.set(application.id, mapping);
+    }
+    const rewriteData = (
+      data: Record<string, unknown>,
+      originalRecordId: string,
+      kind: WorkRecord["kind"],
+    ) => {
+      const applicationId =
+        kind === "application"
+          ? originalRecordId
+          : typeof data.applicationId === "string"
+            ? data.applicationId
+            : "";
+      const remapped = remapReferenceFields(
+        remapRecruitmentSteps(data, stepIds.get(applicationId) ?? new Map()),
+        new Map([...ids, ...attachmentIds]),
+      );
+      // Rewrite destinations in text while keeping ordinary exact-ID user text intact.
       const visit = (value: unknown): unknown => {
-        if (typeof value === "string")
-          return (
-            ids.get(value) || attachmentIds.get(value) || rewriteBody(value)
-          );
+        if (typeof value === "string") return rewriteBody(value);
         if (Array.isArray(value)) return value.map(visit);
         if (value && typeof value === "object")
           return Object.fromEntries(
@@ -817,14 +1019,16 @@ export async function restoreWorkspace(
           );
         return value;
       };
-      return visit(data) as Record<string, unknown>;
+      return visit(remapped) as Record<string, unknown>;
     };
     const records: WorkRecord[] = backup.records.map((record) => ({
       ...record,
       id: ids.get(record.id)!,
       links: record.links.map((link) => ids.get(link)!),
       body: rewriteBody(record.body),
-      data: detachRestoredSource(rewriteData(record.data)),
+      data: detachRestoredSource(
+        rewriteData(record.data, record.id, record.kind),
+      ),
     }));
     await validateDataReferences(
       env.DB,
@@ -835,7 +1039,16 @@ export async function restoreWorkspace(
     );
     const statements = bulkInsertRecords(env.DB, owner, records);
     // Goal IDs are remapped independently; the restore idempotency key prevents duplicates.
-    const goals = backup.goals.map((goal) => ({ ...goal, id: id() }));
+    const goals = backup.goals.map((goal) => ({
+      ...goal,
+      id: id(),
+      directionId: ids.get(goal.directionId) || goal.directionId,
+      milestones: goal.milestones.map((milestone) => ({
+        ...milestone,
+        id: id(),
+      })),
+    }));
+    validateRestoredRelations(records, attachments, goals);
     statements.push(...bulkInsertGoals(env.DB, owner, goals));
     statements.push(
       ...(await restoreConnectorStatements(
@@ -870,7 +1083,7 @@ export async function restoreWorkspace(
         body: rewriteBody(revision.body),
         tags: revision.tags,
         links: revision.links.map((link) => ids.get(link) || link),
-        data: rewriteData(revision.data),
+        data: rewriteData(revision.data, revision.recordId, record.kind),
         created_at: revision.createdAt,
       });
     }
@@ -898,8 +1111,9 @@ export async function restoreWorkspace(
       records,
       goals,
     };
+    statements.push(...(prepared?.commitStatements?.(response) ?? []));
     statements.push(...idempotencyStatement(env.DB, owner, state, response));
-    if (statements.length > 35)
+    if (!prepared && statements.length > 35)
       throw new ApiError(
         413,
         "RESTORE_TOO_LARGE",
@@ -908,7 +1122,7 @@ export async function restoreWorkspace(
     await env.DB.batch(statements);
     return response;
   } catch (error) {
-    if (attachments.length)
+    if (!prepared && attachments.length)
       await env.FILES.delete(attachments.map((row) => row.object_key));
     const response = await raceResponse(env.DB, owner, state);
     if (response) return response;

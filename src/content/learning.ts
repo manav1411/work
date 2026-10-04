@@ -16,7 +16,7 @@ export const TRACKS = [
   {
     id: "dsa",
     title: "DSA & Python",
-    description: "Twelve weeks of patterns, explanation and repeat practice.",
+    description: "Patterns, explanation and repeat practice, at your own pace.",
     accent: "blue",
   },
   {
@@ -361,11 +361,11 @@ export const CURATED_RESOURCES = [
     body: "Learn the Python features you actually use in problem solving; connect each section to a small exercise.",
   },
   {
-    id: "neetcode",
-    title: "NeetCode problem list",
+    id: "leetcode",
+    title: "LeetCode problems",
     category: "DSA",
-    url: "https://neetcode.io/practice?tab=neetcode150",
-    body: "Use the 150-problem catalogue as a pattern guide. Record your own explanations and reviews in Practice.",
+    url: "https://leetcode.com/problemset/",
+    body: "Practise patterns from the roadmap and keep your own explanations and review notes.",
   },
   {
     id: "mdn",

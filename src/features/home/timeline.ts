@@ -5,6 +5,7 @@ import {
   type WorkRecord,
 } from "../../../shared/model";
 import { goalProgress, type Goal } from "../../../shared/goals";
+import { applicationStatus } from "../../../shared/applications";
 
 export interface TimelineItem {
   id: string;
@@ -48,7 +49,7 @@ export function timelineItems(
     }
     if (record.kind === "application") {
       const closed = ["Rejected", "Withdrawn", "Accepted"].includes(
-        field(record, "stage"),
+        applicationStatus(record),
       );
       for (const [key, label, kind] of [
         ["deadline", "Apply by", "deadline"],
@@ -66,6 +67,26 @@ export function timelineItems(
           completed: closed,
         });
       }
+    }
+    if (["path", "rotation", "decision", "company"].includes(record.kind)) {
+      const date =
+        field(record, "reviewDate") ||
+        (record.kind === "rotation" ? field(record, "endDate") : "");
+      if (date)
+        add({
+          id: `${record.id}:review`,
+          date,
+          title: record.title,
+          detail:
+            record.kind === "company"
+              ? "Radar review"
+              : field(record, "reviewDate")
+                ? "Direction review"
+                : "Experience milestone",
+          kind: "followup",
+          record,
+          completed: field(record, "status") === "Completed",
+        });
     }
   }
   for (const goal of goals) {

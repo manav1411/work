@@ -1,3 +1,4 @@
+import { recordContractStatements, validateRecordContract } from "../contracts";
 import type { Attachment, RecordInput, WorkRecord } from "../../shared/model";
 import { dataReferences, detachDataReferences } from "../../shared/references";
 import { ApiError, id, now } from "../env";
@@ -498,6 +499,7 @@ export async function writeRecord(
   expectedVersion?: number,
   additionalStatements: D1PreparedStatement[] = [],
 ) {
+  await validateRecordContract(db, owner, record);
   const original =
     expectedVersion === undefined
       ? null
@@ -531,6 +533,7 @@ export async function writeRecord(
       }),
       ...linkStatements(db, owner, record),
       ...applicationFileStatements(db, owner, [record]),
+      ...recordContractStatements(db, owner, [record]),
       ...additionalStatements,
     ]);
   } catch (error) {

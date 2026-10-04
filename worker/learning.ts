@@ -2,15 +2,11 @@ import { Hono } from "hono";
 import type { z } from "zod";
 import {
   LEARNING_SOURCE,
-  learningContentSchema,
-  learningProgressSchema,
   learningStatsSchema,
-  learningToggleSchema,
   learningUsername,
   type LearningSourceResponse,
 } from "../shared/learning";
 import { ApiError, type Env, type Variables } from "./env";
-import { readJson } from "./validation";
 
 const MAX_SOURCE_BYTES = 4_000_000;
 const SOURCE_TIMEOUT_MS = 12_000;
@@ -57,22 +53,17 @@ async function remember<T>(
 export async function fetchLearningSource<T>(
   path: string,
   schema: z.ZodType<T>,
-  init: RequestInit = {},
 ): Promise<T> {
   // Paths are built only by this module, never from a client URL. Cookies and
   // private Work data are not forwarded to the public learning source.
-  const allowed =
-    /^\/api\/(?:admin\/content|leetcode\?username=[A-Za-z0-9_-]{1,40}|progress(?:\?username=[A-Za-z0-9_-]{1,40})?)$/;
+  const allowed = /^\/api\/leetcode\?username=[A-Za-z0-9_-]{1,40}$/;
   if (!allowed.test(path))
     throw new ApiError(400, "LEARNING_SOURCE", "Invalid learning source.");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SOURCE_TIMEOUT_MS);
   try {
     const response = await fetch(`${LEARNING_SOURCE}${path}`, {
-      ...init,
-      headers: init.body
-        ? { "Content-Type": "application/json" }
-        : { Accept: "application/json" },
+      headers: { Accept: "application/json" },
       // Workerd rejects `redirect: "error"` before the request is sent. Manual
       // redirects let us inspect the response and reject them without
       // forwarding any credentials.
@@ -180,18 +171,22 @@ export const learningRoutes = new Hono<{
   Bindings: Env;
   Variables: Variables;
 }>();
-learningRoutes.get("/content", async (context) =>
-  context.json(
-    await source(
-      context.env,
-      context.get("user").id,
-      "content",
-      "/api/admin/content",
-      learningContentSchema,
-      300_000,
+// The teaching curriculum remains on its source site. Work no longer fetches
+// content or writes shared task completion, including from older clients.
+for (const path of ["/content", "/progress", "/tasks", "/refresh"]) {
+  learningRoutes.all(path, (context) =>
+    context.json(
+      {
+        error: {
+          code: "LEARNING_RETIRED",
+          message:
+            "The Weeks curriculum has been retired from Work. Use the roadmap; existing progress is preserved.",
+        },
+      },
+      410,
     ),
-  ),
-);
+  );
+}
 learningRoutes.get("/stats", async (context) => {
   const owner = context.get("user").id;
   const username = await configuredUsername(context.env, owner);
@@ -214,94 +209,4 @@ learningRoutes.get("/stats", async (context) => {
     120_000,
   );
   return context.json({ ...result, username, configured: true });
-});
-learningRoutes.get("/progress", async (context) => {
-  const owner = context.get("user").id;
-  const username = await configuredUsername(context.env, owner);
-  if (!username)
-    return context.json({
-      data: { tasks: {} },
-      username: "",
-      configured: false,
-      source: { fetchedAt: null, stale: false },
-    });
-  return context.json({
-    ...(await source(
-      context.env,
-      owner,
-      `progress:${username.toLowerCase()}`,
-      `/api/progress?username=${username}`,
-      learningProgressSchema,
-      15_000,
-    )),
-    username,
-    configured: true,
-  });
-});
-learningRoutes.post("/progress", async (context) => {
-  const parsed = learningToggleSchema.safeParse(
-    await readJson(context.req.raw),
-  );
-  if (!parsed.success)
-    throw new ApiError(
-      400,
-      "LEARNING_TASK",
-      "Choose a valid learning task and completion state.",
-    );
-  const owner = context.get("user").id;
-  const username = await configuredUsername(context.env, owner);
-  if (!username)
-    throw new ApiError(
-      400,
-      "LEARNING_USERNAME",
-      "Set your LeetCode username in Settings first.",
-    );
-  const content = await source(
-    context.env,
-    owner,
-    "content",
-    "/api/admin/content",
-    learningContentSchema,
-    300_000,
-  );
-  if (
-    !content.data.weeks.some((week) =>
-      week.tasks?.some((task) => task.id === parsed.data.taskId),
-    )
-  )
-    throw new ApiError(
-      400,
-      "LEARNING_TASK",
-      "This task is not part of the learning curriculum.",
-    );
-  try {
-    const data = await fetchLearningSource(
-      "/api/progress",
-      learningProgressSchema,
-      {
-        method: "POST",
-        body: JSON.stringify({ username, ...parsed.data }),
-      },
-    );
-    const fetchedAt = new Date().toISOString();
-    await remember(
-      context.env,
-      owner,
-      `progress:${username.toLowerCase()}`,
-      data,
-      fetchedAt,
-    );
-    return context.json({
-      data,
-      username,
-      configured: true,
-      source: { fetchedAt, stale: false },
-    });
-  } catch {
-    throw new ApiError(
-      502,
-      "LEARNING_SAVE",
-      "Task completion could not be confirmed. Retry to reload shared progress.",
-    );
-  }
 });

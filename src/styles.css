@@ -18,6 +18,9 @@
   --font-heading: "Space Grotesk Variable", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --shadow: 4px 4px 0 var(--ink);
+  --shadow-colour: #202128;
+  --surface-tint: #f1efe8;
+  --link-colour: #2444b8;
 }
 * {
   box-sizing: border-box;
@@ -2024,6 +2027,9 @@ kbd {
   --canvas: #1b1e22;
   --muted: #afb2ad;
   --line: #3d4145;
+  --shadow-colour: #090b0e;
+  --surface-tint: #2d3138;
+  --link-colour: #b2c2ff;
   background: var(--canvas);
   color: var(--ink);
 }

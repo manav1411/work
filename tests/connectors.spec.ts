@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("retired connector setup offers backup recovery and removal keeps imported records", async ({
+test("retired connector route exposes no connection controls and keeps imported records", async ({
   page,
 }) => {
   await page.addInitScript(() =>
@@ -78,23 +78,18 @@ test("retired connector setup offers backup recovery and removal keeps imported 
       .getByRole("navigation", { name: "Main navigation", exact: true })
       .getByRole("link", { name: "Connectors", exact: true }),
   ).toHaveCount(0);
-  await page.getByText("Existing connections", { exact: true }).click();
-  await expect(
-    page.getByText("Existing Notion account", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "Remove", exact: true }).click();
-  await page
-    .getByRole("dialog", { name: "Remove Notion connection?" })
-    .getByRole("button", { name: "Confirm", exact: true })
-    .click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(
     page.getByText("Existing connections", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Saved records and files", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Overleaf documents", exact: true }),
   ).toHaveCount(0);
   const state = await page.evaluate(() =>
     JSON.parse(sessionStorage.getItem("work-demo-v1")!),
   );
-  expect(state.connectors.connections[0].status).toBe("disconnected");
   expect(
     state.records.find(
       (row: { id: string }) => row.id === "existing-notion-record",
@@ -102,7 +97,7 @@ test("retired connector setup offers backup recovery and removal keeps imported 
   ).toBe("Preserved imported contents");
 });
 
-test("clearing a migrated LeetCode username prevents its legacy connection from reappearing", async ({
+test("clearing the direct LeetCode username prevents retired connector settings from reappearing", async ({
   page,
 }) => {
   await page.addInitScript(() =>
@@ -113,7 +108,7 @@ test("clearing a migrated LeetCode username prevents its legacy connection from 
   await page.evaluate(() => {
     const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
     const at = "2026-01-01T00:00:00Z";
-    state.preferences.leetcode = "";
+    state.preferences.leetcode = "previous_handle";
     state.connectors = {
       connections: [
         {
@@ -152,5 +147,4 @@ test("clearing a migrated LeetCode username prevents its legacy connection from 
     JSON.parse(sessionStorage.getItem("work-demo-v1")!),
   );
   expect(state.preferences.leetcode).toBe("");
-  expect(state.connectors.connections[0].status).toBe("disconnected");
 });

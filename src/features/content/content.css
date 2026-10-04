@@ -1,0 +1,115 @@
+.content-panel {
+  margin-top: 20px;
+}
+.content-panel-heading,
+.content-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+.content-panel-heading h2,
+.content-panel-heading h3,
+.content-section-heading h2,
+.content-section-heading h3 {
+  margin: 0;
+}
+.content-resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
+  gap: 16px;
+  margin-bottom: 15px;
+}
+.content-resource-card {
+  --content-tone: var(--blue);
+  border: 1.5px solid var(--ink);
+  border-top: 6px solid var(--content-tone);
+  box-shadow: 3px 3px 0 var(--ink);
+  padding: 18px;
+}
+.content-tone-1 {
+  --content-tone: var(--pink);
+}
+.content-tone-2 {
+  --content-tone: var(--orange);
+}
+.content-tone-3 {
+  --content-tone: var(--aqua);
+}
+.content-resource-card > a {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 17px;
+}
+.content-resource-card > a svg {
+  flex-shrink: 0;
+  color: var(--blue);
+}
+.content-resource-card > p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.content-resource-card .content-item-actions {
+  margin-top: 12px;
+}
+.content-item-actions,
+.content-delete-control {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.content-item-actions .button,
+.content-delete-control .button {
+  font-size: 11px;
+  padding: 7px 9px;
+  min-height: 34px;
+}
+.content-section-card {
+  margin: 18px 0;
+  padding: 22px;
+  border: 1.5px solid var(--ink);
+}
+.content-note-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.content-note textarea {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  min-height: 180px;
+}
+.content-save-error {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--red, #b52a44);
+}
+.content-delete-control > [role="alert"] {
+  color: var(--red, #b52a44);
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .content-panel-heading,
+  .content-section-heading {
+    align-items: flex-start;
+  }
+  .content-section-card {
+    padding: 17px;
+  }
+  .content-resource-card {
+    padding: 16px;
+  }
+}

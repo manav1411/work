@@ -29,7 +29,7 @@ function legacyNote(): WorkRecord {
   };
 }
 
-test("four destinations and the account menu work with keyboard, pointer, and sign-out", async ({
+test("six destinations and the account menu work with keyboard, pointer, and sign-out", async ({
   page,
 }) => {
   await page.route("**/api/session", (route) =>
@@ -44,7 +44,9 @@ test("four destinations and the account menu work with keyboard, pointer, and si
     "Home",
     "Learn",
     "Applications",
+    "Interviews",
     "Documents",
+    "Your Direction",
   ]);
   const account = page
     .locator(".sidebar")
@@ -90,7 +92,10 @@ test("mobile navigation fits, traps drawer focus, and returns focus on close", a
     page
       .getByRole("navigation", { name: "Mobile navigation" })
       .getByRole("link"),
-  ).toHaveText(["Home", "Learn", "Applications", "Documents"]);
+  ).toHaveText(["Home", "Learn", "Applications"]);
+  await expect(
+    page.getByRole("button", { name: "More navigation", exact: true }),
+  ).toBeVisible();
   const trigger = page.getByRole("button", {
     name: "Open navigation",
     exact: true,
@@ -119,6 +124,8 @@ test("mobile navigation fits, traps drawer focus, and returns focus on close", a
     "/learn",
     "/applications",
     "/documents",
+    "/interviews",
+    "/direction",
     "/settings",
   ]) {
     await page.goto(route);
@@ -151,6 +158,7 @@ test("compact preferences persist without altering existing records", async ({
     .getByLabel("LeetCode username", { exact: true })
     .fill("https://leetcode.com/u/synthetic_engineer/");
   await page.getByLabel("Reduce motion", { exact: true }).check();
+  await page.getByLabel("Appearance", { exact: true }).selectOption("dark");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(
     page.getByRole("status", { name: "" }).filter({ hasText: /^Saved$/ }),
@@ -166,6 +174,23 @@ test("compact preferences persist without altering existing records", async ({
     "data-reduce-motion",
     "true",
   );
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  for (const route of [
+    "/home",
+    "/learn",
+    "/applications",
+    "/interviews",
+    "/documents",
+    "/direction",
+  ]) {
+    await page.goto(route);
+    await page.locator("main h1").waitFor();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  }
+  await page.goto("/settings");
+  await page.getByLabel("Appearance", { exact: true }).selectOption("light");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   expect(
     await page.evaluate(
       () => JSON.parse(sessionStorage.getItem("work-demo-v1")!).records,
@@ -199,12 +224,10 @@ test("legacy aliases preserve selected context and retired records remain export
   await page.goto("/assets");
   await expect(page).toHaveURL(/\/documents$/);
   await page.goto("/assets?record=legacy-resume-file");
-  await expect(page).toHaveURL(
-    /\/settings\?legacy=assets&record=legacy-resume-file#recovery$/,
-  );
-  await expect(page.locator(".legacy-recovery-note")).toContainText(
-    "Retired PDF résumé",
-  );
+  await expect(page).toHaveURL(/\/documents\?record=legacy-resume-file$/);
+  await expect(
+    page.getByRole("heading", { name: "Retired PDF résumé", exact: true }),
+  ).toBeVisible();
   await page.goto("/practice?record=two-sum");
   await expect(page).toHaveURL(/\/learn\?view=roadmap&problem=two-sum$/);
   await page.goto("/focus");
@@ -218,6 +241,7 @@ test("legacy aliases preserve selected context and retired records remain export
   const download = page.waitForEvent("download");
   await page
     .getByRole("button", { name: "Download backup", exact: true })
+    .first()
     .click();
   const downloaded = await download;
   const backup = JSON.parse(await readFile((await downloaded.path())!, "utf8"));
@@ -234,6 +258,70 @@ test("full backups restore goals and legacy files additively and repeated restor
   await page.evaluate((row) => {
     const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
     state.records.push(row);
+    state.records.push({
+      ...row,
+      id: "backup-path",
+      kind: "path",
+      title: "Explore backend ownership",
+      body: "Longer-term route",
+      data: {},
+    });
+    if (state.goals.length) state.goals[0].directionId = "backup-path";
+    state.records.push({
+      ...row,
+      id: "backup-application",
+      kind: "application",
+      title: "Backup interview role",
+      body: "",
+      data: {
+        company: "Backup Company",
+        applicationStatus: "Applied",
+        recruitmentSteps: [
+          {
+            id: "backup-round",
+            title: "Technical interview",
+            kind: "interview",
+            state: "Planned",
+            date: "",
+          },
+          {
+            id: "backup-archived-round",
+            title: "Previous round",
+            kind: "interview",
+            state: "Cancelled",
+            date: "",
+            archived: true,
+          },
+        ],
+      },
+    });
+    state.records.push({
+      ...row,
+      id: "backup-appointment",
+      kind: "interview",
+      title: "Backup appointment",
+      body: "",
+      links: ["backup-application"],
+      data: {
+        applicationId: "backup-application",
+        stepId: "backup-archived-round",
+        startsAt: "2030-12-01T09:00:00Z",
+        timezone: "UTC",
+        status: "Scheduled",
+      },
+    });
+    state.records.push({
+      ...row,
+      id: "backup-preparation",
+      kind: "note",
+      title: "Backup round preparation",
+      data: {
+        category: "interview-preparation",
+        applicationId: "backup-application",
+        interviewId: "backup-appointment",
+        storyIds: [],
+      },
+    });
     state.attachments.push({
       id: "synthetic-original-file",
       recordId: row.id,
@@ -248,7 +336,7 @@ test("full backups restore goals and legacy files additively and repeated restor
   await page.reload();
   const download = page.waitForEvent("download");
   await page
-    .getByRole("button", { name: "Download full backup", exact: true })
+    .getByRole("button", { name: "Download backup", exact: true })
     .click();
   const file = await download;
   const archive = JSON.parse(await readFile((await file.path())!, "utf8"));
@@ -285,6 +373,44 @@ test("full backups restore goals and legacy files additively and repeated restor
     ),
   ).toBe(true);
   expect(restored.attachments.length).toBe(archive.attachments.length * 2);
+  const copiedAppointment = restored.records.find(
+    (record: WorkRecord) =>
+      record.title === "Backup appointment" &&
+      record.id !== "backup-appointment",
+  );
+  const copiedApplication = restored.records.find(
+    (record: WorkRecord) => record.id === copiedAppointment.data.applicationId,
+  );
+  expect(copiedApplication.id).not.toBe("backup-application");
+  expect(copiedAppointment.data.stepId).not.toBe("backup-archived-round");
+  expect(
+    copiedApplication.data.recruitmentSteps.some(
+      (step: { id: string; archived: boolean }) =>
+        step.id === copiedAppointment.data.stepId && step.archived,
+    ),
+  ).toBe(true);
+  const copiedPreparation = restored.records.find(
+    (record: WorkRecord) =>
+      record.title === "Backup round preparation" &&
+      record.id !== "backup-preparation",
+  );
+  expect(copiedPreparation.data).toMatchObject({
+    applicationId: copiedApplication.id,
+    interviewId: copiedAppointment.id,
+  });
+  if (archive.goals.length) {
+    const copiedGoal = restored.goals.find(
+      (goal: { id: string; title: string }) =>
+        goal.title === archive.goals[0].title &&
+        goal.id !== archive.goals[0].id,
+    );
+    expect(copiedGoal.directionId).not.toBe("backup-path");
+    expect(
+      restored.records.find(
+        (record: WorkRecord) => record.id === copiedGoal.directionId,
+      )?.title,
+    ).toBe("Explore backend ownership");
+  }
   const count = restored.records.length;
   await restore();
   expect(
@@ -312,25 +438,18 @@ test("full backups restore goals and legacy files additively and repeated restor
   );
   expect(restoredLegacy.records.length).toBe(count + archive.records.length);
   expect(restoredLegacy.goals.length).toBe(restored.goals.length);
-  await page.getByText("Saved records and files", { exact: true }).click();
   await expect(
-    page.getByRole("button", {
-      name: "Download original-preparation.txt",
-      exact: true,
-    }),
-  ).toHaveCount(3);
-  const originalDownload = page.waitForEvent("download");
-  await page
-    .getByRole("button", {
-      name: "Download original-preparation.txt",
-      exact: true,
-    })
-    .first()
-    .click();
-  const original = await originalDownload;
-  expect(await readFile((await original.path())!, "utf8")).toBe(
-    "Original contents",
+    page.getByText("Saved records and files", { exact: true }),
+  ).toHaveCount(0);
+  const restoredFiles = restoredLegacy.attachments.filter(
+    (attachment: { filename: string }) =>
+      attachment.filename === "original-preparation.txt",
   );
+  expect(restoredFiles).toHaveLength(3);
+  for (const attachment of restoredFiles)
+    expect(restoredLegacy.files[attachment.id]).toBe(
+      Buffer.from("Original contents").toString("base64"),
+    );
 });
 
 test("device drafts survive reload, export, and retry while sign-out waits for sync", async ({
@@ -400,17 +519,17 @@ test("device drafts survive reload, export, and retry while sign-out waits for s
     name: "Edit application",
     exact: true,
   });
-  await editor.getByLabel("Stage", { exact: true }).selectOption("Applied");
+  await editor.getByLabel("Status", { exact: true }).selectOption("Applied");
   await editor
     .getByRole("button", { name: "Save application", exact: true })
     .click();
   await expect(editor).not.toBeVisible();
   await page.goto("/settings");
   await expect(
-    page.getByRole("heading", { name: /Unsynced changes/ }),
+    page.getByRole("heading", { name: /Device drafts/ }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
-  await expect(page.locator(".toast-error")).toContainText("unsynced");
+  await expect(page.locator(".toast-error")).toContainText(/device drafts/i);
   expect(signedOut).toBe(false);
   const download = page.waitForEvent("download");
   await page
@@ -418,14 +537,15 @@ test("device drafts survive reload, export, and retry while sign-out waits for s
     .click();
   const archive = await download;
   const drafts = JSON.parse(await readFile((await archive.path())!, "utf8"));
-  expect(drafts.drafts[0].patch.data.stage).toBe("Applied");
+  expect(drafts.drafts[0].patch.data.applicationStatus).toBe("Applied");
   expect(drafts.drafts[0].patch.links).toEqual(["preserved-link"]);
   offline = false;
   await page.getByRole("button", { name: "Retry sync", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: /Unsynced changes/ }),
+    page.getByRole("heading", { name: /Device drafts/ }),
   ).toHaveCount(0);
-  expect(application.data.stage).toBe("Applied");
+  expect(application.data.applicationStatus).toBe("Applied");
+  expect(application.data.stage).toBe("Saved");
   expect(application.links).toEqual(["preserved-link"]);
   await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await expect(

@@ -1,14 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { DEFAULT_PREFERENCES } from "../shared/model";
-import { DEMO_STATS, DEMO_WEEKS } from "../src/features/learn/demo";
+import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
+import { DEMO_STATS } from "../src/features/learn/demo";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    sessionStorage.setItem("work-demo-active", "true");
-  });
+  await page.addInitScript(() =>
+    sessionStorage.setItem("work-demo-active", "true"),
+  );
 });
 
-test("demo Learn opens slides and shared homework without external calls or journals", async ({
+test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode destinations", async ({
   page,
 }) => {
   const sourceRequests: string[] = [];
@@ -16,66 +16,127 @@ test("demo Learn opens slides and shared homework without external calls or jour
     if (/\/api\/learning\/|manavdodia\.com\/api\//.test(request.url()))
       sourceRequests.push(request.url());
   });
-  await page.goto("/learn");
+  await page.goto("/learn?problem=binary-search");
   await expect(
-    page.getByRole("heading", { name: "Learn.", exact: true }),
+    page.getByRole("heading", { name: "DSA & Python roadmap", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".learn-week-card")).toHaveCount(12);
-  await expect(page.getByRole("textbox")).toHaveCount(0);
-  const week = page.locator(".learn-week-card").first();
-  await week.getByRole("button", { name: "Slides", exact: true }).click();
-  const slides = page.getByRole("dialog");
   await expect(
-    slides.getByText("Demo slide deck.", { exact: true }),
+    page.getByRole("heading", { name: "150 problem roadmap", exact: true }),
   ).toBeVisible();
-  await page.keyboard.press("ArrowRight");
   await expect(
-    slides.getByRole("heading", { name: "Binary search", exact: true }),
-  ).toBeVisible();
-  await slides.getByRole("button", { name: "Topic 2", exact: true }).click();
+    page.getByRole("button", { name: "Weeks", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.locator(".learn-week-card")).toHaveCount(0);
+  await expect(page.locator('a[href*="neetcode.io"]')).toHaveCount(0);
   await expect(
-    slides.getByRole("heading", { name: "Complexity", exact: true }),
-  ).toBeVisible();
-  await slides
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
-  await week.getByRole("button", { name: "Homework", exact: true }).click();
-  const homework = page.getByRole("dialog");
-  await homework
-    .getByRole("checkbox", {
-      name: "Run a Python solution locally",
-      exact: true,
-    })
-    .check();
+    page.getByRole("link", { name: "LeetCode problems", exact: true }),
+  ).toHaveAttribute("href", "https://leetcode.com/problemset/");
   await expect(
-    homework.getByRole("checkbox", {
-      name: "Run a Python solution locally",
-      exact: true,
-    }),
-  ).toBeChecked();
+    page.getByRole("link", { name: "Python tutorial", exact: true }),
+  ).toHaveAttribute("href", "https://docs.python.org/3/tutorial/");
+  const popover = page.locator(".learn-roadmap-popover");
   await expect(
-    homework.getByRole("link", { name: "Binary Search", exact: true }),
+    popover.getByRole("link", { name: "Binary Search", exact: true }),
   ).toHaveAttribute("href", "https://leetcode.com/problems/binary-search/");
-  await expect(homework.getByRole("textbox")).toHaveCount(0);
-  await homework
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
-  await page.reload();
-  await page
-    .locator(".learn-week-card")
-    .first()
-    .getByRole("button", { name: "Homework", exact: true })
-    .click();
-  await expect(
-    page.getByRole("dialog").getByRole("checkbox", {
-      name: "Run a Python solution locally",
-      exact: true,
-    }),
-  ).toBeChecked();
+  await expect(popover.getByLabel("Confirmed solve")).toHaveCount(1);
   expect(sourceRequests).toEqual([]);
 });
 
-test("Pomodoro pauses and persists one timer through reload and the homework context", async ({
+test("Databases supports multiple readings and optional notes that persist after reload", async ({
+  page,
+}) => {
+  await page.goto("/learn?track=databases");
+  const section = page.locator(".learn-reading-card").first();
+  for (const [name, url] of [
+    [
+      "PostgreSQL concurrency",
+      "https://www.postgresql.org/docs/current/mvcc.html",
+    ],
+    ["SQLite transactions", "https://www.sqlite.org/lang_transaction.html"],
+  ]) {
+    await section
+      .getByRole("button", { name: "Add resource", exact: true })
+      .click();
+    const form = page.getByRole("dialog", {
+      name: "Add resource",
+      exact: true,
+    });
+    await form.getByLabel("Name", { exact: true }).fill(name);
+    await form.getByLabel("Link", { exact: true }).fill(url);
+    await form.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(form).not.toBeVisible();
+  }
+  await section
+    .getByRole("button", { name: "Add notes section", exact: true })
+    .click();
+  const notes = page.getByRole("dialog", {
+    name: "Add notes section",
+    exact: true,
+  });
+  await notes.getByLabel("Name", { exact: true }).fill("Isolation notes");
+  await notes.getByRole("button", { name: "Save", exact: true }).click();
+  const noteCard = section
+    .locator(".content-section-card")
+    .filter({ hasText: "Isolation notes" });
+  await noteCard
+    .getByRole("button", { name: "Write notes", exact: true })
+    .click();
+  await noteCard
+    .getByLabel("Isolation notes", { exact: true })
+    .fill(
+      "## Read committed\n\n- [ ] Compare repeatable read\n\nKeep this personal example.",
+    );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+            (record: WorkRecord) => record.title === "Isolation notes",
+          )?.body,
+      ),
+    )
+    .toContain("Keep this personal example.");
+  await page.reload();
+  await expect(
+    section.getByRole("link", { name: "PostgreSQL concurrency", exact: true }),
+  ).toBeVisible();
+  await expect(
+    section.getByRole("link", { name: "SQLite transactions", exact: true }),
+  ).toBeVisible();
+  await expect(
+    noteCard.getByRole("heading", { name: "Read committed", exact: true }),
+  ).toBeVisible();
+  await section
+    .getByRole("button", { name: "Edit SQLite transactions", exact: true })
+    .click();
+  const edit = page.getByRole("dialog", { name: "Edit resource", exact: true });
+  await edit
+    .getByLabel("Name", { exact: true })
+    .fill("SQLite transaction reference");
+  await edit.getByRole("button", { name: "Save", exact: true }).click();
+  const resource = section
+    .locator(".content-resource-card")
+    .filter({ hasText: "SQLite transaction reference" });
+  await resource
+    .getByRole("button", { name: "Delete resource", exact: true })
+    .click();
+  await resource
+    .getByRole("button", { name: "Confirm delete resource", exact: true })
+    .click();
+  await expect(resource).toHaveCount(0);
+  await page.reload();
+  await expect(
+    section.getByRole("link", { name: "PostgreSQL concurrency", exact: true }),
+  ).toBeVisible();
+  await expect(
+    section.getByRole("link", {
+      name: "SQLite transaction reference",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+});
+
+test("Pomodoro pauses, persists through reload, and settings remain usable", async ({
   page,
 }) => {
   await page.goto("/learn");
@@ -88,25 +149,7 @@ test("Pomodoro pauses and persists one timer through reload and the homework con
   await expect(
     timer.getByRole("button", { name: "Pause timer", exact: true }),
   ).toBeVisible();
-  await page
-    .locator(".learn-week-card")
-    .first()
-    .getByRole("button", { name: "Homework", exact: true })
-    .click();
-  const homeworkTimer = page.getByRole("dialog").locator(".learn-pomodoro");
-  await expect(
-    homeworkTimer.getByRole("button", { name: "Pause timer", exact: true }),
-  ).toBeVisible();
-  await homeworkTimer
-    .getByRole("button", { name: "Pause timer", exact: true })
-    .click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Close dialog", exact: true })
-    .click();
-  await expect(
-    timer.getByRole("button", { name: "Start timer", exact: true }),
-  ).toBeVisible();
+  await timer.getByRole("button", { name: "Pause timer", exact: true }).click();
   await timer.getByRole("button", { name: "Reset timer", exact: true }).click();
   await expect(timer.getByLabel("Pomodoro time remaining")).toHaveText("25:00");
   await timer
@@ -141,30 +184,7 @@ test("an expired saved timer finishes accurately after a background interval", a
   ).toBeVisible();
 });
 
-test("roadmap and homework use the same confirmed problem history", async ({
-  page,
-}) => {
-  await page.goto("/learn?view=roadmap&problem=binary-search");
-  await expect(
-    page.getByRole("heading", { name: "NeetCode 150", exact: true }),
-  ).toBeVisible();
-  const popover = page.locator(".learn-roadmap-popover");
-  await expect(
-    popover.getByRole("link", { name: "Binary Search", exact: true }),
-  ).toBeVisible();
-  await expect(popover.getByLabel("Confirmed solve")).toHaveCount(1);
-  await page.getByRole("button", { name: "Weeks", exact: true }).click();
-  await page
-    .locator(".learn-week-card")
-    .first()
-    .getByRole("button", { name: "Homework", exact: true })
-    .click();
-  await expect(
-    page.getByRole("dialog").getByLabel("Confirmed solve"),
-  ).toHaveCount(1);
-});
-
-test("mobile topics scroll with no scrollbar and roadmap uses readable rows", async ({
+test("mobile topics scroll with keyboard and retain expressive selected state", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -190,40 +210,41 @@ test("mobile topics scroll with no scrollbar and roadmap uses readable rows", as
       exact: true,
     }),
   ).toBeFocused();
-  expect(await tabs.evaluate((element) => element.scrollLeft)).toBeGreaterThan(
-    0,
-  );
-  await expect(page.getByRole("textbox")).toHaveCount(0);
-  await page.goto("/learn?view=roadmap&problem=binary-search");
+  await page
+    .getByRole("tab", { name: "Backend engineering", exact: true })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Backend engineering", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  const selected = await page
+    .getByRole("tab", { name: "Backend engineering", exact: true })
+    .evaluate((element) => ({
+      color: getComputedStyle(element).color,
+      background: getComputedStyle(element).backgroundColor,
+    }));
+  expect(selected.color).toBe("rgb(255, 255, 255)");
+  expect(selected.background).not.toBe("rgba(0, 0, 0, 0)");
+  await page.goto("/learn?problem=binary-search");
   await expect(
     page
       .locator(".learn-roadmap-list")
       .getByRole("link", { name: "Binary Search", exact: true }),
   ).toBeVisible();
   expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
-    ),
-  ).toBe(true);
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(390);
 });
 
-test("signed-in Learn uses authored source content and rolls back failed shared task writes", async ({
+test("signed-in private learning notes use owned records and never write to public learning source", async ({
   page,
 }) => {
-  await page.addInitScript(() => {
-    sessionStorage.removeItem("work-demo-active");
-  });
-  let sourceTask = false;
-  let failWrite = false;
-  const fresh = { fetchedAt: "2026-10-04T00:00:00.000Z", stale: false };
-  const sourceWeek = {
-    ...DEMO_WEEKS[0],
-    title: "Live authored curriculum",
-    slides: [{ content: "# Live authored slide" }],
-    tasks: [{ id: "live-task", label: "Shared live task" }],
-  };
+  await page.addInitScript(() => sessionStorage.removeItem("work-demo-active"));
+  const records: WorkRecord[] = [];
+  const learningWrites: string[] = [];
+  const privateWrites: string[] = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    const method = route.request().method();
     if (path === "/api/session")
       return route.fulfill({
         json: {
@@ -239,74 +260,217 @@ test("signed-in Learn uses authored source content and rolls back failed shared 
     if (path === "/api/preferences")
       return route.fulfill({
         json: {
-          preferences: {
-            ...DEFAULT_PREFERENCES,
-            leetcode: "https://leetcode.com/u/synthetic-handle/",
-          },
+          preferences: { ...DEFAULT_PREFERENCES, leetcode: "synthetic-handle" },
         },
       });
-    if (path === "/api/records")
-      return route.fulfill({ json: { records: [] } });
-    if (path === "/api/learning/content")
-      return route.fulfill({
-        json: { data: { weeks: [sourceWeek] }, source: fresh },
-      });
+    if (path.startsWith("/api/learning/") && method !== "GET")
+      learningWrites.push(path);
     if (path === "/api/learning/stats")
       return route.fulfill({
         json: {
           data: { ...DEMO_STATS, username: "synthetic-handle" },
           username: "synthetic-handle",
           configured: true,
-          source: fresh,
+          source: { fetchedAt: "2026-10-04T00:00:00Z", stale: true },
         },
       });
-    if (path === "/api/learning/progress") {
-      if (route.request().method() === "POST") {
-        expect(route.request().postDataJSON()).toEqual({
-          taskId: "live-task",
-          done: !sourceTask,
-        });
-        if (failWrite)
-          return route.fulfill({
-            status: 502,
-            json: { error: "Shared task could not be saved." },
-          });
-        sourceTask = !sourceTask;
-      }
-      return route.fulfill({
-        json: {
-          data: { tasks: { "live-task": sourceTask } },
-          username: "synthetic-handle",
-          configured: true,
-          source: fresh,
-        },
-      });
+    if (path === "/api/records" && method === "GET")
+      return route.fulfill({ json: { records } });
+    if (path === "/api/records" && method === "POST") {
+      const input = route.request().postDataJSON();
+      privateWrites.push(path);
+      const record = {
+        ...input,
+        id: crypto.randomUUID(),
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deletedAt: null,
+        tags: [],
+        links: [],
+      };
+      records.push(record);
+      return route.fulfill({ json: { record } });
     }
-    return route.fulfill({ json: { goals: [], connections: [], records: [] } });
+    if (path.startsWith("/api/records/") && method === "PATCH") {
+      const record = records.find(
+        (record) => record.id === path.split("/").pop(),
+      )!;
+      const patch = route.request().postDataJSON();
+      privateWrites.push(path);
+      Object.assign(record, patch, { version: record.version + 1 });
+      return route.fulfill({ json: { record } });
+    }
+    return route.fulfill({ json: { goals: [], records: [] } });
   });
   await page.goto("/learn");
   await expect(
-    page.getByRole("heading", {
-      name: "Live authored curriculum",
-      exact: true,
-    }),
+    page.getByText("synthetic-handle · Cached data", { exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".learn-week-card")).toHaveCount(1);
-  await page.getByRole("button", { name: "Homework", exact: true }).click();
-  const task = page
-    .getByRole("dialog")
-    .getByRole("checkbox", { name: "Shared live task", exact: true });
-  await task.check();
-  await expect(task).toBeEnabled();
-  expect(sourceTask).toBe(true);
-  failWrite = true;
-  await task.uncheck();
-  await expect(task).toBeChecked();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: "Close dialog", exact: true })
+  await page.getByRole("tab", { name: "Databases", exact: true }).click();
+  const section = page.locator(".learn-reading-card").first();
+  await section
+    .getByRole("button", { name: "Add notes section", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText(
-    "Shared task could not be saved.",
+  const form = page.getByRole("dialog", {
+    name: "Add notes section",
+    exact: true,
+  });
+  await form
+    .getByLabel("Name", { exact: true })
+    .fill("Private learning context");
+  await form.getByRole("button", { name: "Save", exact: true }).click();
+  await section
+    .getByRole("button", { name: "Write notes", exact: true })
+    .click();
+  await section
+    .getByLabel("Private learning context", { exact: true })
+    .fill("Private notes must stay in Work.");
+  await expect
+    .poll(
+      () =>
+        records.find((record) => record.title === "Private learning context")
+          ?.body,
+    )
+    .toBe("Private notes must stay in Work.");
+  expect(privateWrites.length).toBeGreaterThanOrEqual(2);
+  expect(learningWrites).toEqual([]);
+});
+
+test("scoped notes retain conflicts through reload and retry only after an explicit decision", async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.removeItem("work-demo-active"));
+  const records: WorkRecord[] = [];
+  let failWrites = false;
+  let writes = 0;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (path === "/api/session")
+      return route.fulfill({
+        json: {
+          user: {
+            id: "synthetic-conflict-owner",
+            name: "Synthetic",
+            email: "conflict@example.invalid",
+          },
+          local: false,
+          configured: true,
+        },
+      });
+    if (path === "/api/preferences")
+      return route.fulfill({
+        json: { preferences: { ...DEFAULT_PREFERENCES, leetcode: "" } },
+      });
+    if (path === "/api/records" && method === "GET")
+      return route.fulfill({ json: { records } });
+    if (path === "/api/records" && method === "POST") {
+      const input = route.request().postDataJSON();
+      const record = {
+        ...input,
+        id: crypto.randomUUID(),
+        version: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deletedAt: null,
+        tags: [],
+        links: [],
+      };
+      records.push(record);
+      return route.fulfill({ json: { record } });
+    }
+    if (path.startsWith("/api/records/") && method === "PATCH") {
+      writes++;
+      const record = records.find(
+        (record) => record.id === path.split("/").pop(),
+      )!;
+      if (failWrites) {
+        record.body = "Latest text saved on another device.";
+        record.version++;
+        return route.fulfill({
+          status: 409,
+          json: {
+            error:
+              "This note changed on another device. Review the saved text.",
+          },
+        });
+      }
+      const patch = route.request().postDataJSON();
+      Object.assign(record, patch, { version: record.version + 1 });
+      return route.fulfill({ json: { record } });
+    }
+    return route.fulfill({
+      json: {
+        goals: [],
+        records: [],
+        data: {},
+        configured: false,
+        source: { stale: false, fetchedAt: null },
+      },
+    });
+  });
+  await page.goto("/learn?track=databases");
+  const section = page.locator(".learn-reading-card").first();
+  await section
+    .getByRole("button", { name: "Add notes section", exact: true })
+    .click();
+  const form = page.getByRole("dialog", {
+    name: "Add notes section",
+    exact: true,
+  });
+  await form
+    .getByLabel("Name", { exact: true })
+    .fill("Conflict isolation notes");
+  await form.getByRole("button", { name: "Save", exact: true }).click();
+  const note = section
+    .locator(".content-section-card")
+    .filter({ hasText: "Conflict isolation notes" });
+  await note.getByRole("button", { name: "Write notes", exact: true }).click();
+  await note
+    .getByLabel("Conflict isolation notes", { exact: true })
+    .fill("Original saved notes.");
+  await expect
+    .poll(
+      () =>
+        records.find((record) => record.title === "Conflict isolation notes")
+          ?.body,
+    )
+    .toBe("Original saved notes.");
+  failWrites = true;
+  await note
+    .getByLabel("Conflict isolation notes", { exact: true })
+    .fill("Keep my unsaved transaction example.");
+  await expect(note.getByRole("alert")).toContainText(
+    "changed on another device",
   );
+  await expect(
+    note.getByLabel("Conflict isolation notes", { exact: true }),
+  ).toHaveValue("Keep my unsaved transaction example.");
+  const attempts = writes;
+  await page.reload();
+  await expect(note).toContainText("Keep my unsaved transaction example.");
+  await expect(
+    note.getByRole("button", { name: "Retry save", exact: true }),
+  ).toBeVisible();
+  // Wait beyond the normal autosave debounce to verify a restored conflict is paused.
+  await page.waitForTimeout(1100);
+  expect(writes).toBe(attempts);
+  await note.getByText("Compare with saved text", { exact: true }).click();
+  await expect(note).toContainText("Latest text saved on another device.");
+  failWrites = false;
+  await note.getByRole("button", { name: "Retry save", exact: true }).click();
+  await expect
+    .poll(
+      () =>
+        records.find((record) => record.title === "Conflict isolation notes")
+          ?.body,
+    )
+    .toBe("Keep my unsaved transaction example.");
+  expect(writes).toBe(attempts + 1);
+  await page.reload();
+  await expect(
+    note.getByRole("button", { name: "Retry save", exact: true }),
+  ).toHaveCount(0);
+  await expect(note).toContainText("Keep my unsaved transaction example.");
 });

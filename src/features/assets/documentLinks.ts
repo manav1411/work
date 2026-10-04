@@ -1,35 +1,15 @@
 import {
   field,
-  safeUrl,
   type UserPreferences,
   type WorkRecord,
 } from "../../../shared/model";
+import { documentUrl } from "../../../shared/documents";
+export { documentUrl, webDestination } from "../../../shared/documents";
 
 export type DocumentType = "resume" | "letter";
 export interface DocumentLink {
   url: string;
   record?: WorkRecord;
-}
-
-/** Links are destinations, not snapshots of the document's current contents. */
-export function documentUrl(value: string): string {
-  const safe = safeUrl(value.trim());
-  if (!safe || safe.length > 2048) return "";
-  const url = new URL(safe);
-  return url.protocol === "https:" &&
-    ["overleaf.com", "www.overleaf.com"].includes(url.hostname) &&
-    !url.username &&
-    !url.password &&
-    /^\/(project|read)\/[a-zA-Z0-9_-]+\/?$/.test(url.pathname)
-    ? safe
-    : "";
-}
-
-export function webDestination(value: string): string {
-  const safe = safeUrl(value.trim());
-  if (!safe || safe.length > 2048) return "";
-  const url = new URL(safe);
-  return !url.username && !url.password ? safe : "";
 }
 
 function getDocument(records: WorkRecord[], type: DocumentType): DocumentLink {
@@ -47,6 +27,7 @@ function getDocument(records: WorkRecord[], type: DocumentType): DocumentLink {
     );
   const record =
     candidates.find((item) => item.data.documentDefault === true) ||
+    candidates.find((item) => field(item, "primaryAttachmentId")) ||
     candidates.find(
       (item) =>
         documentUrl(field(item, "sourceUrl")) ||

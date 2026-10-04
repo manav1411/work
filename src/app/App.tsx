@@ -25,6 +25,8 @@ import {
   Check,
   ChevronDown,
   FileText,
+  Compass,
+  MessagesSquare,
   Home,
   LogOut,
   Menu,
@@ -37,7 +39,6 @@ import { Button, EmptyState } from "../components/ui";
 import { jsonRequest, request } from "../lib/api";
 import { useWorkspace } from "../lib/workspace";
 import { TodayPage } from "../features/home/TodayPage";
-import { getDocumentLinks } from "../features/assets/documentLinks";
 import "./shell.css";
 
 const LearnPage = lazy(() =>
@@ -61,11 +62,24 @@ const SettingsPage = lazy(() =>
   })),
 );
 
+const InterviewsPage = lazy(() =>
+  import("../features/interviews/InterviewsPage").then((module) => ({
+    default: module.InterviewsPage,
+  })),
+);
+const DirectionPage = lazy(() =>
+  import("../features/direction/DirectionPage").then((module) => ({
+    default: module.DirectionPage,
+  })),
+);
+
 const NAV = [
   { to: "/home", label: "Home", icon: Home },
   { to: "/learn", label: "Learn", icon: BookOpen },
   { to: "/applications", label: "Applications", icon: BriefcaseBusiness },
+  { to: "/interviews", label: "Interviews", icon: MessagesSquare },
   { to: "/documents", label: "Documents", icon: FileText },
+  { to: "/direction", label: "Your Direction", icon: Compass },
 ];
 
 class PageBoundary extends Component<
@@ -323,6 +337,7 @@ function Shell() {
   );
   const sidebar = useRef<HTMLElement>(null);
   const menuTrigger = useRef<HTMLButtonElement>(null);
+  const navigationOrigin = useRef<HTMLButtonElement | null>(null);
   const location = useLocation();
   useEffect(() => {
     const media = window.matchMedia("(max-width: 760px)");
@@ -370,7 +385,9 @@ function Shell() {
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", keydown);
-      menuTrigger.current?.focus();
+      requestAnimationFrame(() =>
+        (navigationOrigin.current ?? menuTrigger.current)?.focus(),
+      );
     };
   }, [mobileOpen]);
   return (
@@ -435,7 +452,10 @@ function Shell() {
             aria-label="Open navigation"
             aria-expanded={mobileOpen}
             aria-controls="primary-sidebar"
-            onClick={() => setMobileOpen(true)}
+            onClick={(event) => {
+              navigationOrigin.current = event.currentTarget;
+              setMobileOpen(true);
+            }}
           >
             <Menu size={22} />
           </button>
@@ -469,12 +489,23 @@ function Shell() {
         aria-label="Mobile navigation"
         inert={mobileOpen || undefined}
       >
-        {NAV.map((item) => (
+        {NAV.slice(0, 3).map((item) => (
           <NavLink to={item.to} key={item.to}>
             <item.icon size={19} />
             {item.label}
           </NavLink>
         ))}
+        <button
+          aria-label="More navigation"
+          aria-expanded={mobileOpen}
+          onClick={(event) => {
+            navigationOrigin.current = event.currentTarget;
+            setMobileOpen(true);
+          }}
+        >
+          <Menu size={19} />
+          More
+        </button>
       </nav>
       <div className="toast-stack" aria-live="polite">
         {toasts.map((toast) => (
@@ -504,7 +535,15 @@ function Shell() {
 
 function Redirect({ to }: { to: string }) {
   const location = useLocation();
-  return <Navigate replace to={`${to}${location.search}${location.hash}`} />;
+  const target = new URL(to, window.location.origin);
+  for (const [key, value] of new URLSearchParams(location.search))
+    target.searchParams.set(key, value);
+  return (
+    <Navigate
+      replace
+      to={`${target.pathname}${target.search}${location.hash}`}
+    />
+  );
 }
 
 function LegacyRedirect({ kind }: { kind: string }) {
@@ -517,21 +556,6 @@ function LegacyRedirect({ kind }: { kind: string }) {
     location.pathname.split("/").filter(Boolean)[1];
   if (record) params.set("record", record);
   return <Navigate replace to={`/settings?${params.toString()}#recovery`} />;
-}
-
-function AssetsRedirect() {
-  const { records, preferences } = useWorkspace();
-  const location = useLocation();
-  const params = new URLSearchParams(location.search);
-  const id = params.get("record") || params.get("selected");
-  const documents = getDocumentLinks(records, preferences);
-  if (
-    id &&
-    documents.resume.record?.id !== id &&
-    documents.coverLetter.record?.id !== id
-  )
-    return <LegacyRedirect kind="assets" />;
-  return <Redirect to="/documents" />;
 }
 
 function PracticeRedirect() {
@@ -550,32 +574,6 @@ function PracticeRedirect() {
   return <Navigate replace to={`/learn?${params.toString()}`} />;
 }
 
-function InterviewsRedirect() {
-  const { records } = useWorkspace();
-  const location = useLocation();
-  const source = new URLSearchParams(location.search);
-  const id =
-    source.get("interview") || source.get("record") || source.get("selected");
-  const record = records.find((item) => item.id === id);
-  if (record?.kind === "story" || source.get("tab") === "stories")
-    return <LegacyRedirect kind="stories" />;
-  const applicationId =
-    source.get("application") ||
-    field(record, "applicationId") ||
-    records.find(
-      (item) => item.kind === "application" && record?.links.includes(item.id),
-    )?.id;
-  const params = new URLSearchParams();
-  if (applicationId) params.set("record", applicationId);
-  if (id) params.set("interview", id);
-  return (
-    <Navigate
-      replace
-      to={`/applications${params.size ? `?${params.toString()}` : ""}`}
-    />
-  );
-}
-
 export default function App() {
   const { user, loading } = useWorkspace();
   if (loading) return <Loading />;
@@ -590,16 +588,20 @@ export default function App() {
         <Route path="documents" element={<AssetsPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
         <Route path="today" element={<Redirect to="/home" />} />
-        <Route path="assets" element={<AssetsRedirect />} />
+        <Route path="assets" element={<Redirect to="/documents" />} />
         <Route path="focus" element={<Redirect to="/learn" />} />
         <Route path="practice" element={<PracticeRedirect />} />
-        <Route path="interviews" element={<InterviewsRedirect />} />
+        <Route path="interviews" element={<InterviewsPage />} />
+        <Route path="direction" element={<DirectionPage />} />
+        <Route path="career/*" element={<Redirect to="/direction" />} />
+        <Route
+          path="companies/*"
+          element={<Redirect to="/applications?tab=radar" />}
+        />
         {[
           "notes",
           "resources",
-          "companies",
           "network",
-          "career",
           "evidence",
           "projects",
           "review",

@@ -1,6 +1,11 @@
 import { useId, useState, type FormEvent } from "react";
 import { field, type WorkRecord } from "../../../shared/model";
 import { Button, Field, Input, Modal, Select } from "../../components/ui";
+import {
+  APPOINTMENT_STATUSES,
+  InterviewAppointmentDataSchema,
+  recruitmentSteps,
+} from "../../../shared/applications";
 import { webDestination } from "../assets/documentLinks";
 import { isoToZonedInput, zonedDateTimeToISO } from "../prepare/helpers";
 import { errorMessage } from "./domain";
@@ -12,8 +17,10 @@ export { associatedInterviews, interviewTime } from "./applicationRecords";
 interface InterviewEditorProps {
   record?: WorkRecord;
   applicationId?: string;
+  stepId?: string;
   open: boolean;
   onClose: () => void;
+  onRemoved?: (record: WorkRecord) => void;
 }
 
 export function InterviewEditor(props: InterviewEditorProps) {
@@ -25,7 +32,7 @@ export function InterviewEditor(props: InterviewEditorProps) {
     >
       {props.open && (
         <InterviewForm
-          key={`${props.record?.id || "new"}:${props.record?.version || 0}:${props.applicationId || ""}`}
+          key={`${props.record?.id || "new"}:${props.record?.version || 0}:${props.applicationId || ""}:${props.stepId || ""}`}
           {...props}
         />
       )}
@@ -36,9 +43,12 @@ export function InterviewEditor(props: InterviewEditorProps) {
 function InterviewForm({
   record,
   applicationId,
+  stepId,
   onClose,
+  onRemoved,
 }: InterviewEditorProps) {
-  const { records, preferences, create, update, pending } = useWorkspace();
+  const { records, preferences, create, update, remove, pending } =
+    useWorkspace();
   const applications = records.filter(
     (item) => item.kind === "application" && !item.deletedAt,
   );
@@ -50,6 +60,8 @@ function InterviewForm({
     applicationId || existingApplicationId,
   );
   const [title, setTitle] = useState(record?.title || "");
+  const [chosenStepId, setStepId] = useState(stepId || field(record, "stepId"));
+  const [confirmDeletion, setConfirmDeletion] = useState(false);
   const [timezone, setTimezone] = useState(
     field(record, "timezone", preferences.timezone),
   );
@@ -64,9 +76,12 @@ function InterviewForm({
   const application = applications.find(
     (item) => item.id === chosenApplicationId,
   );
-  const statuses = [
-    ...new Set(["Scheduled", "Completed", "Cancelled", "Rescheduling", status]),
-  ];
+  const statuses = [...new Set([...APPOINTMENT_STATUSES, status])];
+  const steps = application ? recruitmentSteps(application.data, true) : [];
+  const chosenStep = steps.find((step) => step.id === chosenStepId);
+  const defaultTitle = application
+    ? `${application.title} — ${chosenStep?.title || "interview"}`
+    : "";
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -82,8 +97,7 @@ function InterviewForm({
             `${label} must be an http or https URL without embedded credentials.`,
           );
       }
-      const savedTitle =
-        title.trim() || (application ? `${application.title} — interview` : "");
+      const savedTitle = title.trim() || defaultTitle;
       if (!savedTitle)
         throw new Error(
           "Give the appointment a name or choose an application.",
@@ -99,15 +113,16 @@ function InterviewForm({
       const input = {
         title: savedTitle,
         links,
-        data: {
+        data: InterviewAppointmentDataSchema.parse({
           ...record?.data,
           startsAt,
           timezone: timezone.trim(),
           applicationId: chosenApplicationId,
+          stepId: chosenApplicationId ? chosenStepId : "",
           meetingUrl: webDestination(meetingUrl),
           sourceUrl: webDestination(sourceUrl),
           status,
-        },
+        }),
       };
       if (record) await update(record.id, input);
       else await create({ kind: "interview", ...input });
@@ -123,7 +138,10 @@ function InterviewForm({
         <Field label="Application">
           <Select
             value={chosenApplicationId}
-            onChange={(event) => setApplicationId(event.target.value)}
+            onChange={(event) => {
+              setApplicationId(event.target.value);
+              setStepId("");
+            }}
           >
             <option value="">Standalone appointment</option>
             {applications.map((item) => (
@@ -133,6 +151,32 @@ function InterviewForm({
                   : item.title}
               </option>
             ))}
+          </Select>
+        </Field>
+      )}
+      {application && (
+        <Field
+          label="Recruitment step"
+          hint="Optional. More than one appointment can belong to a round."
+        >
+          <Select
+            value={chosenStepId}
+            onChange={(event) => setStepId(event.target.value)}
+          >
+            <option value="">Unassigned appointment</option>
+            {steps
+              .filter(
+                (step) =>
+                  (!step.archived &&
+                    !["submission", "offer"].includes(step.kind)) ||
+                  step.id === chosenStepId,
+              )
+              .map((step) => (
+                <option key={step.id} value={step.id}>
+                  {step.title}
+                  {step.archived ? " · removed step" : ""}
+                </option>
+              ))}
           </Select>
         </Field>
       )}
@@ -198,7 +242,7 @@ function InterviewForm({
                 value={title}
                 maxLength={240}
                 onChange={(event) => setTitle(event.target.value)}
-                placeholder={`${application.title} — interview`}
+                placeholder={defaultTitle}
               />
             </Field>
           )}
@@ -235,7 +279,44 @@ function InterviewForm({
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
+        {record && (
+          <Button
+            type="button"
+            variant="danger"
+            disabled={!!pending}
+            onClick={() => setConfirmDeletion(true)}
+          >
+            Delete appointment
+          </Button>
+        )}
       </div>
+      {confirmDeletion && record && (
+        <div className="application-notice">
+          <p>Delete this appointment? Preparation notes remain available.</p>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={!!pending}
+            onClick={() => {
+              void remove(record.id)
+                .then(() => {
+                  onRemoved?.(record);
+                  onClose();
+                })
+                .catch((failure: unknown) => setError(errorMessage(failure)));
+            }}
+          >
+            Confirm delete
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setConfirmDeletion(false)}
+          >
+            Keep it
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

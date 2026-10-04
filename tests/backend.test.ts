@@ -26,6 +26,8 @@ const migration = [
   "0002_submitted_files.sql",
   "0003_connectors.sql",
   "0004_simplification.sql",
+  "0005_workspace_improvements.sql",
+  "0006_backup_staging.sql",
 ]
   .map((filename) =>
     readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
@@ -1883,7 +1885,7 @@ describe("private goals and reduced product", () => {
         ).status,
       ).toBe(400);
     }
-    expect((await request("/api/connectors/suggestions")).status).toBe(404);
+    expect((await request("/api/connectors/suggestions")).status).toBe(410);
     expect(
       (await request("/api/connectors/webhooks/notion/x", "POST", {})).status,
     ).toBe(410);
@@ -1896,5 +1898,568 @@ describe("private goals and reduced product", () => {
         })
       ).status,
     ).toBe(400);
+  });
+});
+
+describe("workspace improvement record contracts", () => {
+  it("accepts scoped topics/tabs/preparation and rejects wrong-kind or cross-owner parents and STAR references", async () => {
+    const topic = await create("Topic", {
+      kind: "topic",
+      data: { category: "learn-topic", track: "databases" },
+    });
+    const tab = await create("Preparation tab", {
+      data: { category: "interview-tab" },
+    });
+    const application = await create("Role", {
+      kind: "application",
+      data: { company: "Synthetic Company" },
+    });
+    const appointment = await create("Round", {
+      kind: "interview",
+      data: {
+        applicationId: application.id,
+        startsAt: "2026-11-01T00:00:00.000Z",
+        status: "Scheduled",
+      },
+    });
+    const story = await create("STAR story", {
+      kind: "story",
+      data: {
+        situation: "Concrete context",
+        action: "My contribution",
+        reflection: "Legacy lesson",
+      },
+    });
+    const generic = await create("Generic note");
+    await foreignRecord();
+    const foreign: Record<string, WorkRecord> = {};
+    for (const [key, source] of Object.entries({
+      topic,
+      tab,
+      application,
+      appointment,
+      story,
+    })) {
+      const copied = newRecord({
+        kind: source.kind,
+        title: `Foreign ${key}`,
+        data: source.data,
+      });
+      await insertRecord(env.DB, "other-user", copied).run();
+      foreign[key] = copied;
+    }
+    const cases: Array<{
+      key: string;
+      input: Record<string, unknown>;
+      field: string;
+    }> = [
+      {
+        key: "topic",
+        input: {
+          category: "content-section",
+          scope: "learn",
+          topicId: topic.id,
+        },
+        field: "topicId",
+      },
+      {
+        key: "tab",
+        input: {
+          category: "content-section",
+          scope: "interviews",
+          tabId: tab.id,
+        },
+        field: "tabId",
+      },
+      {
+        key: "appointment",
+        input: {
+          category: "interview-preparation",
+          interviewId: appointment.id,
+          applicationId: application.id,
+          storyIds: [story.id],
+        },
+        field: "interviewId",
+      },
+      {
+        key: "application",
+        input: {
+          category: "interview-preparation",
+          interviewId: appointment.id,
+          applicationId: application.id,
+        },
+        field: "applicationId",
+      },
+    ];
+    for (const item of cases) {
+      expect(
+        (
+          await request("/api/records", "POST", {
+            kind: "note",
+            title: `Good ${item.key}`,
+            data: item.input,
+          })
+        ).status,
+      ).toBe(201);
+      for (const id of [generic.id, foreign[item.key].id])
+        expect(
+          (
+            await request("/api/records", "POST", {
+              kind: "note",
+              title: `Rejected ${item.key}`,
+              data: { ...item.input, [item.field]: id },
+            })
+          ).status,
+        ).toBe(400);
+    }
+    for (const id of [generic.id, foreign.story.id])
+      expect(
+        (
+          await request("/api/records", "POST", {
+            kind: "note",
+            title: "Rejected story",
+            data: {
+              category: "interview-preparation",
+              interviewId: appointment.id,
+              storyIds: [id],
+            },
+          })
+        ).status,
+      ).toBe(400);
+    const anotherApplication = await create("Other role", {
+      kind: "application",
+    });
+    expect(
+      (
+        await request("/api/records", "POST", {
+          kind: "note",
+          title: "Wrong application context",
+          data: {
+            category: "interview-preparation",
+            interviewId: appointment.id,
+            applicationId: anotherApplication.id,
+          },
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  it("validates new content bounds and URLs while preserving unscoped imported metadata and old topic records", async () => {
+    for (const data of [
+      {
+        category: "content-section",
+        scope: "learn",
+        seedId: "db-sql",
+        order: 1_000_001,
+      },
+      { category: "content-section", scope: "learn", tabKey: "technical" },
+      { category: "interview-tab", tabKey: "unknown" },
+    ])
+      expect(
+        (
+          await request("/api/records", "POST", {
+            kind: "note",
+            title: "Invalid scoped content",
+            data,
+          })
+        ).status,
+      ).toBe(400);
+    for (const url of [
+      "javascript:alert(1)",
+      "https://secret:password@example.invalid/",
+      "file:///private",
+      "not a URL",
+    ])
+      expect(
+        (
+          await request("/api/records", "POST", {
+            kind: "resource",
+            title: "Unsafe reading",
+            data: {
+              category: "content-resource",
+              scope: "learn",
+              seedId: "db-sql",
+              url,
+            },
+          })
+        ).status,
+      ).toBe(400);
+    const legacyData = {
+      collection: "Imported Notion page",
+      source: "Markdown / Notion export",
+      unknownProperty: { preserve: "authored metadata" },
+      originalMarkdown: "# Original text",
+    };
+    const legacy = await create("Imported page", { data: legacyData });
+    expect(
+      (
+        (await (await request(`/api/records/${legacy.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record.data,
+    ).toEqual(legacyData);
+    const oldTopic = await create("Legacy custom topic", {
+      kind: "topic",
+      data: { track: "databases" },
+    });
+    expect(
+      (
+        await request("/api/records", "POST", {
+          kind: "resource",
+          title: "Reading for old topic",
+          data: {
+            category: "content-resource",
+            scope: "learn",
+            topicId: oldTopic.id,
+            url: "https://example.invalid/reading",
+          },
+        })
+      ).status,
+    ).toBe(201);
+  });
+
+  it("checks round membership, preserves archived step references, and keeps appointment completion independent of application status", async () => {
+    const step = {
+      id: crypto.randomUUID(),
+      title: "Technical interview",
+      kind: "interview",
+      state: "Planned",
+      date: "",
+    };
+    const application = await create("Role with rounds", {
+      kind: "application",
+      data: { applicationStatus: "Saved", recruitmentSteps: [step] },
+    });
+    const appointmentData = {
+      applicationId: application.id,
+      stepId: step.id,
+      startsAt: "2026-11-01T00:00:00.000Z",
+      timezone: "UTC",
+      status: "Scheduled",
+    };
+    const appointment = await create("Technical round", {
+      kind: "interview",
+      data: appointmentData,
+    });
+    const prep = await create("Round preparation", {
+      data: {
+        category: "interview-preparation",
+        interviewId: appointment.id,
+        applicationId: application.id,
+      },
+    });
+    expect(
+      (
+        await request("/api/records", "POST", {
+          kind: "interview",
+          title: "Invalid step",
+          data: { ...appointmentData, stepId: crypto.randomUUID() },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`/api/records/${application.id}`, "PATCH", {
+          version: 1,
+          data: { ...application.data, recruitmentSteps: [] },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`/api/records/${application.id}`, "PATCH", {
+          version: 1,
+          data: {
+            ...application.data,
+            recruitmentSteps: [{ ...step, state: "Cancelled", archived: true }],
+          },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(`/api/records/${appointment.id}`, "PATCH", {
+          version: 1,
+          data: { ...appointmentData, status: "Completed" },
+        })
+      ).status,
+    ).toBe(200);
+    const current = (
+      (await (await request(`/api/records/${application.id}`)).json()) as {
+        record: WorkRecord;
+      }
+    ).record;
+    expect(current.data.applicationStatus).toBe("Saved");
+    expect(current.data.recruitmentSteps).toEqual([
+      { ...step, state: "Cancelled", archived: true },
+    ]);
+    expect(
+      (
+        (await (await request(`/api/records/${prep.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record.data.interviewId,
+    ).toBe(appointment.id);
+  });
+
+  it("restricts primary document files to the same document and preserves the current pointer after rejected replacement", async () => {
+    const first = await create("First document", {
+      kind: "asset",
+      data: { type: "document" },
+    });
+    const second = await create("Second document", {
+      kind: "asset",
+      data: { type: "document" },
+    });
+    const form = new FormData();
+    form.set(
+      "file",
+      new File(["%PDF-1.7\nSynthetic document"], "document.pdf", {
+        type: "application/pdf",
+      }),
+    );
+    const uploaded = await request(
+      `/api/records/${first.id}/attachments`,
+      "POST",
+      form,
+    );
+    expect(uploaded.status).toBe(201);
+    const file = ((await uploaded.json()) as { attachment: Attachment })
+      .attachment;
+    expect(
+      (
+        await request(`/api/records/${first.id}`, "PATCH", {
+          version: 1,
+          data: { type: "document", primaryAttachmentId: file.id },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(`/api/records/${second.id}`, "PATCH", {
+          version: 1,
+          data: { type: "document", primaryAttachmentId: file.id },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        (await (await request(`/api/records/${first.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record.data.primaryAttachmentId,
+    ).toBe(file.id);
+  });
+
+  it("checks direction ownership/type and detaches a deleted direction from goals while retaining measured progress", async () => {
+    const direction = await create("Software or cyber", {
+      kind: "path",
+      data: { category: "direction", uncertainties: "Explore work I enjoy" },
+    });
+    const wrongKind = await create("Ordinary note");
+    await foreignRecord();
+    const otherDirection = newRecord({
+      kind: "path",
+      title: "Private path",
+      data: { category: "direction" },
+    });
+    await insertRecord(env.DB, "other-user", otherDirection).run();
+    for (const directionId of [wrongKind.id, otherDirection.id])
+      expect(
+        (
+          await request("/api/goals", "POST", {
+            title: "Rejected goal",
+            directionId,
+            measure: "manual",
+            value: 2,
+            target: 5,
+          })
+        ).status,
+      ).toBe(400);
+    const created = await request("/api/goals", "POST", {
+      title: "Explore a career option",
+      directionId: direction.id,
+      measure: "problems",
+      value: 2,
+      target: 5,
+    });
+    expect(created.status).toBe(201);
+    const goal = (
+      (await created.json()) as { goal: import("../shared/goals").Goal }
+    ).goal;
+    const measuredAt = new Date(Date.now()).toISOString();
+    expect(
+      (
+        await request(`/api/goals/${goal.id}/checkpoint`, "POST", {
+          value: 3,
+          at: measuredAt,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await request(`/api/records/${direction.id}`, "DELETE")).status,
+    ).toBe(200);
+    expect(
+      (await request(`/api/records/${direction.id}/permanent`, "DELETE"))
+        .status,
+    ).toBe(200);
+    const retained = (
+      (await (await request("/api/goals")).json()) as {
+        goals: import("../shared/goals").Goal[];
+      }
+    ).goals.find((item) => item.id === goal.id)!;
+    expect(retained).toMatchObject({
+      title: goal.title,
+      directionId: "",
+      value: 3,
+      target: 5,
+      checkpoints: [{ value: 3, at: measuredAt }],
+    });
+  });
+
+  it("round-trips scoped learning, interview stories, direction goals and legacy notes in one private backup", async () => {
+    const topic = await create("Personal databases", {
+      kind: "topic",
+      data: { category: "learn-topic", track: "databases" },
+    });
+    const reading = await create("Database reading", {
+      kind: "resource",
+      data: {
+        category: "content-resource",
+        scope: "learn",
+        topicId: topic.id,
+        url: "https://example.invalid/databases",
+      },
+    });
+    const tab = await create("System design prep", {
+      data: { category: "interview-tab" },
+    });
+    const section = await create("Reusable explanation", {
+      body: "# Keep this explanation\n\n- [ ] Revisit tradeoffs",
+      data: { category: "content-section", scope: "interviews", tabId: tab.id },
+    });
+    const application = await create("Synthetic role", { kind: "application" });
+    const appointment = await create("Behavioural round", {
+      kind: "interview",
+      data: { applicationId: application.id },
+    });
+    const story = await create("Original experience", {
+      kind: "story",
+      data: {
+        situation: "Context",
+        action: "Contribution",
+        reflection: "Legacy lesson",
+      },
+    });
+    const prep = await create("Prep with reused story", {
+      body: "Remember to explain my decisions",
+      data: {
+        category: "interview-preparation",
+        interviewId: appointment.id,
+        applicationId: application.id,
+        storyIds: [story.id],
+      },
+    });
+    const direction = await create("Explore engineering", {
+      kind: "path",
+      data: { category: "direction" },
+    });
+    await request("/api/goals", "POST", {
+      title: "Direction goal",
+      directionId: direction.id,
+      measure: "manual",
+      value: 2,
+      target: 5,
+    });
+    const legacy = await create("Imported page", {
+      data: {
+        collection: "Unsorted",
+        originalMarkdown: "# Preserved original",
+      },
+    });
+    const backup = (await (
+      await request("/api/export")
+    ).json()) as WorkspaceExport;
+    const restoredResponse = await request("/api/restore", "POST", backup);
+    expect(restoredResponse.status).toBe(201);
+    const restored = (await restoredResponse.json()) as {
+      records: WorkRecord[];
+      goals: import("../shared/goals").Goal[];
+    };
+    const get = (original: WorkRecord) =>
+      restored.records.find((record) => record.title === original.title)!;
+    expect(get(reading).data.topicId).toBe(get(topic).id);
+    expect(get(section).data.tabId).toBe(get(tab).id);
+    expect(get(prep).data).toMatchObject({
+      interviewId: get(appointment).id,
+      applicationId: get(application).id,
+      storyIds: [get(story).id],
+    });
+    expect(get(story).data.reflection).toBe("Legacy lesson");
+    expect(get(legacy).data.originalMarkdown).toBe("# Preserved original");
+    expect(restored.goals[0].directionId).toBe(get(direction).id);
+    expect(restored.goals[0].value).toBe(2);
+  });
+});
+
+describe("detached private content recovery", () => {
+  it("restores authored notes and preparation after permanent parent removal", async () => {
+    const subject = await create("Custom subject", {
+      kind: "topic",
+      data: { category: "learn-track" },
+    });
+    const topic = await create("Custom reading section", {
+      kind: "topic",
+      data: { category: "learn-topic", track: subject.id },
+    });
+    const notes = await create("My database notes", {
+      body: "Authored SQL explanation",
+      data: { category: "content-section", scope: "learn", topicId: topic.id },
+    });
+    const appointment = await create("Deleted appointment", {
+      kind: "interview",
+    });
+    const prep = await create("Preparation worth retaining", {
+      body: "My questions and interview reflection",
+      data: {
+        category: "interview-preparation",
+        interviewId: appointment.id,
+        storyIds: [],
+      },
+    });
+    for (const record of [subject, topic, appointment]) {
+      expect(
+        (await request(`/api/records/${record.id}`, "DELETE")).status,
+      ).toBe(200);
+      expect(
+        (await request(`/api/records/${record.id}/permanent`, "DELETE")).status,
+      ).toBe(200);
+    }
+    expect(
+      (
+        (await (await request(`/api/records/${notes.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record,
+    ).toMatchObject({ body: notes.body, data: { topicId: "" } });
+    expect(
+      (
+        (await (await request(`/api/records/${prep.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record,
+    ).toMatchObject({ body: prep.body, data: { interviewId: "" } });
+    const backup = await (await request("/api/export")).json();
+    const restoredResponse = await request("/api/restore", "POST", backup);
+    expect(restoredResponse.status).toBe(201);
+    const restored = (await restoredResponse.json()) as {
+      records: WorkRecord[];
+    };
+    expect(
+      restored.records.find((record) => record.title === notes.title),
+    ).toMatchObject({ body: notes.body, data: { topicId: "" } });
+    expect(
+      restored.records.find((record) => record.title === prep.title),
+    ).toMatchObject({ body: prep.body, data: { interviewId: "" } });
   });
 });

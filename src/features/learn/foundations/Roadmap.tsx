@@ -246,7 +246,7 @@ export default function Roadmap({ solved, personalised, initialTopic }: Props) {
   return (
     <section className="learn-roadmap">
       <header className="learn-roadmap-heading">
-        <h2>NeetCode 150</h2>
+        <h2>150 problem roadmap</h2>
         {personalised && (
           <span>
             {confirmed}/{roadmapTotalProblems} confirmed

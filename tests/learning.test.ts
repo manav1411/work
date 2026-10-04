@@ -14,8 +14,8 @@ import { app } from "../worker";
 import type { Env } from "../worker/env";
 import { fetchLearningSource } from "../worker/learning";
 import { DEFAULT_PREFERENCES } from "../shared/model";
-import { learningContentSchema, learningUsername } from "../shared/learning";
-import { DEMO_STATS, DEMO_WEEKS } from "../src/features/learn/demo";
+import { learningStatsSchema, learningUsername } from "../shared/learning";
+import { DEMO_STATS } from "../src/features/learn/demo";
 import {
   buildSolvedByDay,
   solvedSlugs,
@@ -31,16 +31,6 @@ import {
 let miniflare: Miniflare;
 let env: Env;
 const owner = "local-manav";
-const content = {
-  weeks: [
-    {
-      ...DEMO_WEEKS[0],
-      title: "Authored live week",
-      slides: [{ content: "# Authored source slide" }],
-      tasks: [{ id: "source-task", label: "Shared source task" }],
-    },
-  ],
-};
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
@@ -101,6 +91,8 @@ beforeAll(async () => {
     "0002_submitted_files.sql",
     "0003_connectors.sql",
     "0004_simplification.sql",
+    "0005_workspace_improvements.sql",
+    "0006_backup_staging.sql",
   ]
     .map((name) =>
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"),
@@ -121,11 +113,11 @@ afterAll(async () => {
   await miniflare?.dispose();
 }, 30_000);
 
-describe("shared learning source", () => {
-  it("requires authentication before any upstream request", async () => {
+describe("roadmap statistics source and retired curriculum", () => {
+  it("requires authentication before statistics or retired curriculum routes", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
-    for (const path of ["content", "stats", "progress"])
+    for (const path of ["content", "stats", "progress", "tasks", "refresh"])
       expect(
         (
           await request(`/api/learning/${path}`, "GET", undefined, {
@@ -136,62 +128,101 @@ describe("shared learning source", () => {
       ).toBe(401);
     expect(fetch).not.toHaveBeenCalled();
   });
-  it("uses live authored content and serves last successful content during an outage", async () => {
+  it("retires reads and writes without upstream traffic or deleting retained private progress", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const inserted = await request("/api/records", "POST", {
+      kind: "progress",
+      title: "Retained learning task",
+      data: { category: "task", taskId: "source-task", done: true },
+    });
+    expect(inserted.status).toBe(201);
+    const saved = (await inserted.json()) as { record: { id: string } };
+    for (const path of ["content", "progress", "tasks", "refresh"])
+      for (const method of ["GET", "POST"])
+        expect(
+          (
+            await request(
+              `/api/learning/${path}`,
+              method,
+              method === "POST"
+                ? { taskId: "source-task", done: false }
+                : undefined,
+            )
+          ).status,
+        ).toBe(410);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(
+      await env.DB.prepare("SELECT data FROM records WHERE id=? AND owner_id=?")
+        .bind(saved.record.id, owner)
+        .first(),
+    ).toMatchObject({
+      data: JSON.stringify({
+        category: "task",
+        taskId: "source-task",
+        done: true,
+      }),
+    });
+  });
+  it("fetches live statistics once within the cache window and preserves last success during an outage", async () => {
+    await setHandle("synthetic-handle");
+    const data = { ...DEMO_STATS, username: "synthetic-handle" };
     const fetch = vi
       .fn()
-      .mockResolvedValueOnce(json(content))
-      .mockRejectedValue(new Error("upstream unavailable"));
+      .mockResolvedValueOnce(json(data))
+      .mockRejectedValue(new Error("unavailable"));
     vi.stubGlobal("fetch", fetch);
-    const first = await request("/api/learning/content");
-    expect(first.status).toBe(200);
-    expect(await first.json()).toMatchObject({
-      data: content,
+    expect(await (await request("/api/learning/stats")).json()).toMatchObject({
+      data,
       source: { stale: false },
     });
-    await request("/api/learning/content");
+    await request("/api/learning/stats");
     expect(fetch).toHaveBeenCalledTimes(1);
     await env.DB.prepare(
       "UPDATE learning_source_cache SET fetched_at=? WHERE owner_id=?",
     )
       .bind("2000-01-01T00:00:00.000Z", owner)
       .run();
-    const fallback = await request("/api/learning/content");
-    expect(await fallback.json()).toMatchObject({
-      data: content,
+    expect(await (await request("/api/learning/stats")).json()).toMatchObject({
+      data,
       source: { stale: true, fetchedAt: "2000-01-01T00:00:00.000Z" },
     });
     expect(fetch.mock.calls[0][0]).toBe(
-      "https://manavdodia.com/api/admin/content",
+      "https://manavdodia.com/api/leetcode?username=synthetic-handle",
     );
     expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: "manual" });
   });
-  it("rejects malformed upstream data without replacing the last successful copy", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(json(content))
-      .mockResolvedValueOnce(json({ weeks: "untrusted" }));
-    vi.stubGlobal("fetch", fetch);
-    await request("/api/learning/content");
+  it("rejects malformed statistics without replacing the last successful copy", async () => {
+    await setHandle("synthetic-handle");
+    const data = { ...DEMO_STATS, username: "synthetic-handle" };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json(data))
+        .mockResolvedValueOnce(json({ solved: "untrusted" })),
+    );
+    await request("/api/learning/stats");
     await env.DB.prepare(
       "UPDATE learning_source_cache SET fetched_at=? WHERE owner_id=?",
     )
       .bind("2000-01-01T00:00:00.000Z", owner)
       .run();
-    const fallback = await request("/api/learning/content");
-    expect(await fallback.json()).toMatchObject({
-      data: content,
+    expect(await (await request("/api/learning/stats")).json()).toMatchObject({
+      data,
       source: { stale: true },
     });
     const row = await env.DB.prepare(
-      "SELECT payload FROM learning_source_cache WHERE owner_id=?",
+      "SELECT payload FROM learning_source_cache WHERE owner_id=? AND source_key=?",
     )
-      .bind(owner)
+      .bind(owner, "stats:synthetic-handle")
       .first<{ payload: string }>();
-    expect(JSON.parse(row!.payload)).toEqual(content);
+    expect(JSON.parse(row!.payload)).toEqual(data);
   });
-  it("fails visibly when no successful curriculum copy is available", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ weeks: [] })));
-    expect((await request("/api/learning/content")).status).toBe(502);
+  it("fails visibly when no successful statistics copy is available", async () => {
+    await setHandle("synthetic-handle");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ solved: [] })));
+    expect((await request("/api/learning/stats")).status).toBe(502);
   });
   it("derives the handle from owner preferences and ignores client-selected identities", async () => {
     await setHandle("synthetic-handle");
@@ -212,91 +243,14 @@ describe("shared learning source", () => {
     );
     expect(fetch.mock.calls[0][1].headers).not.toHaveProperty("Cookie");
   });
-  it("does not fetch profiles or permit task writes before identity is configured", async () => {
+  it("does not fetch profiles before identity is configured", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);
     expect(await (await request("/api/learning/stats")).json()).toMatchObject({
       data: null,
       configured: false,
     });
-    expect(
-      await (await request("/api/learning/progress")).json(),
-    ).toMatchObject({ data: { tasks: {} }, configured: false });
-    expect(
-      (
-        await request("/api/learning/progress", "POST", {
-          taskId: "source-task",
-          done: true,
-        })
-      ).status,
-    ).toBe(400);
     expect(fetch).not.toHaveBeenCalled();
-  });
-  it("writes only source task completion with the configured handle, then reads the same response", async () => {
-    await setHandle("synthetic-handle");
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(json(content))
-      .mockResolvedValueOnce(json({ tasks: { "source-task": true } }));
-    vi.stubGlobal("fetch", fetch);
-    const response = await request("/api/learning/progress", "POST", {
-      taskId: "source-task",
-      done: true,
-    });
-    expect(response.status).toBe(200);
-    expect(fetch.mock.calls[1][0]).toBe("https://manavdodia.com/api/progress");
-    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
-      username: "synthetic-handle",
-      taskId: "source-task",
-      done: true,
-    });
-    const refreshed = await request("/api/learning/progress");
-    expect(await refreshed.json()).toMatchObject({
-      data: { tasks: { "source-task": true } },
-    });
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(
-      (
-        await request("/api/learning/progress", "POST", {
-          taskId: "source-task",
-          done: "false",
-        })
-      ).status,
-    ).toBe(400);
-    expect(
-      (
-        await request("/api/learning/progress", "POST", {
-          username: "foreign",
-          taskId: "source-task",
-          done: true,
-        })
-      ).status,
-    ).toBe(400);
-  });
-  it("rejects tasks outside the shared curriculum and reports failed writes", async () => {
-    await setHandle("synthetic-handle");
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(json(content))
-      .mockRejectedValue(new Error("outage"));
-    vi.stubGlobal("fetch", fetch);
-    expect(
-      (
-        await request("/api/learning/progress", "POST", {
-          taskId: "private-career-goal",
-          done: true,
-        })
-      ).status,
-    ).toBe(400);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    expect(
-      (
-        await request("/api/learning/progress", "POST", {
-          taskId: "source-task",
-          done: true,
-        })
-      ).status,
-    ).toBe(502);
   });
   it("keeps cached statistics isolated when changing handles", async () => {
     await setHandle("first-handle");
@@ -312,7 +266,7 @@ describe("shared learning source", () => {
       "https://manavdodia.com/api/leetcode?username=second-handle",
     );
   });
-  it("rejects another profile before it can enter the configured account cache", async () => {
+  it("rejects another profile before it enters the account cache", async () => {
     await setHandle("synthetic-handle");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(DEMO_STATS)));
     expect((await request("/api/learning/stats")).status).toBe(502);
@@ -324,7 +278,7 @@ describe("shared learning source", () => {
         .first(),
     ).toBeNull();
   });
-  it("bounds upstream responses and times out stalled fetches", async () => {
+  it("bounds and times out upstream responses, and prohibits retired source paths", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -337,11 +291,20 @@ describe("shared learning source", () => {
       ),
     );
     await expect(
-      fetchLearningSource("/api/admin/content", learningContentSchema),
+      fetchLearningSource(
+        "/api/leetcode?username=synthetic-handle",
+        learningStatsSchema,
+      ),
     ).rejects.toThrow("too large");
-    await expect(
-      fetchLearningSource("https://attacker.invalid/", learningContentSchema),
-    ).rejects.toThrow("Invalid learning source");
+    for (const path of [
+      "https://attacker.invalid/",
+      "/api/admin/content",
+      "/api/progress?username=synthetic-handle",
+      "/api/progress",
+    ])
+      await expect(
+        fetchLearningSource(path, learningStatsSchema),
+      ).rejects.toThrow("Invalid learning source");
     vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
@@ -355,7 +318,10 @@ describe("shared learning source", () => {
       ),
     );
     const stalled = expect(
-      fetchLearningSource("/api/admin/content", learningContentSchema),
+      fetchLearningSource(
+        "/api/leetcode?username=synthetic-handle",
+        learningStatsSchema,
+      ),
     ).rejects.toThrow("aborted");
     await vi.advanceTimersByTimeAsync(12_000);
     await stalled;

@@ -17,6 +17,8 @@ import {
   sourceCheckpointHistory,
   type Goal,
 } from "../../shared/goals";
+import { recruitmentSteps } from "../../shared/applications";
+import { recordDataError } from "../../shared/record-contract";
 import { demoGoals } from "./demo-goals";
 import {
   legacyGoalId,
@@ -28,7 +30,6 @@ import { DEMO_EXTRAS, STARTER_RECORDS } from "../content/starter";
 import { ApiError, type ApiAdapter } from "./api";
 import {
   assertDemoProviderPatch,
-  createDemoConnectorHandler,
   type DemoConnectorState,
 } from "./demo-connectors";
 
@@ -113,6 +114,52 @@ export function createDemoStore() {
     }
   };
   state.goals ??= demoGoals();
+  state.goals = state.goals.map((goal) => ({
+    ...goal,
+    directionId: goal.directionId || "",
+  }));
+  const validate = (item: WorkRecord) => {
+    const error = recordDataError(item.kind, item.data);
+    if (error) throw new ApiError(error, 400);
+    if (item.kind === "interview" && item.data.stepId) {
+      const app = state.records.find(
+        (record) =>
+          record.id === item.data.applicationId &&
+          record.kind === "application",
+      );
+      if (
+        !app ||
+        !recruitmentSteps(app.data, true).some(
+          (step) => step.id === item.data.stepId,
+        )
+      )
+        throw new ApiError("Choose a step in this application.", 400);
+    }
+    if (
+      item.kind === "asset" &&
+      ["resume", "letter", "document", "cover-letter"].includes(
+        String(item.data.type),
+      ) &&
+      item.data.primaryAttachmentId &&
+      !state.attachments.some(
+        (file) =>
+          file.id === item.data.primaryAttachmentId &&
+          file.recordId === item.id,
+      )
+    )
+      throw new ApiError("Choose this document's file.", 400);
+  };
+  const validateGoal = (directionId: string) => {
+    if (
+      directionId &&
+      !state.records.some(
+        (item) =>
+          item.id === directionId &&
+          ["path", "rotation", "decision"].includes(item.kind),
+      )
+    )
+      throw new ApiError("Choose a direction in this workspace.", 400);
+  };
   const record = (id: string) => {
     const found = state.records.find((item) => item.id === id);
     if (!found) throw new ApiError("Record not found.", 404);
@@ -154,6 +201,16 @@ export function createDemoStore() {
   ) => {
     const removedRecords = new Set(recordIds);
     const removedFiles = new Set(fileIds);
+    state.goals = state.goals!.map((goal) =>
+      removedRecords.has(goal.directionId)
+        ? {
+            ...goal,
+            directionId: "",
+            version: goal.version + 1,
+            updatedAt: new Date().toISOString(),
+          }
+        : goal,
+    );
     state.records = state.records.map((before) => {
       if (before.id === excluded) return before;
       const links = before.links.filter((link) => !removedRecords.has(link));
@@ -181,45 +238,9 @@ export function createDemoStore() {
     typeof init?.body === "string"
       ? (JSON.parse(init.body) as Record<string, unknown>)
       : {};
-  const connectorHandler = createDemoConnectorHandler({
-    getRecords: () => state.records,
-    createRecord: (input) => {
-      const created = makeRecord(input);
-      state.records.push(created);
-      persist();
-      return created;
-    },
-    updateRecord: (recordId, patch) => {
-      const previous = record(recordId);
-      revisions(structuredClone(previous));
-      const next: WorkRecord = {
-        ...previous,
-        ...patch,
-        id: previous.id,
-        kind: previous.kind,
-        version: previous.version + 1,
-        updatedAt: new Date().toISOString(),
-      };
-      state.records = state.records.map((item) =>
-        item.id === previous.id ? next : item,
-      );
-      persist();
-      return next;
-    },
-    getConnectorState: () => state.connectors,
-    setConnectorState: (next) => {
-      state.connectors = next;
-      persist();
-    },
-  });
   const adapter: ApiAdapter = async (path, init) => {
-    if (path.startsWith("/api/connectors/suggestions"))
-      throw new ApiError("Suggestions have been retired.", 410);
-    const connectorResult = await connectorHandler(path, init);
-    if (connectorResult.handled) {
-      persist();
-      return connectorResult.value;
-    }
+    if (path.startsWith("/api/connectors"))
+      throw new ApiError("Connections have been retired.", 410);
     const url = new URL(path, "https://demo.invalid");
     const method = init?.method ?? "GET";
     const body = parse(init);
@@ -229,6 +250,7 @@ export function createDemoStore() {
       const parsed = goalInputSchema.safeParse(body);
       if (!parsed.success)
         throw new ApiError(parsed.error.issues[0].message, 400);
+      validateGoal(parsed.data.directionId);
       const goal = newGoal(parsed.data);
       state.goals!.push(goal);
       persist();
@@ -317,6 +339,7 @@ export function createDemoStore() {
         const parsed = goalInputSchema.safeParse(fields);
         if (!parsed.success)
           throw new ApiError(parsed.error.issues[0].message, 400);
+        validateGoal(parsed.data.directionId);
         next = {
           ...before,
           ...parsed.data,
@@ -360,6 +383,7 @@ export function createDemoStore() {
     if (url.pathname === "/api/records/batch") {
       const items = body.records as RecordInput[];
       const created = items.map(makeRecord);
+      created.forEach(validate);
       state.records.push(...created);
       persist();
       return { records: created };
@@ -367,6 +391,7 @@ export function createDemoStore() {
     if (url.pathname === "/api/records") {
       if (method === "POST") {
         const created = makeRecord(body as unknown as RecordInput);
+        validate(created);
         state.records.push(created);
         persist();
         return { record: created };
@@ -477,6 +502,7 @@ export function createDemoStore() {
           version: previous.version + 1,
           updatedAt: new Date().toISOString(),
         } as WorkRecord;
+        validate(next);
         state.records = state.records.map((item) =>
           item.id === previous.id ? next : item,
         );
@@ -689,11 +715,19 @@ export function createDemoStore() {
       const fileIds = new Map(
         files.map((item) => [item.id, crypto.randomUUID()]),
       );
+      const stepIds = new Map(
+        payload.flatMap((item) =>
+          recruitmentSteps(item.data, true).map(
+            (step) => [step.id, crypto.randomUUID()] as const,
+          ),
+        ),
+      );
       const warnings: string[] = [];
       const remap = (value: unknown): unknown =>
         typeof value === "string"
           ? (ids.get(value) ??
             fileIds.get(value) ??
+            stepIds.get(value) ??
             value.replace(
               /\/api\/attachments\/([^\s)\]>]+)/g,
               (match, id: string) =>
@@ -746,7 +780,11 @@ export function createDemoStore() {
       const restoredGoals = goalBackupSchema
         .array()
         .parse(body.goals ?? [])
-        .map((goal) => ({ ...goal, id: crypto.randomUUID() }));
+        .map((goal) => ({
+          ...goal,
+          id: crypto.randomUUID(),
+          directionId: ids.get(goal.directionId) ?? "",
+        }));
       state.goals!.push(...restoredGoals);
       const result = {
         restored: payload.length,
@@ -770,6 +808,11 @@ export function createDemoStore() {
       if (urls.has(id)) return urls.get(id)!;
       const item = state.attachments.find((row) => row.id === id);
       if (!item) throw new ApiError("File not found.", 404);
+      if (!state.files[id])
+        throw new ApiError(
+          "File contents are unavailable. Upload a replacement.",
+          404,
+        );
       const bytes = Uint8Array.from(atob(state.files[id]), (char) =>
         char.charCodeAt(0),
       );

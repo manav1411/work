@@ -76,10 +76,10 @@ export interface UserPreferences {
 export const DEFAULT_PREFERENCES: UserPreferences = {
   timezone: "Australia/Melbourne",
   theme: "light",
-  displayName: "Manav",
-  github: "https://github.com/manav1411",
-  linkedin: "https://linkedin.com/in/manav-dodia",
-  website: "https://manavdodia.com",
+  displayName: "",
+  github: "",
+  linkedin: "",
+  website: "",
   leetcode: "",
   overleaf: "",
   currentCompany: "",
@@ -184,27 +184,43 @@ export const KIND_LABELS: Record<RecordKind, string> = {
 export const KIND_ROUTES: Record<RecordKind, string> = {
   action: "/settings",
   note: "/settings",
-  company: "/settings",
+  company: "/applications",
   application: "/applications",
   contact: "/settings",
   interview: "/applications",
-  story: "/settings",
+  story: "/interviews",
   practice: "/learn",
   topic: "/learn",
   progress: "/learn",
   achievement: "/settings",
   project: "/settings",
   asset: "/documents",
-  path: "/settings",
-  decision: "/settings",
+  path: "/direction",
+  decision: "/direction",
   review: "/settings",
   focus: "/settings",
   resource: "/settings",
-  rotation: "/settings",
+  rotation: "/direction",
 };
 
 export const recordUrl = (record: WorkRecord): string => {
   const recovery = `/settings?legacy=${record.kind}&record=${encodeURIComponent(record.id)}#recovery`;
+  if (record.kind === "company")
+    return `/applications?tab=radar&record=${encodeURIComponent(record.id)}`;
+  if (record.kind === "note" || record.kind === "resource") {
+    if (
+      field(record, "scope") === "interviews" ||
+      field(record, "category").startsWith("interview-")
+    ) {
+      const interview = field(record, "interviewId");
+      return interview
+        ? `/interviews?interview=${encodeURIComponent(interview)}`
+        : `/interviews?tab=${encodeURIComponent(field(record, "tabId", field(record, "tabKey", record.id)))}`;
+    }
+    if (field(record, "scope") === "learn")
+      return `/learn?track=${encodeURIComponent(field(record, "track", "dsa"))}`;
+    if (field(record, "scope") === "documents") return "/documents";
+  }
   if (
     record.kind === "practice" ||
     (record.kind === "progress" && record.data.category === "problem")
@@ -221,16 +237,6 @@ export const recordUrl = (record: WorkRecord): string => {
   }
   if (record.kind === "interview")
     return `/applications?interview=${encodeURIComponent(record.id)}`;
-  if (
-    record.kind === "asset" &&
-    !(
-      record.data.documentDefault === true ||
-      /^https:\/\/(www\.)?overleaf\.com\//.test(
-        field(record, "sourceUrl") || field(record, "overleaf"),
-      )
-    )
-  )
-    return recovery;
   return KIND_ROUTES[record.kind] === "/settings"
     ? recovery
     : `${KIND_ROUTES[record.kind]}?record=${encodeURIComponent(record.id)}`;

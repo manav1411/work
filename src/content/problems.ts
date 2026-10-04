@@ -4,11 +4,10 @@
 // { name, slug, difficulty } shape as homework so they render identically (and
 // so solved detection works off the same LeetCode slugs).
 
-export interface HomeworkProblem {
-  name: string;
-  slug: string;
-  difficulty: "Easy" | "Medium" | "Hard";
-}
+import type { HomeworkProblem } from "../../shared/learning";
+export type { HomeworkProblem } from "../../shared/learning";
+
+export const ROADMAP_VERSION = 1;
 
 export interface RoadmapTopic {
   /** Stable id, also used as the edge endpoints. */

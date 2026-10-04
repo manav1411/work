@@ -1,0 +1,107 @@
+:root .button-primary {
+  background: var(--blue);
+  color: #fff;
+  border: 2px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
+}
+.card {
+  border: 1.5px solid var(--ink);
+}
+.simple-shell .sidebar {
+  background: var(--canvas);
+  color: var(--ink);
+  border-right: 2px solid var(--ink);
+}
+.simple-shell .sidebar .brand {
+  color: var(--ink);
+}
+.simple-shell .brand-word > span {
+  color: var(--blue);
+}
+.simple-shell .nav-link {
+  color: var(--ink);
+  border: 1.5px solid transparent;
+  font-size: 13px;
+  font-weight: 650;
+}
+.simple-shell .nav-link:hover {
+  background: var(--surface-tint);
+  color: var(--ink);
+}
+.simple-shell .nav-link-active,
+.simple-shell .nav-link-active:hover {
+  color: #fff;
+  background: var(--blue);
+  border-color: var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
+}
+.simple-shell .sidebar-bottom {
+  border-color: var(--line);
+}
+.simple-shell .account-trigger {
+  color: var(--ink);
+}
+.simple-shell .account-trigger:hover {
+  background: var(--surface-tint);
+}
+.simple-shell .simple-nav-close {
+  color: var(--ink);
+}
+.simple-shell .mobile-nav {
+  background: var(--paper);
+  border-top: 2px solid var(--ink);
+}
+.simple-shell .mobile-nav > a,
+.simple-shell .mobile-nav > button {
+  color: var(--muted);
+}
+.simple-shell .mobile-nav > a.active {
+  color: var(--link-colour);
+}
+.text-link {
+  color: var(--link-colour);
+}
+.input {
+  background: var(--paper);
+  color: var(--ink);
+}
+.timeline-board {
+  box-shadow: 5px 5px 0 var(--shadow-colour);
+}
+.timeline-heading h2 {
+  text-decoration: underline;
+  text-decoration-color: var(--aqua);
+  text-decoration-thickness: 6px;
+  text-underline-offset: 6px;
+}
+.goal-card:hover {
+  box-shadow: 3px 3px 0 var(--shadow-colour);
+}
+[data-theme="dark"] .badge-blue {
+  background: #334172;
+  color: #dbe4ff;
+}
+[data-theme="dark"] .badge-pink {
+  background: #613b50;
+  color: #ffe1ef;
+}
+[data-theme="dark"] .badge-orange {
+  background: #66482e;
+  color: #ffe4c8;
+}
+[data-theme="dark"] .button-danger {
+  background: #582e31;
+  color: #ffdcde;
+  border-color: #eea6ac;
+}
+@media (max-width: 760px) {
+  .simple-shell .mobile-nav > button {
+    flex: 1;
+    min-width: 0;
+    font-size: 9px;
+    padding: 6px 5px;
+  }
+  .simple-shell .sidebar {
+    border-right: 2px solid var(--ink);
+  }
+}

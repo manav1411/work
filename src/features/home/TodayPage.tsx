@@ -1,42 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import {
-  ArrowUpRight,
-  CalendarDays,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Flag,
-  Plus,
-  X,
-} from "lucide-react";
-import {
-  EMPTY_GOAL,
-  goalInputSchema,
-  goalProgress,
-  type Goal,
-  type GoalInput,
-} from "../../../shared/goals";
-import {
-  addDays,
-  localDate,
-  niceDate,
-  safeUrl,
-  type WorkRecord,
-} from "../../../shared/model";
-import {
-  Button,
-  Field,
-  Input,
-  Modal,
-  PageHeader,
-  Select,
-} from "../../components/ui";
+import { useNavigate } from "react-router-dom";
+import { Check, ChevronLeft, ChevronRight, Flag } from "lucide-react";
+import { goalProgress } from "../../../shared/goals";
+import { addDays, localDate, niceDate } from "../../../shared/model";
+import { Button, PageHeader } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useGoals } from "../../lib/goals";
 import { useLearningData } from "../learn/useLearningData";
-import { roadmapTopics } from "../../content/problems";
-import { InterviewEditor } from "../search/InterviewEditor";
+import {
+  observedProgress,
+  useGoalMeasurements,
+} from "../direction/goalMetrics";
 import {
   dayDistance,
   timelineItems,
@@ -47,54 +21,17 @@ import {
 } from "./timeline";
 import "./timeline.css";
 
-function goalInput(goal: Goal): GoalInput {
-  return Object.fromEntries(
-    Object.keys(EMPTY_GOAL).map((key) => [key, goal[key as keyof GoalInput]]),
-  ) as GoalInput;
-}
-function observedProgress(
-  goal: Goal,
-  learning: ReturnType<typeof useLearningData>,
-): number | undefined {
-  if (!learning.configured) return undefined;
-  if (goal.measure === "curriculum") {
-    if (!learning.source.progress.fetchedAt) return undefined;
-    const tasks = learning.weeks
-      .filter((week) => !goal.scope || String(week.week) === goal.scope)
-      .flatMap((week) => week.tasks ?? []);
-    return tasks.filter((task) => learning.tasks[task.id]).length;
-  }
-  if (goal.measure === "problems") {
-    if (!learning.stats) return undefined;
-    const slugs = new Set(
-      roadmapTopics
-        .filter((topic) => !goal.scope || topic.id === goal.scope)
-        .flatMap((topic) => topic.problems.map((problem) => problem.slug)),
-    );
-    return [...learning.solvedSlugs].filter((slug) => slugs.has(slug)).length;
-  }
-  if (goal.measure === "leetcode")
-    return learning.stats?.solved.find((item) => item.difficulty === "All")
-      ?.count;
-  return undefined;
-}
-
 export function TodayPage() {
   const { records, preferences, user } = useWorkspace();
+  const navigate = useNavigate();
   const model = useGoals();
   const learning = useLearningData();
   const today = localDate(new Date(), preferences.timezone);
   const [offset, setOffset] = useState(0),
     [expanded, setExpanded] = useState(false);
-  const [editing, setEditing] = useState<Goal | null | undefined>(),
-    [selectedGoal, setSelectedGoal] = useState<string | null>(null);
-  const [interview, setInterview] = useState<WorkRecord | null | undefined>();
-  const [selectedEvent, setSelectedEvent] = useState<TimelineItem | null>(null);
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
   const [width, setWidth] = useState(800);
   const graphRef = useRef<HTMLDivElement>(null);
-  const checkpointAttempts = useRef(new Set<string>());
+  useGoalMeasurements(model, learning, user?.id ?? "");
   const span = expanded ? 90 : 42;
   const start = addDays(today, offset - (expanded ? 21 : 7)),
     end = addDays(start, span);
@@ -123,7 +60,6 @@ export function TodayPage() {
   );
   const layout = timelineLayout(chartItems, start, end, width);
   const lanes = Math.max(1, ...layout.map((item) => item.lane + 1));
-  const currentGoal = model.goals.find((goal) => goal.id === selectedGoal);
   useEffect(() => {
     const node = graphRef.current;
     if (!node) return;
@@ -133,73 +69,22 @@ export function TodayPage() {
     observer.observe(node);
     return () => observer.disconnect();
   }, [model.loading]);
-  useEffect(() => {
-    for (const goal of model.goals) {
-      const value = observedProgress(goal, learning);
-      const source =
-        goal.measure === "curriculum"
-          ? learning.source.progress
-          : learning.source.stats;
-      if (
-        value === undefined ||
-        goal.value === value ||
-        !source.fetchedAt ||
-        source.stale ||
-        goal.status === "completed"
-      )
-        continue;
-      const key = `${user?.id}:${goal.id}:${goal.measure}:${goal.scope}:${source.fetchedAt}:${value}`;
-      if (checkpointAttempts.current.has(key)) continue;
-      checkpointAttempts.current.add(key);
-      void model
-        .checkpoint(goal, value, source.fetchedAt)
-        .catch(() => void model.refresh());
-    }
-  }, [
-    model.goals,
-    model.checkpoint,
-    model.refresh,
-    learning.tasks,
-    learning.stats,
-    learning.source,
-    learning.weeks,
-    learning.configured,
-    learning.solvedSlugs,
-    user?.id,
-  ]);
   const openEvent = (item: TimelineItem) => {
-    if (item.goal) setSelectedGoal(item.goal.id);
-    else if (item.record?.kind === "interview") setInterview(item.record);
-    else setSelectedEvent(item);
-  };
-  const saveChange = async (goal: Goal, patch: Partial<GoalInput>) => {
-    setBusy(true);
-    setError("");
-    try {
-      await model.save({ ...goalInput(goal), ...patch }, goal);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Could not save.");
-    } finally {
-      setBusy(false);
-    }
+    if (item.goal) navigate(`/direction?goal=${item.goal.id}`);
+    else if (item.record?.kind === "interview")
+      navigate(`/applications?interview=${item.record.id}`);
+    else if (item.record?.kind === "company")
+      navigate(`/applications?tab=radar&record=${item.record.id}`);
+    else if (
+      item.record &&
+      ["path", "rotation", "decision"].includes(item.record.kind)
+    )
+      navigate(`/direction?record=${item.record.id}`);
+    else if (item.record) navigate(`/applications?record=${item.record.id}`);
   };
   return (
     <div className="page-stack home-page">
-      <PageHeader
-        title="Home"
-        action={
-          <div className="inline-actions">
-            <Button variant="secondary" onClick={() => setInterview(null)}>
-              <CalendarDays size={16} />
-              Add interview
-            </Button>
-            <Button onClick={() => setEditing(null)}>
-              <Plus size={17} />
-              Add goal
-            </Button>
-          </div>
-        }
-      />
+      <PageHeader title="Home" />
       {model.error && (
         <div role="alert" className="notice notice-warning">
           {model.error}
@@ -347,7 +232,7 @@ export function TodayPage() {
                       width: `${Math.max(3, right - left)}%`,
                       top: `${lanes * 100 + 64 + index * 48}px`,
                     }}
-                    onClick={() => setSelectedGoal(goal.id)}
+                    onClick={() => navigate(`/direction?goal=${goal.id}`)}
                     aria-label={`${goal.title}: ${goal.startDate} to ${goal.targetDate}, ${Math.round(progress.percent)}% complete`}
                   >
                     <span
@@ -414,8 +299,7 @@ export function TodayPage() {
                         className={`goal-card ${progress.complete ? "goal-complete" : ""}`}
                         key={goal.id}
                         onClick={() => {
-                          setError("");
-                          setSelectedGoal(goal.id);
+                          navigate(`/direction?goal=${goal.id}`);
                         }}
                       >
                         <div className="goal-card-top">
@@ -459,558 +343,6 @@ export function TodayPage() {
           </>
         )}
       </section>
-      <div className="home-shortcuts">
-        <Link to="/learn">
-          Learn
-          <ArrowUpRight size={15} />
-        </Link>
-        <Link to="/applications">
-          Applications
-          <ArrowUpRight size={15} />
-        </Link>
-        <Link to="/documents">
-          Documents
-          <ArrowUpRight size={15} />
-        </Link>
-      </div>
-      {editing !== undefined && (
-        <GoalEditor
-          key={editing?.id ?? "new"}
-          goal={editing}
-          owner={user?.id ?? ""}
-          weeks={learning.weeks}
-          onClose={() => setEditing(undefined)}
-          onSave={async (input) => {
-            await model.save(input, editing ?? undefined);
-            setEditing(undefined);
-          }}
-        />
-      )}
-      <Modal
-        open={!!currentGoal}
-        onClose={() => {
-          setSelectedGoal(null);
-          setError("");
-        }}
-        title={currentGoal?.title ?? "Goal"}
-      >
-        {currentGoal && (
-          <div className="stack goal-detail">
-            {error && (
-              <p role="alert" className="notice notice-warning">
-                {error}
-              </p>
-            )}
-            {currentGoal.startDate && (
-              <small className="muted">
-                Started {niceDate(currentGoal.startDate)}{" "}
-                {currentGoal.startDate.slice(0, 4)}
-              </small>
-            )}
-            <div className="goal-detail-date">
-              <Flag size={18} />
-              {currentGoal.targetDate
-                ? `Target: ${niceDate(currentGoal.targetDate)} ${currentGoal.targetDate.slice(0, 4)}`
-                : "No target date"}
-            </div>
-            <div
-              className="goal-progress"
-              role="progressbar"
-              aria-label="Goal progress"
-              aria-valuenow={Math.round(
-                goalProgress(
-                  currentGoal,
-                  observedProgress(currentGoal, learning),
-                ).percent,
-              )}
-              aria-valuemin={0}
-              aria-valuemax={100}
-            >
-              <span
-                style={{
-                  width: `${goalProgress(currentGoal, observedProgress(currentGoal, learning)).percent}%`,
-                }}
-              />
-            </div>
-            {currentGoal.measure !== "completion" && (
-              <p className="goal-numbers">
-                {
-                  goalProgress(
-                    currentGoal,
-                    observedProgress(currentGoal, learning),
-                  ).value
-                }{" "}
-                / {goalProgress(currentGoal).target} {currentGoal.unit}
-              </p>
-            )}
-            {currentGoal.milestones.map((milestone) => (
-              <label className="goal-milestone" key={milestone.id}>
-                <input
-                  type="checkbox"
-                  disabled={busy}
-                  checked={milestone.done}
-                  onChange={(event) =>
-                    void saveChange(currentGoal, {
-                      milestones: currentGoal.milestones.map((item) =>
-                        item.id === milestone.id
-                          ? {
-                              ...item,
-                              done: event.target.checked,
-                              completedAt: event.target.checked
-                                ? new Date().toISOString()
-                                : null,
-                            }
-                          : item,
-                      ),
-                    })
-                  }
-                />
-                <span>{milestone.title}</span>
-                <small>{milestone.date && niceDate(milestone.date)}</small>
-              </label>
-            ))}
-            {safeUrl(currentGoal.sourceUrl) && (
-              <a
-                className="text-link"
-                href={safeUrl(currentGoal.sourceUrl)!}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open source
-                <ArrowUpRight size={15} />
-              </a>
-            )}
-            {["curriculum", "problems", "leetcode"].includes(
-              currentGoal.measure,
-            ) && (
-              <div className="goal-source-state">
-                <Link to="/learn">Learning progress ↗</Link>
-                <small>
-                  {learning.configured
-                    ? currentGoal.measure === "problems"
-                      ? "Counts confirmed distinct problems in tracked history."
-                      : "From your linked learning account."
-                    : "Set your LeetCode handle in Learn to update this goal."}
-                </small>
-                {(currentGoal.measure === "curriculum"
-                  ? learning.source.progress
-                  : learning.source.stats
-                ).stale && (
-                  <small>Showing the last available source data.</small>
-                )}
-                {(currentGoal.measure === "curriculum"
-                  ? learning.source.progress
-                  : learning.source.stats
-                ).fetchedAt && (
-                  <small>
-                    Updated{" "}
-                    {new Intl.DateTimeFormat("en-AU", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                      timeZone: preferences.timezone,
-                    }).format(
-                      new Date(
-                        (currentGoal.measure === "curriculum"
-                          ? learning.source.progress
-                          : learning.source.stats
-                        ).fetchedAt!,
-                      ),
-                    )}
-                  </small>
-                )}
-              </div>
-            )}
-            {!!currentGoal.checkpoints.length && (
-              <details>
-                <summary>Progress history</summary>
-                <div className="goal-checkpoints">
-                  {currentGoal.checkpoints
-                    .slice()
-                    .reverse()
-                    .map((checkpoint, index) => (
-                      <div key={`${checkpoint.at}:${index}`}>
-                        <time>
-                          {niceDate(
-                            localDate(
-                              new Date(checkpoint.at),
-                              preferences.timezone,
-                            ),
-                          )}
-                        </time>
-                        <strong>
-                          {checkpoint.value}{" "}
-                          {checkpoint.unit ?? currentGoal.unit}
-                        </strong>
-                      </div>
-                    ))}
-                </div>
-              </details>
-            )}
-            <div className="inline-actions">
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  void saveChange(currentGoal, {
-                    status:
-                      currentGoal.status === "completed"
-                        ? "active"
-                        : "completed",
-                    completedAt:
-                      currentGoal.status === "completed"
-                        ? null
-                        : new Date().toISOString(),
-                  })
-                }
-              >
-                {currentGoal.status === "completed"
-                  ? "Reopen"
-                  : "Mark complete"}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setEditing(currentGoal);
-                  setSelectedGoal(null);
-                }}
-              >
-                Edit goal
-              </Button>
-            </div>
-            <details>
-              <summary>Remove goal</summary>
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await model.remove(currentGoal);
-                    setSelectedGoal(null);
-                  } catch (error) {
-                    setError(
-                      error instanceof Error
-                        ? error.message
-                        : "Could not remove goal.",
-                    );
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                Remove goal
-              </Button>
-              <p className="muted">Removed goals remain in your backup.</p>
-            </details>
-          </div>
-        )}
-      </Modal>
-      <Modal
-        open={!!selectedEvent}
-        onClose={() => setSelectedEvent(null)}
-        title={selectedEvent?.title ?? "Event"}
-      >
-        <div className="stack">
-          <p>
-            {selectedEvent?.detail} ·{" "}
-            {selectedEvent && niceDate(selectedEvent.date)}
-          </p>
-          <Link
-            className="text-link"
-            to={`/applications?record=${selectedEvent?.record?.id}`}
-            onClick={() => setSelectedEvent(null)}
-          >
-            Open application
-            <ArrowUpRight size={16} />
-          </Link>
-        </div>
-      </Modal>
-      <InterviewEditor
-        open={interview !== undefined}
-        record={interview ?? undefined}
-        onClose={() => setInterview(undefined)}
-      />
     </div>
-  );
-}
-
-function GoalEditor({
-  goal,
-  owner,
-  weeks,
-  onClose,
-  onSave,
-}: {
-  goal: Goal | null;
-  owner: string;
-  weeks: { week: number; title: string }[];
-  onClose: () => void;
-  onSave: (input: GoalInput) => Promise<void>;
-}) {
-  const key = `work:goal-draft:${owner}:${goal?.id ?? "new"}`;
-  const [form, setForm] = useState<GoalInput>(() => {
-    try {
-      const draft = JSON.parse(localStorage.getItem(key) ?? "null");
-      if (draft && goalInputSchema.safeParse(draft).success) return draft;
-    } catch {
-      /* keep the saved record */
-    }
-    return goal ? goalInput(goal) : structuredClone(EMPTY_GOAL);
-  });
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const set = (patch: Partial<GoalInput>) =>
-    setForm((previous) => ({ ...previous, ...patch }));
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(form));
-    } catch {
-      /* editor stays open */
-    }
-  }, [form, key]);
-  const close = () => {
-    localStorage.removeItem(key);
-    onClose();
-  };
-  return (
-    <Modal open onClose={close} title={goal ? "Edit goal" : "Add goal"}>
-      <form
-        className="stack"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setError("");
-          const parsed = goalInputSchema.safeParse(form);
-          if (!parsed.success) {
-            setError(parsed.error.issues[0].message);
-            return;
-          }
-          setBusy(true);
-          try {
-            await onSave(parsed.data);
-            localStorage.removeItem(key);
-          } catch (error) {
-            setError(
-              error instanceof Error ? error.message : "Could not save goal.",
-            );
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {error && (
-          <p role="alert" className="notice notice-warning">
-            {error}
-          </p>
-        )}
-        <Field label="Goal">
-          <Input
-            autoFocus
-            value={form.title}
-            required
-            onChange={(event) => set({ title: event.target.value })}
-          />
-        </Field>
-        <Field label="Target date">
-          <Input
-            type="date"
-            value={form.targetDate}
-            onChange={(event) => set({ targetDate: event.target.value })}
-          />
-        </Field>
-        <details
-          className="goal-options"
-          open={goal?.measure !== undefined && goal.measure !== "completion"}
-        >
-          <summary>Progress and details</summary>
-          <div className="stack">
-            <Field label="Progress measure">
-              <Select
-                value={form.measure}
-                onChange={(event) => {
-                  const measure = event.target.value as GoalInput["measure"];
-                  set({
-                    measure,
-                    scope: "",
-                    target: measure === "completion" ? 1 : form.target,
-                    unit:
-                      measure === "curriculum"
-                        ? "tasks"
-                        : measure === "problems" || measure === "leetcode"
-                          ? "problems"
-                          : form.unit,
-                  });
-                }}
-              >
-                <option value="completion">Complete / incomplete</option>
-                <option value="manual">A number I update</option>
-                <option value="milestones">Milestones</option>
-                <option value="curriculum">Curriculum tasks</option>
-                <option value="problems">Roadmap problems</option>
-                <option value="leetcode">Total LeetCode problems</option>
-              </Select>
-            </Field>
-            {form.measure === "curriculum" && (
-              <Field label="Curriculum scope">
-                <Select
-                  value={form.scope}
-                  onChange={(event) => set({ scope: event.target.value })}
-                >
-                  <option value="">All weeks</option>
-                  {weeks.map((week) => (
-                    <option key={week.week} value={week.week}>
-                      {week.title}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
-            {form.measure === "problems" && (
-              <Field label="Problem collection">
-                <Select
-                  value={form.scope}
-                  onChange={(event) => set({ scope: event.target.value })}
-                >
-                  <option value="">All roadmap problems</option>
-                  {roadmapTopics.map((topic) => (
-                    <option key={topic.id} value={topic.id}>
-                      {topic.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
-            {!["completion", "milestones"].includes(form.measure) && (
-              <div className="form-grid">
-                <Field label="Target">
-                  <Input
-                    type="number"
-                    min="1"
-                    value={form.target}
-                    required
-                    onChange={(event) =>
-                      set({ target: Number(event.target.value) })
-                    }
-                  />
-                </Field>
-                {form.measure === "manual" && (
-                  <Field label="Current progress">
-                    <Input
-                      type="number"
-                      min="0"
-                      value={form.value}
-                      onChange={(event) =>
-                        set({ value: Number(event.target.value) })
-                      }
-                    />
-                  </Field>
-                )}
-                <Field label="Unit">
-                  <Input
-                    value={form.unit}
-                    onChange={(event) => set({ unit: event.target.value })}
-                  />
-                </Field>
-              </div>
-            )}
-            {form.measure === "milestones" && (
-              <div className="stack">
-                {form.milestones.map((milestone) => (
-                  <div className="goal-milestone-editor" key={milestone.id}>
-                    <Field label="Milestone">
-                      <Input
-                        value={milestone.title}
-                        required
-                        onChange={(event) =>
-                          set({
-                            milestones: form.milestones.map((item) =>
-                              item.id === milestone.id
-                                ? { ...item, title: event.target.value }
-                                : item,
-                            ),
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field label="Date">
-                      <Input
-                        type="date"
-                        value={milestone.date}
-                        onChange={(event) =>
-                          set({
-                            milestones: form.milestones.map((item) =>
-                              item.id === milestone.id
-                                ? { ...item, date: event.target.value }
-                                : item,
-                            ),
-                          })
-                        }
-                      />
-                    </Field>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="icon-button"
-                      aria-label={`Remove ${milestone.title || "milestone"}`}
-                      onClick={() =>
-                        set({
-                          milestones: form.milestones.filter(
-                            (item) => item.id !== milestone.id,
-                          ),
-                        })
-                      }
-                    >
-                      <X size={16} />
-                    </Button>
-                  </div>
-                ))}
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={() =>
-                    set({
-                      milestones: [
-                        ...form.milestones,
-                        {
-                          id: crypto.randomUUID(),
-                          title: "",
-                          date: "",
-                          done: false,
-                          completedAt: null,
-                        },
-                      ],
-                    })
-                  }
-                >
-                  <Plus size={16} />
-                  Add milestone
-                </Button>
-              </div>
-            )}
-            <Field label="Start date">
-              <Input
-                type="date"
-                value={form.startDate}
-                onChange={(event) => set({ startDate: event.target.value })}
-              />
-            </Field>
-            <Field label="Source link">
-              <Input
-                type="url"
-                value={form.sourceUrl}
-                placeholder="https://"
-                onChange={(event) => set({ sourceUrl: event.target.value })}
-              />
-            </Field>
-          </div>
-        </details>
-        <div className="inline-actions">
-          <Button type="submit" disabled={busy || !form.title.trim()}>
-            {busy ? "Saving…" : "Save goal"}
-          </Button>
-          <Button variant="ghost" type="button" onClick={close}>
-            Cancel
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }

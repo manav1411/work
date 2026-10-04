@@ -1,0 +1,106 @@
+.direction-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 20px;
+}
+.direction-page h2 {
+  font-size: 22px;
+  margin: 0;
+}
+.direction-card {
+  position: relative;
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow-colour);
+}
+.direction-path {
+  border-top: 8px solid var(--blue);
+}
+.direction-rotation {
+  border-top: 8px solid var(--pink);
+}
+.direction-decision {
+  border-top: 8px solid var(--orange);
+}
+.direction-card .record-title-button {
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 750;
+  margin: 10px 0 16px;
+}
+.direction-card p {
+  font-size: 13px;
+}
+.direction-scale {
+  display: flex;
+  gap: 8px;
+}
+.direction-overview {
+  border: 2px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow-colour);
+}
+.direction-timeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+.direction-timeline h3 {
+  font-size: 17px;
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  background: var(--aqua);
+  color: #202128;
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
+}
+.direction-timeline-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+  color: var(--ink);
+}
+.direction-timeline-item time {
+  color: var(--muted);
+  font-size: 11px;
+  width: 52px;
+  flex-shrink: 0;
+}
+.direction-timeline-item > span {
+  flex: 1;
+  min-width: 0;
+}
+.direction-timeline-item strong,
+.direction-timeline-item small {
+  display: block;
+}
+.direction-timeline-item strong {
+  font-size: 13px;
+}
+.direction-timeline-item small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.direction-timeline-item:hover strong {
+  text-decoration: underline;
+  text-decoration-color: var(--blue);
+}
+.direction-page .empty-state {
+  padding: 22px;
+  border: 1px dashed var(--line);
+}
+@media (max-width: 600px) {
+  .direction-overview > .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .direction-scale .button {
+    padding: 8px 14px;
+  }
+}
