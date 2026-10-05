@@ -362,7 +362,7 @@ try {
   const application = await create("application", "Runtime role", {
     companyId: radar.id,
     company: radar.title,
-    applicationStatus: "In progress",
+    applicationStatus: "Applied",
     applicationDate: "2026-10-05",
     role: "Software engineer",
     recruitmentSteps: [
@@ -377,12 +377,13 @@ try {
         id: step,
         title: "Assessment",
         kind: "assessment",
-        state: "Current",
+        state: "Planned",
         date: "2030-10-07",
       },
     ],
   });
   const interview = await create("interview", "Runtime appointment", {
+    appointmentVersion: 2,
     applicationId: application.id,
     stepId: step,
     startsAt: "2030-10-07T01:00:00Z",
@@ -457,7 +458,7 @@ try {
   const goalInput = {
     title: "Runtime roadmap goal",
     directionId: direction.id,
-    measure: "problems",
+    measure: "leetcode",
     scope: "all",
     target: 10,
     unit: "problems",
@@ -497,8 +498,7 @@ try {
   );
 
   const document = await create("asset", "Runtime document", {
-    type: "resume",
-    documentDefault: true,
+    type: "other",
     sourceUrl: "https://example.com/source/runtime",
   });
   let currentDocument = document;
