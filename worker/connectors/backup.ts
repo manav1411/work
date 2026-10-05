@@ -30,7 +30,7 @@ const configuration = z
     mode: z.enum(["public", "installation", "internal", "oauth"]).optional(),
   })
   .strict();
-export const connectorBackupSchema = z
+const currentConnectorBackupSchema = z
   .object({
     connections: z
       .array(
@@ -88,6 +88,30 @@ export const connectorBackupSchema = z
       .max(10_000),
   })
   .strict();
+// Old archives may contain the retired editor link. Retain imported documents,
+// but discard connection bookkeeping so restoring a backup cannot reactivate it.
+export const connectorBackupSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const archive = { ...value } as Record<string, unknown>;
+  const connections = Array.isArray(archive.connections)
+    ? archive.connections
+    : [];
+  const retired = new Set(
+    connections
+      .filter((row) => row?.provider === "overleaf")
+      .map((row) => row.id),
+  );
+  if (!retired.size) return value;
+  archive.connections = connections.filter((row) => !retired.has(row?.id));
+  for (const field of ["sources", "activities"]) {
+    if (Array.isArray(archive[field]))
+      archive[field] = archive[field].filter(
+        (row) =>
+          !retired.has(row?.connectionId) && row?.provider !== "overleaf",
+      );
+  }
+  return archive;
+}, currentConnectorBackupSchema);
 export type ConnectorBackup = z.infer<typeof connectorBackupSchema>;
 export async function exportConnectors(
   env: Env,

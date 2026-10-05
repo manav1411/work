@@ -63,7 +63,6 @@ const connectSchema = z
     username: z.string().trim().min(1).max(200).optional(),
     projectUrl: z.string().trim().min(1).max(2048).optional(),
     label: z.string().trim().max(120).optional(),
-    assetId: z.string().min(1).max(120).optional(),
     token: z.string().trim().min(16).max(1000).optional(),
   })
   .strict();
@@ -109,33 +108,6 @@ function githubUsername(value: string): string {
       "Enter a valid GitHub username.",
     );
   return username;
-}
-function overleafProject(value: string): string {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new ApiError(
-      400,
-      "INVALID_PROJECT_URL",
-      "Enter an Overleaf project URL.",
-    );
-  }
-  if (
-    url.protocol !== "https:" ||
-    !["www.overleaf.com", "overleaf.com"].includes(url.hostname) ||
-    url.username ||
-    url.password ||
-    !/^\/project\/[a-f0-9]{24}\/?$/i.test(url.pathname)
-  )
-    throw new ApiError(
-      400,
-      "INVALID_PROJECT_URL",
-      "Use a private Overleaf project URL, such as https://www.overleaf.com/project/…",
-    );
-  url.search = "";
-  url.hash = "";
-  return url.href;
 }
 routes.get("/", async (c) =>
   c.json({
@@ -265,35 +237,10 @@ routes.post("/:provider/connect", async (c) => {
       { token: input.token },
     );
   } else {
-    const projectUrl = overleafProject(input.projectUrl || "");
-    let asset = input.assetId
-      ? await getRecord(c.env.DB, owner, input.assetId)
-      : null;
-    if (asset && (asset.kind !== "asset" || asset.data.type !== "resume"))
-      throw new ApiError(
-        400,
-        "INVALID_ASSET",
-        "Choose one of your résumé assets.",
-      );
-    if (!asset) {
-      asset = newRecord({
-        kind: "asset",
-        title: input.label || "Overleaf résumé",
-        data: {
-          type: "resume",
-          overleaf: projectUrl,
-          versionLabel: now().slice(0, 10),
-        },
-      });
-      await writeRecord(c.env.DB, owner, asset);
-    }
-    row = await saveConnection(
-      c.env,
-      owner,
-      target,
-      projectUrl,
-      input.label || asset.title,
-      { projectUrl, assetId: asset.id },
+    throw new ApiError(
+      400,
+      "UNSUPPORTED_PROVIDER",
+      "This connection is unavailable.",
     );
   }
   return c.json({ connection: publicConnection(row) }, 201);
@@ -469,12 +416,8 @@ routes.patch("/:provider", async (c) => {
       "UPDATE connector_connections SET status=?,next_sync_at=?,generation=generation+1 WHERE id=? AND owner_id=?",
     )
       .bind(
-        input.paused
-          ? "paused"
-          : target === "overleaf"
-            ? "linked"
-            : "setting_up",
-        input.paused || target === "overleaf" ? null : now(),
+        input.paused ? "paused" : "setting_up",
+        input.paused ? null : now(),
         row.id,
         owner,
       )

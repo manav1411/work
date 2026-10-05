@@ -54,7 +54,7 @@ const data = z
       if (!item || typeof item !== "object") return;
       for (const [key, child] of Object.entries(item)) {
         if (
-          /^(url|website|sourceUrl|jobUrl|careersUrl|overleaf|linkedin|github|demoUrl|repoUrl|resumeUrl|coverLetterUrl|notionUrl|meetingUrl)$/i.test(
+          /^(url|website|sourceUrl|jobUrl|careersUrl|linkedin|github|demoUrl|repoUrl|resumeUrl|coverLetterUrl|notionUrl|meetingUrl)$/i.test(
             key,
           ) &&
           typeof child === "string" &&
@@ -112,7 +112,7 @@ export const patchSchema = z
     version: z.number().int().positive(),
   })
   .strict();
-export const preferencesSchema = z
+const currentPreferencesSchema = z
   .object({
     timezone: z
       .string()
@@ -131,7 +131,6 @@ export const preferencesSchema = z
     linkedin: webUrl,
     website: webUrl,
     leetcode: webUrl,
-    overleaf: webUrl,
     currentCompany: z.string().max(200),
     stack: z.string().max(1000),
     weeklyHours: z.number().min(0).max(168),
@@ -145,6 +144,14 @@ export const preferencesSchema = z
     reducedMotion: z.boolean(),
   })
   .strict();
+// Retired integration preferences from older backups are accepted and discarded.
+// Other unknown preference fields still fail the strict current schema.
+export const preferencesSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const current = { ...value } as Record<string, unknown>;
+  delete current.overleaf;
+  return current;
+}, currentPreferencesSchema);
 export const idempotencyKeySchema = z
   .string()
   .min(8)

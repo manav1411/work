@@ -8,20 +8,20 @@ Configured host: [work.manavdodia.com](https://work.manavdodia.com) · Repositor
 
 The [Work improvements plan](docs/work-improvements-plan.md) is implemented in this working tree. See [verification](docs/verification.md) for checks and release limits. Production deployment and remote migrations remain separate.
 
-| Page | What it does |
-| --- | --- |
-| **Home** | One timeline of appointments, application deadlines/follow-ups, goals, milestones, and direction/radar reviews. Entries open their source records. |
-| **Learn** | DSA/Python roadmap and Pomodoro; editable engineering topics, reading links, optional Markdown/checklist sections, ordering, and personal hidden defaults. |
-| **Applications** | Searchable, sortable tracker with Company, Role, Listing link, Status, application date, location, and notes. Company radar and custom recruitment timelines sit alongside appointments. |
-| **Interviews** | Behavioural/technical introductory notes, custom tabs, reusable STAR cards, and appointment-specific preparation with resources and linked stories. |
-| **Documents** | Arbitrarily named private uploads, résumé/cover-letter defaults, PDF/image viewing, version selection/replacement, downloads, Overleaf sources, and editable profile links. |
-| **Your Direction** | Career paths, streams/experiences, decisions, goals, and a timeline grouped by quarter or year. Existing authored paths and decisions retain their IDs and content. |
+| Page               | What it does                                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Home**           | One timeline of appointments, application deadlines/follow-ups, goals, milestones, and direction/radar reviews. Entries open their source records.                                                      |
+| **Learn**          | DSA/Python roadmap, shared LeetCode solve calendar and Pomodoro; editable engineering topics, reading links, optional Markdown/checklist sections, ordering, and deletable defaults.                    |
+| **Applications**   | Searchable, sortable tracker with Company, Role, Listing link, Status, application date, location, and notes. Company radar and custom recruitment timelines sit alongside appointments.                |
+| **Interviews**     | Behavioural/technical introductory notes, custom tabs, reusable STAR cards, and appointment-specific preparation with resources and linked stories.                                                     |
+| **Documents**      | Inline résumé/cover-letter families and independent variants, native LaTeX sources and PDF previews/downloads, private PDF/image/text uploads, application links, source differences and profile links. |
+| **Your Direction** | Career paths, streams/experiences, decisions, goals, and a timeline grouped by quarter or year. Existing authored paths and decisions retain their IDs and content.                                     |
 
 Settings and Sign out live in the account menu. Settings includes timezone, public LeetCode identity, light/dark appearance, reduced motion, Download backup, and Restore backup. Device recovery appears only when drafts are present. Mobile navigation has Home, Learn, Applications, and a More drawer.
 
-Application outcomes, recruitment step states, and appointment states are distinct. Completing an appointment does not claim that a recruitment round was passed. Archived steps retain appointment references. Documents are independent of applications; historical submitted-file evidence remains in storage/backups.
+Application outcomes, recruitment step states, and appointment states are distinct. Completing an appointment does not claim that a recruitment round was passed. Archived steps retain appointment references. Document variants are independent and can optionally link to stable application IDs; historical submitted-file evidence remains in storage/backups.
 
-Overleaf controls whether its pages can be framed. Its login page blocks cross-origin embedding, so Work uses a large authenticated viewer for uploaded PDFs/images and an external Edit in Overleaf source action. Uploaded PDFs are explicitly uploaded copies, with no live synchronisation claim. Other supported formats, including validated DOCX, are downloadable. The per-file limit is 10 MB.
+Native résumé/cover-letter editing uses CodeMirror sources and PDF.js preview, with real TeX Live/latexmk compilation through the authenticated Worker and a separate private Linux Docker service. Immutable source revisions, PDF artifacts, compile diagnostics and extracted text stay together. See [compiler setup](compiler/README.md): the private service and its token must be configured before live compilation is available. Existing PDF/image/text uploads remain readable inline; other supported formats, including validated DOCX, are downloadable. The per-file upload limit is 10 MB, and native projects allow up to 100 source files totalling 5 MB. No external editor connection is used.
 
 The prospective TypeSafe/Jev ideas are saved in [jev-ideas.md](docs/jev-ideas.md). No AI API, scraper, email integration, or paid automation is enabled by this change.
 
@@ -46,7 +46,7 @@ npm run dev
 
 Open `http://127.0.0.1:5180`. Preserve an existing `.dev.vars`; the example enables isolated local authentication that staging/production reject. Real GitHub sign-in retains the existing account restrictions and environment-specific OAuth credentials.
 
-Apply all migrations in order. `0005_workspace_improvements.sql` retains imports/history, snapshots company names, migrates a missing public LeetCode preference, retires connector credentials, and adds goal/direction integrity. `0006_backup_staging.sql` adds resumable restore sessions. Migration tests rehearse preservation and repeatability on synthetic existing data. No production data was migrated during implementation.
+Apply all migrations in order. `0005_workspace_improvements.sql` retains imports/history, snapshots company names, migrates a missing public LeetCode preference, retires connector credentials, and adds goal/direction integrity. `0006_backup_staging.sql` adds resumable restore sessions. `0007_native_latex.sql` separates compilation progress from authored revisions and protects submitted source/PDF references. No production data was migrated during implementation.
 
 `.dev.vars`, `.private`, `.wrangler`, build output, and browser artifacts are ignored. Keep private exports outside version control. For a stale development dependency cache, restart with `npm run dev -- --force`.
 

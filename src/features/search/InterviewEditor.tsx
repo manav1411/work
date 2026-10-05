@@ -58,7 +58,7 @@ export function InterviewEditor(props: InterviewEditorProps) {
           <InterviewDetails record={props.record} />
         ) : (
           <p className="muted">
-            Hold Applications for 3 seconds to enable editing.
+            Hold Applications to enable editing.
           </p>
         ))}
     </Modal>

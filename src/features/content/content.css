@@ -49,7 +49,7 @@
 }
 .content-resource-card > a svg {
   flex-shrink: 0;
-  color: var(--blue);
+  color: var(--ink);
 }
 .content-resource-card > p {
   color: var(--muted);

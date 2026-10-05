@@ -1,11 +1,6 @@
 import type { WorkRecord } from "./model";
 
-export const CONNECTOR_PROVIDERS = [
-  "notion",
-  "github",
-  "leetcode",
-  "overleaf",
-] as const;
+export const CONNECTOR_PROVIDERS = ["notion", "github", "leetcode"] as const;
 export type ConnectorProvider = (typeof CONNECTOR_PROVIDERS)[number];
 export type ConnectorStatus =
   | "setting_up"
@@ -50,14 +45,6 @@ export const CONNECTORS: ConnectorDefinition[] = [
       "Solve there. See your progress, reflect, and plan your next review here.",
     tone: "orange",
     route: "/practice",
-  },
-  {
-    provider: "overleaf",
-    name: "Overleaf",
-    purpose: "Résumé & career assets",
-    description: "Your résumé source and saved application versions, together.",
-    tone: "pink",
-    route: "/assets",
   },
 ];
 export interface ConnectorSelection {

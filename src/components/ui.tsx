@@ -64,7 +64,6 @@ export function Badge({
 export function PageHeader({
   eyebrow,
   title,
-  description,
   action,
   children,
 }: {
@@ -82,13 +81,51 @@ export function PageHeader({
           {title.replace(/\.$/, "")}
           <span className="heading-dot">.</span>
         </h1>
-        {description && <p className="page-description">{description}</p>}
         {children}
       </div>
       {action && <div className="page-header-action">{action}</div>}
     </header>
   );
 }
+export const SectionTabs = forwardRef<
+  HTMLDivElement,
+  HTMLAttributes<HTMLDivElement>
+>(function SectionTabs({ className = "", onKeyDown, ...props }, ref) {
+  return (
+    <div
+      ref={ref}
+      className={`section-tabs ${className}`}
+      {...props}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (
+          event.defaultPrevented ||
+          !["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)
+        )
+          return;
+        const buttons = Array.from(
+          event.currentTarget.querySelectorAll<HTMLButtonElement>(
+            'button[role="tab"]:not(:disabled)',
+          ),
+        );
+        const index = buttons.indexOf(event.target as HTMLButtonElement);
+        if (index < 0 || !buttons.length) return;
+        event.preventDefault();
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? buttons.length - 1
+              : (index +
+                  (event.key === "ArrowRight" ? 1 : -1) +
+                  buttons.length) %
+                buttons.length;
+        buttons[next].click();
+        buttons[next].focus();
+      }}
+    />
+  );
+});
 export function Field({
   label,
   children,

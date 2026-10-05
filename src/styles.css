@@ -2023,12 +2023,12 @@ kbd {
 [data-theme="dark"] {
   color-scheme: dark;
   --ink: #eeeee5;
-  --paper: #24272c;
-  --canvas: #1b1e22;
+  --paper: #191b20;
+  --canvas: #101114;
   --muted: #afb2ad;
   --line: #3d4145;
   --shadow-colour: #090b0e;
-  --surface-tint: #2d3138;
+  --surface-tint: #23262d;
   --link-colour: #b2c2ff;
   background: var(--canvas);
   color: var(--ink);

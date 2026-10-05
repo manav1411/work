@@ -230,13 +230,14 @@ export function updateRecord(
 ): D1PreparedStatement {
   return db
     .prepare(
-      "UPDATE records SET title=?,body=?,tags=?,links=?,data=?,version=?,updated_at=?,deleted_at=? WHERE id=? AND owner_id=? AND version=?",
+      "UPDATE records SET title=?,body=?,tags=?,links=?,data=CASE WHEN kind='asset' AND json_type(data,'$.latexProject')='object' THEN json_set(?, '$.latexJobs', json(COALESCE(json_extract(data,'$.latexJobs'),'[]')), '$.primaryAttachmentId', COALESCE(json_extract(data,'$.primaryAttachmentId'),'')) ELSE ? END,version=?,updated_at=?,deleted_at=? WHERE id=? AND owner_id=? AND version=? RETURNING data",
     )
     .bind(
       record.title,
       record.body,
       JSON.stringify(record.tags),
       JSON.stringify(record.links),
+      JSON.stringify(record.data),
       JSON.stringify(record.data),
       record.version,
       record.updatedAt,
@@ -357,7 +358,7 @@ export function bulkUpdateRecords(
     statements.push(
       db
         .prepare(
-          `UPDATE records SET title=json_extract(item.value,'$.title'),body=json_extract(item.value,'$.body'),tags=json_extract(item.value,'$.tags'),links=json_extract(item.value,'$.links'),data=json_extract(item.value,'$.data'),version=json_extract(item.value,'$.version'),updated_at=json_extract(item.value,'$.updatedAt'),deleted_at=json_extract(item.value,'$.deletedAt') FROM json_each(?) item WHERE records.id=json_extract(item.value,'$.id') AND records.owner_id=? AND records.version=json_extract(item.value,'$.expectedVersion')`,
+          `UPDATE records SET title=json_extract(item.value,'$.title'),body=json_extract(item.value,'$.body'),tags=json_extract(item.value,'$.tags'),links=json_extract(item.value,'$.links'),data=CASE WHEN records.kind='asset' AND json_type(records.data,'$.latexProject')='object' THEN json_set(json_extract(item.value,'$.data'),'$.latexJobs',json(COALESCE(json_extract(records.data,'$.latexJobs'),'[]')),'$.primaryAttachmentId',COALESCE(json_extract(records.data,'$.primaryAttachmentId'),'')) ELSE json_extract(item.value,'$.data') END,version=json_extract(item.value,'$.version'),updated_at=json_extract(item.value,'$.updatedAt'),deleted_at=json_extract(item.value,'$.deletedAt') FROM json_each(?) item WHERE records.id=json_extract(item.value,'$.id') AND records.owner_id=? AND records.version=json_extract(item.value,'$.expectedVersion')`,
         )
         .bind(chunk, owner),
       db
@@ -416,7 +417,9 @@ export async function detachReferenceStatements(
       removedRecords,
       // A capture can arrive after the early FILE_IN_USE check. Never detach
       // submitted-file references; their FK must still abort this deletion.
-      before.kind === "application" ? new Set<string>() : removedFiles,
+      before.kind === "application" || Array.isArray(before.data.submissions)
+        ? new Set<string>()
+        : removedFiles,
     );
     if (
       links.length === before.links.length &&
@@ -466,7 +469,10 @@ export function applicationFileStatements(
   records: WorkRecord[],
 ): D1PreparedStatement[] {
   const applications = records.filter(
-    (record) => record.kind === "application",
+    (record) =>
+      record.kind === "application" ||
+      (record.kind === "asset" &&
+        (Array.isArray(record.data.submissions) || record.data.forkRevisionId)),
   );
   if (!applications.length) return [];
   return [
@@ -480,7 +486,28 @@ export function applicationFileStatements(
         .filter((record) => dataReferences(record.data).files.length)
         .map((record) => ({
           id: record.id,
-          files: dataReferences(record.data).files,
+          files:
+            record.kind === "application"
+              ? dataReferences(record.data).files
+              : [
+                  ...new Set([
+                    ...(record.data.forkRevisionId
+                      ? [String(record.data.forkRevisionId)]
+                      : []),
+                    ...(Array.isArray(record.data.submissions)
+                      ? record.data.submissions.flatMap((value) => {
+                          const submission = value as Record<string, unknown>;
+                          return [
+                            submission.revisionId,
+                            submission.pdfAttachmentId,
+                          ].filter(
+                            (value): value is string =>
+                              typeof value === "string" && Boolean(value),
+                          );
+                        })
+                      : []),
+                  ]),
+                ],
         })),
     ).map((chunk) =>
       db
@@ -523,7 +550,7 @@ export async function writeRecord(
           ...assertChanged(db),
         ];
   try {
-    await db.batch([
+    const results = await db.batch([
       ...statements,
       ...referencePresenceStatements(db, owner, record.data, {
         links: record.links,
@@ -536,6 +563,9 @@ export async function writeRecord(
       ...recordContractStatements(db, owner, [record]),
       ...additionalStatements,
     ]);
+    const returned = results[0]?.results?.[0] as { data?: string } | undefined;
+    if (typeof returned?.data === "string")
+      record.data = JSON.parse(returned.data);
   } catch (error) {
     if (
       expectedVersion !== undefined &&

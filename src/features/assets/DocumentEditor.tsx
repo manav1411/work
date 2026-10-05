@@ -5,11 +5,10 @@ import {
   DOCUMENT_ACCEPT,
   DocumentFileSaveError,
   documentUploadError,
-  documentUrl,
   saveDocumentFile,
 } from "../../../shared/documents";
 import { Button, Field, Input, Select, Textarea } from "../../components/ui";
-import { uploadAttachment } from "../../lib/api";
+import { uploadAttachment, request, jsonRequest } from "../../lib/api";
 import { useWorkspace as useRawWorkspace } from "../../lib/workspace";
 import { useSavingWorkspace as useWorkspace } from "../search/useSaving";
 import { errorMessage } from "../search/domain";
@@ -26,14 +25,12 @@ import { useDocumentFiles } from "./useDocumentFiles";
 export function DocumentEditor({
   record,
   defaultType,
-  initialUrl = "",
   forkFrom,
   onSaved,
   onClose,
 }: {
   record?: WorkRecord;
   defaultType?: DocumentType;
-  initialUrl?: string;
   forkFrom?: WorkRecord;
   onSaved: (record: WorkRecord) => void;
   onClose: () => void;
@@ -50,9 +47,6 @@ export function DocumentEditor({
           ? "Cover letter"
           : ""),
   );
-  const [url, setUrl] = useState(
-    field(record, "sourceUrl", field(record, "overleaf", initialUrl)),
-  );
   const [defaultChoice, setDefaultChoice] = useState(
     defaultType ||
       (record?.data.documentDefault === true &&
@@ -65,6 +59,8 @@ export function DocumentEditor({
     defaultType || field(record || forkFrom, "type", "document"),
   );
   const [body, setBody] = useState(record?.body || forkFrom?.body || "");
+  const [stream, setStream] = useState(field(record, "intendedStream"));
+  const [savedFork, setSavedFork] = useState(false);
   const [uploaded, setUploaded] = useState<Attachment>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -74,11 +70,6 @@ export function DocumentEditor({
 
   async function save(event: FormEvent) {
     event.preventDefault();
-    const destination = documentUrl(url);
-    if (url.trim() && !destination) {
-      setError("Use an Overleaf project or read-only document link.");
-      return;
-    }
     if (file && documentUploadError(file)) {
       setError(documentUploadError(file));
       return;
@@ -89,15 +80,22 @@ export function DocumentEditor({
       const data = {
         ...workingRecord?.data,
         type: defaultChoice === "none" ? family : defaultChoice,
-        sourceUrl: destination,
-        overleaf: destination,
         documentDefault: defaultChoice !== "none",
+        intendedStream: stream.trim(),
         ...(forkFrom ? { forkedFromTitle: forkFrom.title } : {}),
       };
       const next = workingRecord
         ? await update(workingRecord.id, { title: name.trim(), body, data })
         : await create({ kind: "asset", title: name.trim(), body, data });
       setSavedRecord(next);
+      if (forkFrom?.data.latexProject && !savedFork) {
+        await request(
+          `/api/latex/${encodeURIComponent(forkFrom.id)}/fork`,
+          jsonRequest("POST", { targetAssetId: next.id }),
+        );
+        setSavedFork(true);
+        await refresh();
+      }
       if (defaultChoice !== "none") {
         for (const previous of records.filter(
           (item) =>
@@ -115,7 +113,8 @@ export function DocumentEditor({
         !upload &&
         forkFrom &&
         !uploaded &&
-        !field(workingRecord, "primaryAttachmentId")
+        !field(workingRecord, "primaryAttachmentId") &&
+        !forkFrom.data.latexProject
       ) {
         const source = primaryDocumentFile(
           forkFrom,
@@ -193,11 +192,7 @@ export function DocumentEditor({
         />
       </Field>
       {forkFrom && (
-        <p className="muted">
-          Independent copy of {forkFrom.title}. Its uploaded file and comparison
-          text are copied; your original stays unchanged. Add a separate
-          Overleaf project link if needed.
-        </p>
+        <p className="muted">Independent variant of {forkFrom.title}.</p>
       )}
       <Field label="Document family">
         <Select
@@ -209,6 +204,14 @@ export function DocumentEditor({
           <option value="letter">Cover letter</option>
         </Select>
       </Field>
+      <Field label="Intended stream or company (optional)">
+        <Input
+          maxLength={240}
+          value={stream}
+          onChange={(event) => setStream(event.target.value)}
+          placeholder="Security, Master, Google…"
+        />
+      </Field>
       <Field
         label="Comparison text (optional)"
         hint="Paste the document's text to highlight changes between PDF or DOCX variants. Text uploads are compared directly."
@@ -217,15 +220,6 @@ export function DocumentEditor({
           value={body}
           onChange={(event) => setBody(event.target.value)}
           rows={5}
-        />
-      </Field>
-      <Field label="Overleaf URL (optional)">
-        <Input
-          type="url"
-          maxLength={2048}
-          value={url}
-          onChange={(event) => setUrl(event.target.value)}
-          placeholder="https://www.overleaf.com/project/…"
         />
       </Field>
       <Field label="Default document">

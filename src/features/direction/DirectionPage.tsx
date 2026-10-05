@@ -30,6 +30,7 @@ import {
   Markdown,
   Modal,
   PageHeader,
+  SectionTabs,
   Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
@@ -183,7 +184,7 @@ export function DirectionPage() {
       <Card className="direction-overview">
         <div className="section-heading">
           <h2>Longer-term timeline</h2>
-          <div
+          <SectionTabs
             className="direction-scale"
             role="group"
             aria-label="Timeline scale"
@@ -198,7 +199,7 @@ export function DirectionPage() {
                 {value === "quarter" ? "Quarters" : "Years"}
               </Button>
             ))}
-          </div>
+          </SectionTabs>
         </div>
         {entries.length ? (
           <div className="direction-timeline">
@@ -261,7 +262,17 @@ export function DirectionPage() {
               .map((record) => (
                 <Card
                   key={record.id}
-                  className={`direction-card direction-${kind}`}
+                  className={`direction-card application-row-action direction-${kind}`}
+                  onClick={(event) => {
+                    if (
+                      (event.target as HTMLElement).closest(
+                        "button,a,input,select,textarea",
+                      ) ||
+                      window.getSelection()?.toString()
+                    )
+                      return;
+                    setParams({ record: record.id });
+                  }}
                 >
                   <div className="section-heading">
                     <Badge

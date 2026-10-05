@@ -458,11 +458,4 @@ export const CURATED_RESOURCES = [
     url: "https://docs.github.com/en/account-and-profile",
     body: "Update your profile and pin relevant projects with clear READMEs, demonstrations and your contribution.",
   },
-  {
-    id: "overleaf",
-    title: "Overleaf documentation",
-    category: "Career assets",
-    url: "https://www.overleaf.com/learn",
-    body: "Keep your LaTeX workflow and link source projects to exact PDF versions in Assets.",
-  },
 ];

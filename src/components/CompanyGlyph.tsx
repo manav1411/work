@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { UserRound } from "lucide-react";
+import { Coffee, SquareArrowOutUpRight } from "lucide-react";
 import "./company-glyphs.css";
 
 type CompanyMark = {
@@ -349,13 +349,6 @@ export const COMPANY_MARKS: CompanyMark[] = [
     colour: "B77600",
   },
   {
-    slug: "overleaf",
-    name: "Overleaf",
-    domains: ["overleaf.com"],
-    aliases: [],
-    colour: "398220",
-  },
-  {
     slug: "replit",
     name: "Replit",
     domains: ["replit.com"],
@@ -399,6 +392,42 @@ export const COMPANY_MARKS: CompanyMark[] = [
   },
 ];
 
+/** Locally bundled technology marks; resource technology overrides its host. */
+const TECHNOLOGY_MARKS: CompanyMark[] = [
+  ["python", "Python", ["python.org"], []],
+  ["javascript", "JavaScript", [], ["js"]],
+  ["typescript", "TypeScript", ["typescriptlang.org"], ["ts"]],
+  ["react", "React", ["react.dev", "reactjs.org"], ["react.js"]],
+  ["nodedotjs", "Node.js", ["nodejs.org"], ["node", "nodejs"]],
+  ["go", "Go", ["go.dev", "golang.org"], ["golang"]],
+  ["rust", "Rust", ["rust-lang.org"], []],
+  ["cplusplus", "C++", ["cplusplus.com", "cppreference.com"], ["cpp"]],
+  ["postgresql", "PostgreSQL", ["postgresql.org"], ["postgres"]],
+  ["mysql", "MySQL", ["mysql.com"], []],
+  ["sqlite", "SQLite", ["sqlite.org"], []],
+  ["redis", "Redis", ["redis.io"], []],
+  ["linux", "Linux", ["kernel.org", "linux.org"], []],
+  ["git", "Git", ["git-scm.com"], []],
+  ["kubernetes", "Kubernetes", ["kubernetes.io"], ["k8s"]],
+  ["mdnwebdocs", "MDN", ["developer.mozilla.org"], ["mdn web docs"]],
+  ["devdotto", "DEV", ["dev.to"], []],
+  ["stackoverflow", "Stack Overflow", ["stackoverflow.com"], []],
+  ["freecodecamp", "freeCodeCamp", ["freecodecamp.org"], []],
+  ["amazonwebservices", "AWS", ["aws.amazon.com"], ["amazon web services"]],
+  ["owasp", "OWASP", ["owasp.org"], []],
+  ["readthedocs", "Read the Docs", ["readthedocs.io", "readthedocs.org"], []],
+  ["geeksforgeeks", "GeeksforGeeks", ["geeksforgeeks.org"], []],
+  ["codewars", "Codewars", ["codewars.com"], []],
+  ["w3schools", "W3Schools", ["w3schools.com"], []],
+  ["hackerrank", "HackerRank", ["hackerrank.com"], []],
+].map(([slug, name, domains, aliases]) => ({
+  slug,
+  name,
+  domains,
+  aliases,
+  colour: "",
+})) as CompanyMark[];
+
 function normalizedName(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -406,6 +435,7 @@ function normalizedName(value: string) {
 export function companyMark(
   name = "",
   url = "",
+  technology = "",
 ): CompanyMark | "profile" | undefined {
   let hostname = "";
   try {
@@ -423,17 +453,33 @@ export function companyMark(
       "",
     ),
   );
+  const marks = [...TECHNOLOGY_MARKS, ...COMPANY_MARKS];
+  const explicit =
+    technology &&
+    marks.find((mark) =>
+      [mark.slug, mark.name, ...mark.aliases].some(
+        (alias) => normalizedName(alias) === normalizedName(technology),
+      ),
+    );
   const byName = normalized
-    ? COMPANY_MARKS.find((mark) =>
+    ? [...COMPANY_MARKS, ...TECHNOLOGY_MARKS].find((mark) =>
         [mark.name, ...mark.aliases].some(
           (alias) => normalizedName(alias) === normalized,
         ),
       )
     : undefined;
   return (
+    explicit ||
     byName ||
+    TECHNOLOGY_MARKS.find((mark) =>
+      [mark.name, ...mark.aliases]
+        .filter((alias) => alias.length > 2 || ["Go", "Git"].includes(alias))
+        .some((alias) =>
+          name.toLowerCase().startsWith(`${alias.toLowerCase()} `),
+        ),
+    ) ||
     (hostname
-      ? COMPANY_MARKS.find((mark) =>
+      ? marks.find((mark) =>
           mark.domains.some(
             (domain) => hostname === domain || hostname.endsWith(`.${domain}`),
           ),
@@ -445,17 +491,29 @@ export function companyMark(
 export function CompanyGlyph({
   name = "",
   url = "",
+  technology = "",
 }: {
   name?: string;
   url?: string;
+  technology?: string;
 }) {
-  const mark = companyMark(name, url);
+  if (
+    technology.toLowerCase() === "java" ||
+    /^java(?:\s|$)/i.test(name) ||
+    /(?:^|\.)java\.com/.test(url)
+  )
+    return <Coffee className="company-glyph-profile" aria-hidden="true" />;
+  const mark = companyMark(name, url, technology);
   if (!mark) return null;
   if (mark === "profile")
-    return <UserRound className="company-glyph-profile" aria-hidden="true" />;
+    return (
+      <SquareArrowOutUpRight
+        className="company-glyph-profile"
+        aria-hidden="true"
+      />
+    );
   const style = {
     "--company-glyph-image": `url("/company-glyphs/${mark.slug}.svg")`,
-    "--company-glyph-colour": mark.colour ? `#${mark.colour}` : "currentColor",
   } as CSSProperties;
   return <span className="company-glyph" style={style} aria-hidden="true" />;
 }

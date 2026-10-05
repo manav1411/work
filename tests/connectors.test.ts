@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { CONNECTOR_PROVIDERS } from "../shared/connectors";
 import {
   afterAll,
   afterEach,
@@ -122,6 +123,7 @@ beforeAll(async () => {
     "0004_simplification.sql",
     "0005_workspace_improvements.sql",
     "0006_backup_staging.sql",
+    "0007_native_latex.sql",
   ]
     .map((file) =>
       readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"),
@@ -184,8 +186,7 @@ describe("retired connector integration boundaries", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
   it("returns inert 410 responses without provider traffic, stored-state mutations or credential exposure", async () => {
-    for (const provider of ["notion", "github", "leetcode", "overleaf"])
-      await seedConnection(provider);
+    for (const provider of CONNECTOR_PROVIDERS) await seedConnection(provider);
     await env.DB.prepare(
       "INSERT INTO account(id,account_id,provider_id,user_id,access_token,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
     )

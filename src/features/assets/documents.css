@@ -8,6 +8,284 @@
   flex-direction: column;
   padding: 1.7rem;
 }
+.document-family-open {
+  display: flex;
+  flex-direction: column;
+  width: calc(100% + 3.4rem);
+  margin: -1.7rem;
+  padding: 1.7rem;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.document-family-open:hover {
+  background: var(--surface-tint);
+}
+.document-family-open:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+}
+.document-family-open .document-art {
+  width: 100%;
+}
+.document-family-title {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  font-size: 1.55rem;
+  font-weight: 800;
+  margin-top: 1.3rem;
+  overflow-wrap: anywhere;
+}
+.document-family-count {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+.document-family-expanded {
+  grid-column: 1 / -1;
+}
+.document-family-expanded .document-family-title {
+  margin-top: 0;
+}
+.document-family-content {
+  margin-top: 1.7rem;
+  min-width: 0;
+  display: grid;
+  gap: 1rem;
+}
+.document-variant-strip {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.document-variant-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.document-variant-select {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.document-variant-select.is-selected {
+  background: var(--lime);
+  color: #202128;
+}
+.document-management .button {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+}
+.document-more-expanded {
+  grid-column: 1 / -1;
+}
+.document-more-grid .document-family-open {
+  width: calc(100% + 2rem);
+  margin: -1rem;
+  padding: 1rem;
+}
+.document-more-grid .document-family-title {
+  margin-top: 0.7rem;
+  font-size: 1.05rem;
+}
+.document-more-grid .document-management {
+  margin-top: 0.8rem;
+}
+.document-viewer-inline {
+  min-height: 0;
+}
+.document-inline-empty {
+  padding: 1rem 0;
+}
+.document-link-primary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+}
+.latex-document-panel {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.latex-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.latex-state {
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex: 1;
+  min-width: 110px;
+}
+.latex-settings {
+  font-size: 0.85rem;
+}
+.latex-settings summary,
+.latex-build-log summary,
+.latex-application-links summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+}
+.latex-settings select {
+  width: auto;
+  max-width: 100%;
+}
+.latex-workbench {
+  display: grid;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.latex-workbench.with-source {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.latex-source-pane {
+  min-width: 0;
+  overflow: auto;
+  height: 72dvh;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+}
+.latex-source-editor {
+  flex: 1;
+  min-height: 200px;
+  overflow: auto;
+}
+.latex-source-editor .cm-mergeView {
+  height: 100%;
+}
+.latex-source-editor .cm-mergeViewEditors {
+  min-height: 100%;
+}
+.latex-pdf-preview {
+  min-width: 0;
+  height: 72dvh;
+  overflow: auto;
+  background: var(--surface-tint);
+  padding: 0.6rem;
+}
+.latex-pdf-page {
+  display: grid;
+  place-items: center;
+  margin-bottom: 0.7rem;
+  min-width: 0;
+}
+.latex-pdf-sheet {
+  position: relative;
+  max-width: 100%;
+  background: white;
+  box-shadow: 0 2px 8px #0003;
+}
+.latex-pdf-sheet canvas {
+  display: block;
+  max-width: 100%;
+}
+.latex-pdf-sheet .textLayer {
+  position: absolute;
+  inset: 0;
+}
+.latex-empty-preview {
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  min-height: 200px;
+  text-align: center;
+  color: var(--muted);
+}
+.latex-start,
+.latex-draft-recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+.latex-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.latex-start label,
+.latex-settings label {
+  position: relative;
+  cursor: pointer;
+}
+.latex-start label:focus-within,
+.latex-settings label:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.latex-build-log pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 0.75rem;
+  background: var(--surface-tint);
+  padding: 0.75rem;
+  border-radius: 6px;
+}
+.latex-application-links label {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0;
+}
+.latex-application-links input {
+  width: auto;
+}
+@media (max-width: 750px) {
+  .latex-workbench.with-source {
+    grid-template-columns: 1fr;
+  }
+  .latex-workbench.with-source .latex-pdf-preview,
+  .latex-workbench.with-source .latex-empty-preview {
+    display: none;
+  }
+  .latex-source-pane {
+    height: 65dvh;
+    border-right: 0;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .document-family-content,
+  .document-more-expanded .document-viewer {
+    animation: document-reveal 0.16s ease-out;
+  }
+}
+@keyframes document-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 .document-card h2 {
   font-size: 1.55rem;
   margin: 0;
@@ -416,6 +694,11 @@
     padding: 12px;
   }
   .document-card {
+    padding: 1.15rem;
+  }
+  .document-grid .document-family-open {
+    width: calc(100% + 2.3rem);
+    margin: -1.15rem;
     padding: 1.15rem;
   }
   .document-link-grid {

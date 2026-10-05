@@ -32,6 +32,21 @@ describe("company glyph recognition", () => {
     ).toBeUndefined();
   });
 
+  it("recognizes tutorial technologies and explicit overrides without relying on hosts", () => {
+    expect(
+      companyMark("Python tutorial", "https://docs.python.org/3/tutorial/"),
+    ).toMatchObject({ slug: "python" });
+    expect(companyMark("TypeScript handbook")).toMatchObject({
+      slug: "typescript",
+    });
+    expect(
+      companyMark("Tutorial", "https://github.com/tutorial", "PostgreSQL"),
+    ).toMatchObject({ slug: "postgresql" });
+    expect(
+      companyMark("", "https://developer.mozilla.org/en-US/"),
+    ).toMatchObject({ slug: "mdnwebdocs" });
+  });
+
   it("has a bundled asset for every supported brand", async () => {
     await Promise.all(
       COMPANY_MARKS.map((mark) =>

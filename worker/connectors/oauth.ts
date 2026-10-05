@@ -170,12 +170,12 @@ export async function saveConnection(
         provider,
         accountId,
         label,
-        provider === "overleaf" ? "linked" : "setting_up",
+        "setting_up",
         JSON.stringify(combinedConfig),
         sameAccount ? previous!.snapshot : "{}",
         cipher,
         previous?.created_at || now(),
-        provider === "overleaf" ? null : now(),
+        now(),
       )
       .run();
   };

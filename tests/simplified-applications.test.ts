@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkRecord } from "../shared/model";
 import {
-  documentUrl,
   getDocumentLinks,
   webDestination,
 } from "../src/features/assets/documentLinks";
@@ -27,89 +26,41 @@ const record = (input: Partial<WorkRecord>): WorkRecord => ({
   ...input,
 });
 
-describe("document destinations", () => {
-  it("reads existing résumé and letter links without changing legacy content", () => {
+describe("document families", () => {
+  it("selects the existing résumé and legacy letter without changing their content", () => {
     const resume = record({
       id: "resume",
       body: "Submitted text",
-      data: {
-        type: "resume",
-        overleaf: "https://www.overleaf.com/project/resume",
-        primaryAttachmentId: "pdf",
-      },
+      data: { type: "resume", primaryAttachmentId: "pdf" },
     });
-    const letter = record({
-      id: "letter",
-      data: {
-        type: "cover-letter",
-        sourceUrl: "https://www.overleaf.com/read/letter",
-      },
-    });
-    expect(getDocumentLinks([resume, letter], { overleaf: "" })).toEqual({
-      resume: {
-        url: "https://www.overleaf.com/project/resume",
-        record: resume,
-      },
-      coverLetter: {
-        url: "https://www.overleaf.com/read/letter",
-        record: letter,
-      },
+    const letter = record({ id: "letter", data: { type: "cover-letter" } });
+    expect(getDocumentLinks([resume, letter])).toEqual({
+      resume: { record: resume },
+      coverLetter: { record: letter },
     });
     expect(resume.body).toBe("Submitted text");
     expect(resume.data.primaryAttachmentId).toBe("pdf");
   });
-  it("uses an existing preference only for the résumé and honours a cleared default", () => {
-    const preferences = { overleaf: "https://www.overleaf.com/project/resume" };
-    expect(getDocumentLinks([], preferences)).toEqual({
-      resume: { url: preferences.overleaf },
-      coverLetter: { url: "" },
+  it("honours the main variant ahead of other uploaded or native projects", () => {
+    const main = record({
+      id: "main",
+      data: { type: "resume", documentDefault: true },
     });
-    const cleared = record({
-      data: {
-        type: "resume",
-        sourceUrl: "",
-        overleaf: "",
-        documentDefault: true,
-      },
+    const variant = record({
+      id: "variant",
+      data: { type: "resume", latexProject: { revisionId: "source" } },
     });
-    const older = record({
-      id: "older",
-      data: { type: "resume", overleaf: preferences.overleaf },
-    });
-    expect(getDocumentLinks([older, cleared], preferences).resume).toEqual({
-      record: cleared,
-      url: "",
-    });
+    expect(getDocumentLinks([variant, main]).resume).toEqual({ record: main });
+    expect(getDocumentLinks([])).toEqual({ resume: {}, coverLetter: {} });
   });
-  it("ignores deleted or unrelated records and rejects unsafe or ambiguous destinations", () => {
+  it("ignores deleted and unrelated records and retains safe generic profile destinations", () => {
     expect(
-      getDocumentLinks(
-        [
-          record({
-            deletedAt: "2026-10-01",
-            data: {
-              type: "resume",
-              overleaf: "https://www.overleaf.com/project/resume",
-            },
-          }),
-          record({
-            data: {
-              type: "profile",
-              overleaf: "https://www.overleaf.com/project/profile",
-            },
-          }),
-        ],
-        { overleaf: "https://www.overleaf.com" },
-      ).resume.url,
-    ).toBe("");
-    for (const url of [
-      "javascript:alert(1)",
-      "http://overleaf.com/project/resume",
-      "https://overleaf.com.evil.test/project/resume",
-      "https://overleaf.com/project",
-      "https://user:secret@overleaf.com/project/resume",
-    ])
-      expect(documentUrl(url)).toBe("");
+      getDocumentLinks([
+        record({ deletedAt: "2026-10-01", data: { type: "resume" } }),
+        record({ data: { type: "profile" } }),
+      ]).resume,
+    ).toEqual({});
+    expect(webDestination("javascript:alert(1)")).toBe("");
     expect(webDestination("https://user:secret@example.com/meeting")).toBe("");
     expect(webDestination("https://example.com/meeting")).toBe(
       "https://example.com/meeting",

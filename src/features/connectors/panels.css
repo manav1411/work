@@ -145,8 +145,7 @@
 .leetcode-activity-row small {
   color: var(--muted, #656273);
 }
-.project-source-facts,
-.asset-overleaf-link {
+.project-source-facts {
   display: grid;
   gap: 0.25rem;
   margin: 0;

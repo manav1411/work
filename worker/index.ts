@@ -19,6 +19,7 @@ import { recordContractStatements, validateRecordContract } from "./contracts";
 import { goalRoutes } from "./goals";
 import { goalMigrationRoutes } from "./goal-migration";
 import { learningRoutes } from "./learning";
+import { latexRoutes } from "./latex";
 import { assertNativeInput, assertProviderPatch } from "./connectors/store";
 import { ProviderFailure } from "./connectors/providers";
 import {
@@ -222,7 +223,7 @@ app.all("/api/connectors/webhooks/*", (context) =>
 app.use("/api/*", async (context, next) => {
   const path = new URL(context.req.url).pathname;
   const known =
-    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|connectors(?:\/.*)?|records(?:\/batch|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|backup(?:\/restores(?:\/[^/]+(?:\/commit|\/files\/[^/]+)?)?)?|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
+    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|latex\/[^/]+(?:\/(?:revisions(?:\/[^/]+)?|fork|compile|jobs\/[^/]+|submissions))?|connectors(?:\/.*)?|records(?:\/batch|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|backup(?:\/restores(?:\/[^/]+(?:\/commit|\/files\/[^/]+)?)?)?|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
       path,
     );
   if (!known)
@@ -260,6 +261,7 @@ app.all("/api/connectors", (context) =>
 app.route("/api/goals/legacy", goalMigrationRoutes);
 app.route("/api/goals", goalRoutes);
 app.route("/api/learning", learningRoutes);
+app.route("/api/latex", latexRoutes);
 
 app.get("/api/records", async (context) => {
   const includeDeleted = context.req.query("includeDeleted") === "true";
@@ -407,6 +409,13 @@ app.patch("/api/records/:id", async (context) => {
     version: before.version + 1,
     updatedAt: now(),
   };
+  // Source/build state is owned by the native project API, not stale metadata forms.
+  if (before.kind === "asset") {
+    for (const key of ["latexProject", "latexJobs", "submissions"]) {
+      if (before.data[key] === undefined) delete record.data[key];
+      else record.data[key] = before.data[key];
+    }
+  }
   assertProviderPatch(before, patch);
   // A recorded stage move is historical evidence, not just the current label.
   if (
@@ -463,7 +472,21 @@ app.delete("/api/records/:id", async (context) => {
     version: before.version + 1,
   };
   // Deleting a parent never deletes another record; attachments remain recoverable.
-  await writeRecord(context.env.DB, owner, record, before.version);
+  const detachLiveDocumentLinks =
+    before.kind === "application"
+      ? [
+          context.env.DB.prepare(
+            "UPDATE records SET data=json_set(data,'$.applicationIds',json((SELECT json_group_array(value) FROM json_each(records.data,'$.applicationIds') WHERE value!=?))),version=version+1,updated_at=? WHERE owner_id=? AND kind='asset' AND EXISTS(SELECT 1 FROM json_each(records.data,'$.applicationIds') WHERE value=?)",
+          ).bind(before.id, now(), owner, before.id),
+        ]
+      : [];
+  await writeRecord(
+    context.env.DB,
+    owner,
+    record,
+    before.version,
+    detachLiveDocumentLinks,
+  );
   return context.json({ record });
 });
 app.post("/api/records/:id/restore", async (context) => {
@@ -494,7 +517,7 @@ app.delete("/api/records/:id/permanent", async (context) => {
       "TRASH_FIRST",
       "Move the record to trash before deleting it permanently.",
     );
-  await assertRecordFilesNotSubmitted(context.env.DB, owner, recordId);
+  await assertRecordFilesNotSubmitted(context.env.DB, owner, recordId, true);
   const files = await context.env.DB.prepare(
     "SELECT id,object_key FROM attachments WHERE owner_id=? AND record_id=?",
   )

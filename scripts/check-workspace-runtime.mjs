@@ -297,7 +297,7 @@ try {
     "/api/connectors",
     "/api/connectors/notion/connect",
     "/api/connectors/github/discover",
-    "/api/connectors/overleaf/sync",
+    "/api/connectors/leetcode/sync",
     "/api/learning/content",
     "/api/learning/progress",
     "/api/learning/tasks",
@@ -499,7 +499,7 @@ try {
   const document = await create("asset", "Runtime document", {
     type: "resume",
     documentDefault: true,
-    sourceUrl: "https://www.overleaf.com/project/runtime",
+    sourceUrl: "https://example.com/source/runtime",
   });
   let currentDocument = document;
   const pdf = new Uint8Array(7 * 1024 * 1024);

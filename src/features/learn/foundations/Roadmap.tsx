@@ -190,7 +190,7 @@ function RoadmapGraph({
         <div
           id={`learn-roadmap-pop-${topic.id}`}
           ref={popRef}
-          className="learn-roadmap-popover"
+          className={`learn-roadmap-popover learn-roadmap-tone-${roadmapTopics.indexOf(topic) % 4}`}
           style={popStyle}
         >
           <header>
@@ -263,7 +263,7 @@ export default function Roadmap({ solved, personalised, initialTopic }: Props) {
         {ordered.map((topic) => (
           <section key={topic.id}>
             <button
-              className="learn-roadmap-list-trigger"
+              className={`learn-roadmap-list-trigger learn-roadmap-tone-${roadmapTopics.indexOf(topic) % 4}`}
               onClick={() => toggle(topic.id)}
               aria-expanded={selected === topic.id}
               aria-controls={`learn-roadmap-list-${topic.id}`}

@@ -20,6 +20,8 @@ export interface Env {
   OWNER_GITHUB_ID?: string;
   APP_ORIGIN: string;
   ASSETS?: Fetcher;
+  LATEX_COMPILER_URL?: string;
+  LATEX_COMPILER_TOKEN?: string;
 }
 
 export interface Variables {

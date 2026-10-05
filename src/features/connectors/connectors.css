@@ -58,9 +58,6 @@
   background: var(--orange);
   font-size: 12px;
 }
-.connector-mark-overleaf {
-  background: var(--pink);
-}
 .connector-nav-copy {
   display: grid;
   min-width: 0;

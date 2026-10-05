@@ -1,16 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  Download,
-  Expand,
-  FileText,
-  Upload,
-} from "lucide-react";
+import { ArrowLeft, Download, Expand, FileText, Upload } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import {
   documentPreviewKind,
-  documentUrl,
   primaryDocumentFile,
 } from "../../../shared/documents";
 import { Button, Card } from "../../components/ui";
@@ -22,15 +14,15 @@ import { useEditMode } from "../../lib/edit-mode";
 export function DocumentViewer({
   record,
   title,
-  sourceUrl,
   onBack,
   onEdit,
+  inline = false,
 }: {
   record?: WorkRecord;
   title: string;
-  sourceUrl?: string;
   onBack: () => void;
   onEdit: () => void;
+  inline?: boolean;
 }) {
   const { editing } = useEditMode();
   const {
@@ -40,9 +32,6 @@ export function DocumentViewer({
     reload,
   } = useDocumentFiles(record?.id, field(record, "primaryAttachmentId"));
   const file = record ? primaryDocumentFile(record, files) : undefined;
-  const destination = documentUrl(
-    sourceUrl || field(record, "sourceUrl", field(record, "overleaf")),
-  );
   const [blobUrl, setBlobUrl] = useState("");
   const [text, setText] = useState("");
   const [error, setError] = useState("");
@@ -89,14 +78,19 @@ export function DocumentViewer({
     field(record, "primaryAttachmentId") &&
     !file;
   return (
-    <div className="document-viewer" ref={root}>
+    <div
+      className={`document-viewer ${inline ? "document-viewer-inline" : ""}`}
+      ref={root}
+    >
       <div className="document-viewer-toolbar">
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft size={17} /> Documents
-        </Button>
+        {!inline && (
+          <Button variant="ghost" onClick={onBack}>
+            <ArrowLeft size={17} /> Documents
+          </Button>
+        )}
         <div className="document-viewer-title">
-          <h1>{title}</h1>
-          {file && (
+          {!inline && <h1>{title}</h1>}
+          {file && !inline && (
             <span className="muted">Uploaded copy · {file.filename}</span>
           )}
         </div>
@@ -112,16 +106,6 @@ export function DocumentViewer({
             >
               <Download size={16} /> Download
             </Button>
-          )}
-          {destination && (
-            <a
-              className="button button-secondary"
-              href={destination}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Open in Overleaf <ArrowUpRight size={16} />
-            </a>
           )}
           {editing && (
             <Button variant="ghost" onClick={onEdit}>
@@ -217,30 +201,16 @@ export function DocumentViewer({
                 ? "Uploaded copy unavailable"
                 : file
                   ? "Ready to download"
-                  : destination
-                    ? "Your Overleaf project"
-                    : "Add your document"}
+                  : "Add your document"}
             </h2>
             <p className="muted">
               {missing
                 ? "Your document details are saved. Upload a new copy or select a previous upload in Edit document."
                 : file
                   ? "This format opens in its own app. Download the file to read or edit it."
-                  : destination
-                    ? "Open your source project in Overleaf. Upload its PDF to read it here; replace the uploaded copy when you make changes."
-                    : "Upload a PDF or image to open it here, or save an Overleaf project link."}
+                  : "Upload a PDF or image to open it here, or create native LaTeX source for your résumé or cover letter."}
             </p>
             <div className="inline-actions">
-              {destination && (
-                <a
-                  className="button button-primary"
-                  href={destination}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open in Overleaf <ArrowUpRight size={17} />
-                </a>
-              )}
               {file ? (
                 <Button
                   onClick={() =>
@@ -252,10 +222,7 @@ export function DocumentViewer({
                   <Download size={17} /> Download file
                 </Button>
               ) : editing ? (
-                <Button
-                  variant={destination ? "secondary" : "primary"}
-                  onClick={onEdit}
-                >
+                <Button onClick={onEdit}>
                   <Upload size={17} /> Upload PDF or file
                 </Button>
               ) : null}

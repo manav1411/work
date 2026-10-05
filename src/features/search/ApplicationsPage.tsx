@@ -42,6 +42,7 @@ import {
   Markdown,
   Modal,
   PageHeader,
+  SectionTabs,
   Select,
   Textarea,
 } from "../../components/ui";
@@ -102,6 +103,23 @@ export function ApplicationsPage() {
       applications.some((item) => item.id === id),
     );
   const selected = applications.find((record) => record.id === selectedId);
+  const linkedDocuments = selected
+    ? records.filter(
+        (document) =>
+          document.kind === "asset" &&
+          !document.deletedAt &&
+          ((Array.isArray(document.data.applicationIds) &&
+            document.data.applicationIds.includes(selected.id)) ||
+            (Array.isArray(document.data.submissions) &&
+              document.data.submissions.some(
+                (submission) =>
+                  submission &&
+                  typeof submission === "object" &&
+                  (submission as Record<string, unknown>).applicationId ===
+                    selected.id,
+              ))),
+      )
+    : [];
   const interviews = selected ? associatedInterviews(records, selected.id) : [];
   const interviewOpen =
     interviewEditing !== undefined ||
@@ -187,7 +205,7 @@ export function ApplicationsPage() {
           ) : undefined
         }
       />
-      <div
+      <SectionTabs
         className="application-tabs"
         role="tablist"
         aria-label="Application views"
@@ -195,6 +213,7 @@ export function ApplicationsPage() {
         <button
           role="tab"
           aria-selected={!radar}
+          tabIndex={radar ? -1 : 0}
           className={!radar ? "active" : ""}
           onClick={() => setParams({})}
         >
@@ -203,12 +222,13 @@ export function ApplicationsPage() {
         <button
           role="tab"
           aria-selected={radar}
+          tabIndex={radar ? 0 : -1}
           className={radar ? "active" : ""}
           onClick={() => setParams({ tab: "radar" })}
         >
           On your radar <span>{companies.length}</span>
         </button>
-      </div>
+      </SectionTabs>
       {undo && (
         <div className="application-notice" role="status">
           <span>Deleted {undo.title}.</span>
@@ -283,14 +303,33 @@ export function ApplicationsPage() {
           ) : (
             <div className="radar-grid">
               {filteredCompanies.map((company) => (
-                <Card className="radar-card" key={company.id}>
+                <Card className="radar-card action-card" key={company.id}>
                   <div className="section-heading">
                     <h3>
                       <CompanyGlyph
                         name={company.title}
                         url={field(company, "website") || field(company, "url")}
                       />
-                      {company.title}
+                      {webDestination(
+                        field(company, "careersUrl") ||
+                          field(company, "website") ||
+                          field(company, "url"),
+                      ) ? (
+                        <a
+                          className="card-hit-target"
+                          href={webDestination(
+                            field(company, "careersUrl") ||
+                              field(company, "website") ||
+                              field(company, "url"),
+                          )}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {company.title}
+                        </a>
+                      ) : (
+                        company.title
+                      )}
                     </h3>
                     <Badge tone="blue">On your radar</Badge>
                   </div>
@@ -388,7 +427,34 @@ export function ApplicationsPage() {
               </thead>
               <tbody>
                 {filtered.map((record) => (
-                  <tr key={record.id}>
+                  <tr
+                    key={record.id}
+                    className="application-row-action"
+                    onClick={(event) => {
+                      if (
+                        event.defaultPrevented ||
+                        (event.target as HTMLElement).closest(
+                          "a,button,input,select,textarea,label",
+                        ) ||
+                        window.getSelection()?.toString()
+                      )
+                        return;
+                      const anchor =
+                        event.currentTarget.querySelector<HTMLAnchorElement>(
+                          ".application-primary-link",
+                        );
+                      anchor?.dispatchEvent(
+                        new MouseEvent("click", {
+                          bubbles: true,
+                          cancelable: true,
+                          ctrlKey: event.ctrlKey,
+                          metaKey: event.metaKey,
+                          shiftKey: event.shiftKey,
+                          altKey: event.altKey,
+                        }),
+                      );
+                    }}
+                  >
                     <td>
                       <CompanyGlyph
                         name={applicationCompany(record, records)}
@@ -396,12 +462,12 @@ export function ApplicationsPage() {
                       {applicationCompany(record, records)}
                     </td>
                     <td>
-                      <button
-                        className="application-open"
-                        onClick={() => setParams({ record: record.id })}
+                      <Link
+                        className="application-open application-primary-link"
+                        to={`/applications?record=${encodeURIComponent(record.id)}`}
                       >
                         <strong>{record.title}</strong>
-                      </button>
+                      </Link>
                     </td>
                     <td>
                       <Destination url={field(record, "url")} label="Listing" />
@@ -431,11 +497,11 @@ export function ApplicationsPage() {
           </Card>
           <div className="application-mobile-cards">
             {filtered.map((record) => (
-              <Card key={record.id}>
+              <Card key={record.id} className="action-card">
                 <div className="section-heading">
-                  <button
-                    className="application-open"
-                    onClick={() => setParams({ record: record.id })}
+                  <Link
+                    className="application-open card-hit-target"
+                    to={`/applications?record=${encodeURIComponent(record.id)}`}
                   >
                     <span className="application-company">
                       <CompanyGlyph
@@ -444,7 +510,7 @@ export function ApplicationsPage() {
                       {applicationCompany(record, records)}
                     </span>
                     <strong>{record.title}</strong>
-                  </button>
+                  </Link>
                   <Status record={record} />
                 </div>
                 <dl className="application-mobile-fields">
@@ -517,6 +583,19 @@ export function ApplicationsPage() {
               )}
             </div>
             <Destination url={field(selected, "url")} label="Listing" />
+            {linkedDocuments.length > 0 && (
+              <div className="inline-actions application-document-links">
+                {linkedDocuments.map((document) => (
+                  <Link
+                    key={document.id}
+                    className="text-link"
+                    to={`/documents?record=${encodeURIComponent(document.id)}`}
+                  >
+                    <ArrowUpRight size={14} /> Open {document.title}
+                  </Link>
+                ))}
+              </div>
+            )}
             <dl className="application-dates">
               {[
                 ["Application date", applicationDate(selected)],

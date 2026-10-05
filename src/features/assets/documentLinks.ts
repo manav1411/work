@@ -1,14 +1,8 @@
-import {
-  field,
-  type UserPreferences,
-  type WorkRecord,
-} from "../../../shared/model";
-import { documentUrl } from "../../../shared/documents";
-export { documentUrl, webDestination } from "../../../shared/documents";
+import { field, type WorkRecord } from "../../../shared/model";
+export { webDestination } from "../../../shared/documents";
 
 export type DocumentType = "resume" | "letter";
 export interface DocumentLink {
-  url: string;
   record?: WorkRecord;
 }
 
@@ -27,29 +21,15 @@ function getDocument(records: WorkRecord[], type: DocumentType): DocumentLink {
     );
   const record =
     candidates.find((item) => item.data.documentDefault === true) ||
+    candidates.find((item) => item.data.latexProject) ||
     candidates.find((item) => field(item, "primaryAttachmentId")) ||
-    candidates.find(
-      (item) =>
-        documentUrl(field(item, "sourceUrl")) ||
-        documentUrl(field(item, "overleaf")),
-    ) ||
     candidates[0];
-  if (!record) return { url: "" };
-  // A deliberately cleared default must not revive an old preference or duplicate.
-  const value =
-    record.data.documentDefault === true
-      ? field(record, "sourceUrl", field(record, "overleaf"))
-      : documentUrl(field(record, "sourceUrl")) || field(record, "overleaf");
-  return { record, url: documentUrl(value) };
+  return record ? { record } : {};
 }
 
-export function getDocumentLinks(
-  records: WorkRecord[],
-  preferences: Pick<UserPreferences, "overleaf">,
-) {
-  const resume = getDocument(records, "resume");
+export function getDocumentLinks(records: WorkRecord[]) {
   return {
-    resume: resume.record ? resume : { url: documentUrl(preferences.overleaf) },
+    resume: getDocument(records, "resume"),
     coverLetter: getDocument(records, "letter"),
   };
 }

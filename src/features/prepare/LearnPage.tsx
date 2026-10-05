@@ -16,6 +16,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SectionTabs,
   Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
@@ -23,6 +24,7 @@ import { useEditMode } from "../../lib/edit-mode";
 import { Pomodoro } from "../learn/Pomodoro";
 import { useLearningData } from "../learn/useLearningData";
 import Roadmap from "../learn/foundations/Roadmap";
+import LeetCodeCalendar from "../learn/LeetCodeCalendar";
 import { roadmapTopics } from "../../content/problems";
 import {
   learningSubjects,
@@ -112,7 +114,7 @@ export function LearnPage() {
           )
         }
       />
-      <div
+      <SectionTabs
         className="learn-track-tabs"
         ref={tabRef}
         role="tablist"
@@ -156,7 +158,7 @@ export function LearnPage() {
             {item.title}
           </button>
         ))}
-      </div>
+      </SectionTabs>
       {error && (
         <p role="alert" className="content-save-error">
           {error}
@@ -168,7 +170,6 @@ export function LearnPage() {
         aria-labelledby={`learn-track-${track}`}
       >
         <div className="learn-subject-heading">
-          <p>{subject.description}</p>
           {editing && (
             <div className="content-item-actions">
               <Button
@@ -240,6 +241,7 @@ export function LearnPage() {
                 Loading confirmed solves…
               </p>
             )}
+            <LeetCodeCalendar />
             <Roadmap
               solved={learning.solvedSlugs}
               personalised={learning.configured && Boolean(learning.stats)}
@@ -375,7 +377,6 @@ export function LearnPage() {
                   </div>
                 )}
               </header>
-              {topic.summary && <p>{topic.summary}</p>}
               <ContentPanel
                 context={{
                   scope: "learn",

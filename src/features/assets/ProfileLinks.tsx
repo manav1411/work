@@ -108,9 +108,6 @@ export function ProfileLinks() {
       <div className="document-section-heading">
         <div>
           <h2 id="profile-links-title">Your links</h2>
-          <p className="muted">
-            Your profiles and useful destinations, together.
-          </p>
         </div>
         {editMode && (
           <Button
@@ -156,15 +153,23 @@ export function ProfileLinks() {
         {cards.map((item, index) => (
           <Card
             key={item.key || item.record?.id}
-            className={`document-link-card document-link-${index % 4}`}
+            className={`document-link-card action-card document-link-${index % 4}`}
           >
-            <CompanyGlyph name={item.title} url={item.url} />
             {item.url ? (
-              <a href={item.url} target="_blank" rel="noopener noreferrer">
+              <a
+                className="document-link-primary card-hit-target"
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <CompanyGlyph name={item.title} url={item.url} />
                 {item.title} <ArrowUpRight size={17} />
               </a>
             ) : (
-              <strong>{item.title}</strong>
+              <span className="document-link-primary">
+                <CompanyGlyph name={item.title} url={item.url} />
+                <strong>{item.title}</strong>
+              </span>
             )}
             {editMode && (
               <div className="inline-actions">

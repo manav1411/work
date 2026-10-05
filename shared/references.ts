@@ -13,13 +13,15 @@ const recordKeys = new Set([
   "tabId",
   "interviewId",
   "directionId",
+  "parentVariantId",
 ]);
-const fileKeys = new Set(["attachmentId", "primaryAttachmentId"]);
+const fileKeys = new Set(["attachmentId", "primaryAttachmentId", "revisionId", "forkRevisionId", "pdfAttachmentId", "textAttachmentId", "logAttachmentId", "synctexAttachmentId"]);
 const recordArrayKeys = new Set([
   "assetIds",
   "recordIds",
   "companyIds",
   "storyIds",
+  "applicationIds",
 ]);
 
 function isRecordReference(key: string, value: string) {

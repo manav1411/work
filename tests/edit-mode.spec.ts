@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { EDIT_HOLD_DURATION } from "../shared/interaction";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
@@ -17,6 +18,7 @@ test("ordinary clicks, cancelled holds, and completed holds have distinct behavi
   });
   const learn = nav.getByRole("link", { name: "Learn", exact: true });
   await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await learn.dispatchEvent("pointerdown", {
     button: 0,
     clientX: 30,
@@ -37,13 +39,17 @@ test("ordinary clicks, cancelled holds, and completed holds have distinct behavi
   await page.clock.runFor(500);
   await expect(learn).toHaveClass(/nav-holding/);
   await learn.dispatchEvent("pointermove", { clientX: 50, clientY: 100 });
-  await page.clock.runFor(3000);
+  await page.clock.runFor(EDIT_HOLD_DURATION);
   await expect(learn).not.toHaveClass(/nav-holding/);
   await expect(
     page.getByRole("button", { name: "Add topic", exact: true }),
   ).toHaveCount(0);
   await learn.dispatchEvent("pointerdown", { button: 0 });
-  await page.clock.runFor(3000);
+  await page.clock.runFor(EDIT_HOLD_DURATION - 1);
+  await expect(
+    page.getByRole("button", { name: "Add topic", exact: true }),
+  ).toHaveCount(0);
+  await page.clock.runFor(1);
   await learn.dispatchEvent("pointerup");
   await expect(
     page.getByRole("status").filter({ hasText: "Editing Learn" }),
@@ -66,9 +72,10 @@ test("keyboard hold preserves the selected content and edit mode is scoped to it
   });
   const learn = nav.getByRole("link", { name: "Learn", exact: true });
   await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await learn.focus();
   await page.keyboard.down("Space");
-  await page.clock.runFor(3000);
+  await page.clock.runFor(EDIT_HOLD_DURATION);
   await page.keyboard.up("Space");
   await expect(page).toHaveURL(/track=databases/);
   await expect(
@@ -84,7 +91,7 @@ test("keyboard hold preserves the selected content and edit mode is scoped to it
   ).toBeVisible();
   await learn.focus();
   await page.keyboard.down("Space");
-  await page.clock.runFor(3000);
+  await page.clock.runFor(EDIT_HOLD_DURATION);
   await page.keyboard.up("Space");
   await expect(
     page.getByRole("status").filter({ hasText: "Editing Learn" }),
@@ -101,8 +108,9 @@ test("mobile section holds enable editing without opening the navigation drawer"
   });
   const learn = nav.getByRole("link", { name: "Learn", exact: true });
   await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1000));
   await learn.dispatchEvent("pointerdown", { button: 0 });
-  await page.clock.runFor(3000);
+  await page.clock.runFor(EDIT_HOLD_DURATION);
   await learn.dispatchEvent("pointerup");
   await expect(
     page.getByRole("button", { name: "Add topic", exact: true }),

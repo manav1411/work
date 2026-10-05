@@ -32,7 +32,6 @@ const cadence = {
   notion: 30 * 60_000,
   github: 60 * 60_000,
   leetcode: 4 * 60 * 60_000,
-  overleaf: 0,
 };
 interface SyncCursor {
   index?: number;
@@ -402,11 +401,6 @@ export async function syncConnection(
       "CONNECTION_PAUSED",
       "Resume this source before refreshing.",
     );
-  if (provider === "overleaf")
-    return {
-      connection: publicConnection(row),
-      message: "The Overleaf source is linked. Upload a new PDF after editing.",
-    };
   if (
     manual &&
     row.last_attempt_at &&
@@ -644,7 +638,7 @@ export async function syncConnection(
 }
 export async function scheduledSync(env: Env) {
   const due = await env.DB.prepare(
-    "SELECT owner_id,provider FROM connector_connections WHERE provider!='overleaf' AND status NOT IN ('paused','disconnected') AND next_sync_at<=? AND (lease_until IS NULL OR lease_until<?) ORDER BY next_sync_at LIMIT 8",
+    "SELECT owner_id,provider FROM connector_connections WHERE provider IN ('notion','github','leetcode') AND status NOT IN ('paused','disconnected') AND next_sync_at<=? AND (lease_until IS NULL OR lease_until<?) ORDER BY next_sync_at LIMIT 8",
   )
     .bind(now(), now())
     .all<{ owner_id: string; provider: ConnectionRow["provider"] }>();

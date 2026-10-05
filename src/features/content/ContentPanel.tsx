@@ -11,14 +11,7 @@ import {
   type RecordInput,
   type WorkRecord,
 } from "../../../shared/model";
-import {
-  Button,
-  Card,
-  Field,
-  Input,
-  Modal,
-  Textarea,
-} from "../../components/ui";
+import { Button, Card, Field, Input, Modal } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
 import { CompanyGlyph } from "../../components/CompanyGlyph";
@@ -179,20 +172,26 @@ export function ContentPanel({
         {resources.map((item, index) => (
           <Card
             key={item.id}
-            className={`content-resource-card content-tone-${index % 4}`}
+            className={`content-resource-card action-card content-tone-${index % 4}`}
           >
             <a
+              className="card-hit-target"
               href={safeUrl(item.url) ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
             >
               <strong>
-                <CompanyGlyph name={item.title} url={item.url} />
+                <CompanyGlyph
+                  name={item.title}
+                  url={item.url}
+                  technology={
+                    item.record ? field(item.record, "technology") : undefined
+                  }
+                />
                 {item.title}
               </strong>
               <ExternalLink size={18} />
             </a>
-            {item.body && <p>{item.body}</p>}
             {editing && (
               <div className="content-item-actions">
                 <Button
@@ -330,7 +329,10 @@ function ContentEditor({
   const [url, setUrl] = useState(
     record ? field(record, "url") : (seed?.url ?? ""),
   );
-  const [body, setBody] = useState(record?.body ?? seed?.body ?? "");
+  const [body] = useState(record?.body ?? seed?.body ?? "");
+  const [technology, setTechnology] = useState(
+    record ? field(record, "technology") : "",
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
@@ -361,6 +363,7 @@ function ContentEditor({
             ...(kind === "resource"
               ? {
                   url: safeUrl(url),
+                  technology: technology.trim(),
                   ...(seed ? { seedResourceId: seed.id } : {}),
                 }
               : {}),
@@ -404,11 +407,12 @@ function ContentEditor({
                 onChange={(event) => setUrl(event.target.value)}
               />
             </Field>
-            <Field label="Description (optional)">
-              <Textarea
-                rows={3}
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
+            <Field label="Technology glyph (optional)">
+              <Input
+                maxLength={100}
+                placeholder="Python, React, PostgreSQL…"
+                value={technology}
+                onChange={(event) => setTechnology(event.target.value)}
               />
             </Field>
           </>

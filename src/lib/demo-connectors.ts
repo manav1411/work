@@ -137,20 +137,6 @@ const fixtures: Record<ConnectorProvider, DemoProviderItem[]> = {
     },
   ],
   leetcode: [],
-  overleaf: [
-    {
-      id: "overleaf:resume-source",
-      title: "Résumé source — Product Engineer",
-      url: "https://www.overleaf.com/project/65f1a89bd5d4c902341b7a21",
-      kind: "asset",
-      body: "Demo source for a résumé maintained in Overleaf. [Open the résumé source](https://www.overleaf.com/project/65f1a89bd5d4c902341b7a21) to continue editing the document.",
-      data: {
-        type: "resume",
-        role: "Product Engineer",
-        sourceDescription: "An example résumé source connected from Overleaf.",
-      },
-    },
-  ],
 };
 
 function demoLeetSnapshot(username: string) {
@@ -303,9 +289,6 @@ export function createDemoConnectorHandler(deps: DemoConnectorDependencies) {
         ...item.data,
         connectorSource: source,
         ...(provider === "notion" ? { sourceName: item.title } : {}),
-        ...(provider === "overleaf"
-          ? { overleaf: item.url, sourceName: item.title }
-          : {}),
       },
     };
     if (existingId) {
@@ -372,23 +355,9 @@ export function createDemoConnectorHandler(deps: DemoConnectorDependencies) {
           .getRecords()
           .find((record) => record.id === item.recordId && !record.deletedAt)
           ? item.recordId
-          : (recordsBySource.get(item.id)?.id ??
-            (provider === "overleaf" ? current.config.assetId : undefined));
+          : recordsBySource.get(item.id)?.id;
       const record = mappedRecord(provider, item, target);
       synced.push(record);
-      changed++;
-    }
-    if (provider === "overleaf" && selected.length === 0) {
-      const fixture = fixtures.overleaf[0];
-      const target =
-        current.config.assetId ?? recordsBySource.get(fixture.id)?.id;
-      synced.push(
-        mappedRecord(
-          "overleaf",
-          { id: fixture.id, title: fixture.title, url: fixture.url },
-          target,
-        ),
-      );
       changed++;
     }
     let activity = state.activity;
@@ -404,12 +373,7 @@ export function createDemoConnectorHandler(deps: DemoConnectorDependencies) {
     const finishedAt = stamp();
     const updated: ConnectorConnection = {
       ...current,
-      status:
-        current.status === "paused"
-          ? "paused"
-          : provider === "overleaf"
-            ? "linked"
-            : "connected",
+      status: current.status === "paused" ? "paused" : "connected",
       snapshot: {
         ...snapshot,
         ...(provider !== "leetcode"
@@ -624,9 +588,7 @@ export function createDemoConnectorHandler(deps: DemoConnectorDependencies) {
       const accountId =
         provider === "notion"
           ? "demo-notion-workspace"
-          : provider === "overleaf"
-            ? "demo-overleaf-project"
-            : username || `demo-${provider}`;
+          : username || `demo-${provider}`;
       const label =
         typeof body.label === "string" && body.label.trim()
           ? body.label.trim()
@@ -642,19 +604,10 @@ export function createDemoConnectorHandler(deps: DemoConnectorDependencies) {
         provider,
         accountId,
         label,
-        status: provider === "overleaf" ? "linked" : "connected",
+        status: "connected",
         config: {
           ...(username ? { username } : {}),
-          ...(projectUrl
-            ? { projectUrl }
-            : provider === "overleaf"
-              ? { projectUrl: fixtures.overleaf[0].url }
-              : {}),
-          ...(provider === "overleaf" &&
-          typeof body.assetId === "string" &&
-          body.assetId
-            ? { assetId: body.assetId }
-            : {}),
+          ...(projectUrl ? { projectUrl } : {}),
           mode:
             provider === "github"
               ? "public"

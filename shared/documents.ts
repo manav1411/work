@@ -20,16 +20,7 @@ export const DOCUMENT_ACCEPT =
   ".pdf,.docx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.json";
 
 export function documentUrl(value: string): string {
-  const safe = safeUrl(value.trim());
-  if (!safe || safe.length > 2048) return "";
-  const url = new URL(safe);
-  return url.protocol === "https:" &&
-    ["overleaf.com", "www.overleaf.com"].includes(url.hostname) &&
-    !url.username &&
-    !url.password &&
-    /^\/(project|read)\/[a-zA-Z0-9_-]+\/?$/.test(url.pathname)
-    ? safe
-    : "";
+  return webDestination(value);
 }
 
 export function webDestination(value: string): string {
@@ -44,15 +35,29 @@ export const documentDestinationSchema = z
   .max(2048)
   .refine(
     (value) => !value || !!documentUrl(value),
-    "Use an HTTPS Overleaf project or read-only link.",
+    "Use an HTTP or HTTPS URL without embedded credentials.",
   );
 export const documentMetadataSchema = z
   .object({
     type: z.string().max(80).optional(),
     documentDefault: z.boolean().optional(),
     sourceUrl: documentDestinationSchema.optional(),
-    overleaf: documentDestinationSchema.optional(),
     primaryAttachmentId: z.string().max(160).optional(),
+    parentVariantId: z.string().max(160).optional(),
+    forkRevisionId: z.string().max(160).optional(),
+    applicationIds: z.array(z.string().min(1).max(160)).max(100).optional(),
+    intendedStream: z.string().max(160).optional(),
+    submissions: z
+      .array(
+        z.object({
+          applicationId: z.string().max(160),
+          revisionId: z.string().min(1).max(160),
+          pdfAttachmentId: z.string().min(1).max(160),
+          submittedAt: z.string().datetime(),
+        }),
+      )
+      .max(200)
+      .optional(),
   })
   .passthrough();
 export const profileLinkDataSchema = z

@@ -60,6 +60,7 @@ export const contentResourceDataSchema = z
   .object({
     ...contextShape,
     category: z.literal("content-resource"),
+    technology: z.string().max(100).optional(),
     url: z
       .url()
       .max(2048)

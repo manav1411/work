@@ -114,6 +114,13 @@ export function remapReferenceFields(
     "directionId",
     "sectionId",
     "track",
+    "parentVariantId",
+    "revisionId",
+    "forkRevisionId",
+    "pdfAttachmentId",
+    "textAttachmentId",
+    "logAttachmentId",
+    "synctexAttachmentId",
   ]);
   const visit = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(visit);
@@ -124,7 +131,13 @@ export function remapReferenceFields(
           return [key, ids.get(item) || item];
         if (
           Array.isArray(item) &&
-          ["assetIds", "recordIds", "companyIds", "storyIds"].includes(key)
+          [
+            "assetIds",
+            "recordIds",
+            "companyIds",
+            "storyIds",
+            "applicationIds",
+          ].includes(key)
         )
           return [
             key,
@@ -763,6 +776,17 @@ export function validateRestoredRelations(
       );
     if (record.kind === "application")
       relation(record.data.companyId, ["company"]);
+    if (record.kind === "asset") {
+      relation(record.data.parentVariantId, ["asset"]);
+      if (Array.isArray(record.data.applicationIds))
+        for (const value of record.data.applicationIds)
+          relation(value, ["application"]);
+      if (Array.isArray(record.data.submissions))
+        for (const submission of record.data.submissions)
+          relation((submission as Record<string, unknown>).applicationId, [
+            "application",
+          ]);
+    }
     const scoped = [
       "content-section",
       "content-resource",

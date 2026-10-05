@@ -74,9 +74,19 @@ export function StoryBank({
           {stories.map((story, index) => (
             <Card
               key={story.id}
-              className={`interview-story-card content-tone-${index % 4}`}
+              className={`interview-story-card application-row-action content-tone-${index % 4}`}
+              onClick={(event) => {
+                if (
+                  (event.target as HTMLElement).closest(
+                    "button,a,input,select,textarea",
+                  ) ||
+                  window.getSelection()?.toString()
+                )
+                  return;
+                onEdit(story);
+              }}
             >
-              <StoryContent story={story} />
+              <StoryContent story={story} onOpen={() => onEdit(story)} />
               {editing && (
                 <div className="content-item-actions">
                   <Button variant="ghost" onClick={() => onEdit(story)}>
@@ -139,10 +149,24 @@ export function StoryBank({
     </section>
   );
 }
-export function StoryContent({ story }: { story: WorkRecord }) {
+export function StoryContent({
+  story,
+  onOpen,
+}: {
+  story: WorkRecord;
+  onOpen?: () => void;
+}) {
   return (
     <div className="interview-story-content">
-      <h3>{story.title}</h3>
+      <h3>
+        {onOpen ? (
+          <button className="story-open" onClick={onOpen}>
+            {story.title}
+          </button>
+        ) : (
+          story.title
+        )}
+      </h3>
       {story.tags.length > 0 && (
         <div className="interview-story-tags">
           {story.tags.map((tag) => (

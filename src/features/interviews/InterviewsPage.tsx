@@ -9,6 +9,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SectionTabs,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
@@ -93,7 +94,7 @@ export function InterviewsPage() {
           )
         }
       />
-      <div
+      <SectionTabs
         className="interview-tabs"
         role="tablist"
         aria-label="Interview preparation tabs"
@@ -141,7 +142,7 @@ export function InterviewsPage() {
             {interview.title}
           </button>
         )}
-      </div>
+      </SectionTabs>
       {error && <p role="alert">{error}</p>}
       <div className="interview-workspace">
         <div

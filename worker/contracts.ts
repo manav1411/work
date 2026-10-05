@@ -46,6 +46,23 @@ export async function validateRecordContract(
   };
   if (record.kind === "application")
     await related(record.data.companyId, ["company"]);
+  if (record.kind === "asset") {
+    const parent = await related(record.data.parentVariantId, ["asset"]);
+    if (parent?.id === record.id)
+      throw new ApiError(
+        400,
+        "INVALID_REFERENCE",
+        "A variant cannot be its own parent.",
+      );
+    if (Array.isArray(record.data.applicationIds))
+      for (const applicationId of record.data.applicationIds)
+        await related(applicationId, ["application"]);
+    if (Array.isArray(record.data.submissions))
+      for (const submission of record.data.submissions)
+        await related((submission as Record<string, unknown>).applicationId, [
+          "application",
+        ]);
+  }
   const scoped = [
     "content-section",
     "content-resource",

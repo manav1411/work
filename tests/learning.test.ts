@@ -93,6 +93,7 @@ beforeAll(async () => {
     "0004_simplification.sql",
     "0005_workspace_improvements.sql",
     "0006_backup_staging.sql",
+    "0007_native_latex.sql",
   ]
     .map((name) =>
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"),

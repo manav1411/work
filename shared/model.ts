@@ -63,7 +63,6 @@ export interface UserPreferences {
   linkedin: string;
   website: string;
   leetcode: string;
-  overleaf: string;
   currentCompany: string;
   stack: string;
   weeklyHours: number;
@@ -81,7 +80,6 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   linkedin: "",
   website: "",
   leetcode: "",
-  overleaf: "",
   currentCompany: "",
   stack: "",
   weeklyHours: 4,

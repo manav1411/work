@@ -438,7 +438,7 @@ function Shell() {
         </nav>
         <div className="sidebar-bottom">
           <p className="edit-mode-hint">
-            Hold a section for 3 seconds to edit.
+            Hold a section to edit.
           </p>
           <AccountMenu />
         </div>

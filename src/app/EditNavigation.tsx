@@ -1,10 +1,16 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEditMode } from "../lib/edit-mode";
+import { EDIT_HOLD_DURATION } from "../../shared/interaction";
 
 /** Delay visual feedback so a normal navigation click never starts the fill. */
 const FEEDBACK_DELAY = 250;
-const HOLD_DURATION = 3000;
 
 export function EditNavigation({
   to,
@@ -49,12 +55,17 @@ export function EditNavigation({
       cancel();
       toggleSection(to);
       if (location.pathname !== to) navigate(to);
-    }, HOLD_DURATION);
+    }, EDIT_HOLD_DURATION);
   };
   return (
     <NavLink
       to={to}
-      title={`Hold for 3 seconds to ${isEditing(to) ? "finish editing" : "edit"} ${label}. Keyboard: hold Space.`}
+      style={
+        {
+          "--edit-hold-fill-duration": `${EDIT_HOLD_DURATION - FEEDBACK_DELAY}ms`,
+        } as CSSProperties
+      }
+      title={`Hold for ${EDIT_HOLD_DURATION / 1000} second to ${isEditing(to) ? "finish editing" : "edit"} ${label}. Keyboard: hold Space.`}
       aria-label={label}
       data-editing={isEditing(to) || undefined}
       className={({ isActive }) =>

@@ -15,6 +15,7 @@ export function editorDraftsFor(
     `work-content-draft:${owner}:`,
     `work:goal-draft:${owner}:`,
     `work:direction-draft:${owner}:`,
+    `work:latex-draft:${owner}:`,
   ];
   const drafts: EditorDraft[] = [];
   try {
@@ -31,7 +32,9 @@ export function editorDraftsFor(
           ? "Goal draft"
           : key.startsWith(`work:direction-draft:${owner}:`)
             ? "Direction draft"
-            : "Notes draft");
+            : key.startsWith(`work:latex-draft:${owner}:`)
+              ? "LaTeX draft"
+              : "Notes draft");
       try {
         const parsed = JSON.parse(value);
         if (typeof parsed?.title === "string" && parsed.title)
@@ -47,11 +50,13 @@ export function editorDraftsFor(
         ? `/interviews?interview=${encodeURIComponent(id)}`
         : context.startsWith("interview-tab:")
           ? `/interviews?tab=${encodeURIComponent(id)}`
-          : record
-            ? recordUrl(record)
-            : key.startsWith(contentPrefix)
-              ? "/interviews"
-              : "/direction";
+          : key.startsWith(`work:latex-draft:${owner}:`)
+            ? `/documents?record=${encodeURIComponent(id)}`
+            : record
+              ? recordUrl(record)
+              : key.startsWith(contentPrefix)
+                ? "/interviews"
+                : "/direction";
       drafts.push({ key, value, title, url });
     }
   } catch {

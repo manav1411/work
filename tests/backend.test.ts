@@ -1,5 +1,13 @@
 import { readFileSync } from "node:fs";
-import { beforeAll, afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  beforeAll,
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { app } from "../worker";
 import { allowedIdentity, createAuth, localAuthAllowed } from "../worker/auth";
@@ -10,6 +18,7 @@ import {
   insertLinks,
   insertRecord,
   newRecord,
+  writeRecord,
   type RecordRow,
 } from "../worker/db/records";
 import {
@@ -28,6 +37,7 @@ const migration = [
   "0004_simplification.sql",
   "0005_workspace_improvements.sql",
   "0006_backup_staging.sql",
+  "0007_native_latex.sql",
 ]
   .map((filename) =>
     readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
@@ -142,6 +152,315 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM rate_limits"),
     env.DB.prepare("DELETE FROM write_guards"),
   ]);
+});
+
+describe("native LaTeX projects", () => {
+  const source = {
+    mainFile: "main.tex",
+    engine: "pdflatex",
+    files: [
+      {
+        path: "main.tex",
+        encoding: "utf8",
+        content:
+          "\\documentclass{article}\\begin{document}Resume\\end{document}",
+      },
+    ],
+  };
+
+  it("persists source revisions and rejects stale saves, unsafe paths and unavailable compilation", async () => {
+    const document = await create("Main resume", {
+      kind: "asset",
+      data: { type: "resume" },
+    });
+    const save = await request(`/api/latex/${document.id}`, "PUT", {
+      ...source,
+      expectedVersion: 1,
+    });
+    expect(save.status).toBe(200);
+    const result = (await save.json()) as {
+      project: { revisionId: string; version: number; files: unknown[] };
+    };
+    expect(result.project.version).toBe(2);
+    expect(result.project.files).toEqual(source.files);
+    expect(
+      (
+        await request(`/api/latex/${document.id}`, "PUT", {
+          ...source,
+          expectedVersion: 1,
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(`/api/latex/${document.id}`, "PUT", {
+          ...source,
+          expectedVersion: 2,
+          files: [{ ...source.files[0], path: "../main.tex" }],
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`/api/latex/${document.id}/compile`, "POST", {
+          revisionId: result.project.revisionId,
+        })
+      ).status,
+    ).toBe(503);
+    const persisted = (await (
+      await request(`/api/latex/${document.id}`)
+    ).json()) as { project: unknown; configured: boolean };
+    expect(persisted.configured).toBe(false);
+    expect(persisted.project).toMatchObject({
+      files: source.files,
+      revisionId: result.project.revisionId,
+    });
+  });
+
+  it("forks an independent source and keeps historical revisions readable", async () => {
+    const parent = await create("Main resume", {
+      kind: "asset",
+      data: { type: "resume" },
+    });
+    const target = await create("Security resume", {
+      kind: "asset",
+      data: { type: "resume" },
+    });
+    const saved = (await (
+      await request(`/api/latex/${parent.id}`, "PUT", {
+        ...source,
+        expectedVersion: 1,
+      })
+    ).json()) as { project: { revisionId: string } };
+    const response = await request(`/api/latex/${parent.id}/fork`, "POST", {
+      targetAssetId: target.id,
+    });
+    expect(response.status).toBe(200);
+    const fork = (await response.json()) as {
+      project: { revisionId: string };
+      record: WorkRecord;
+    };
+    expect(fork.project.revisionId).not.toBe(saved.project.revisionId);
+    expect(fork.record.data.parentVariantId).toBe(parent.id);
+    expect(
+      (
+        await request(`/api/latex/${target.id}`, "PUT", {
+          ...source,
+          expectedVersion: 2,
+          files: [{ ...source.files[0], content: "Security variant" }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        (await (await request(`/api/latex/${parent.id}`)).json()) as {
+          project: { files: unknown[] };
+        }
+      ).project.files,
+    ).toEqual(source.files);
+    expect((await request(`/api/records/${parent.id}`, "DELETE")).status).toBe(
+      200,
+    );
+    expect(
+      (
+        await request(
+          `/api/latex/${parent.id}/revisions/${saved.project.revisionId}`,
+        )
+      ).status,
+    ).toBe(200);
+  });
+
+  it("rejects source reads and forks across private owners", async () => {
+    const foreign = await foreignRecord();
+    await env.DB.prepare(
+      "UPDATE records SET kind='asset', version=version+1 WHERE id=?",
+    )
+      .bind(foreign.id)
+      .run();
+    expect((await request(`/api/latex/${foreign.id}`)).status).toBe(404);
+    const document = await create("Main resume", {
+      kind: "asset",
+      data: { type: "resume" },
+    });
+    await request(`/api/latex/${document.id}`, "PUT", {
+      ...source,
+      expectedVersion: 1,
+    });
+    expect(
+      (
+        await request(`/api/latex/${document.id}/fork`, "POST", {
+          targetAssetId: foreign.id,
+        })
+      ).status,
+    ).toBe(404);
+  });
+});
+
+describe("native compilation preservation", () => {
+  it("publishes builds without changing source version and retains submitted artifacts after archival", async () => {
+    const document = await create("Compiled resume", {
+      kind: "asset",
+      data: { type: "resume" },
+    });
+    const saved = await request(`/api/latex/${document.id}`, "PUT", {
+      expectedVersion: 1,
+      mainFile: "main.tex",
+      engine: "pdflatex",
+      files: [
+        {
+          path: "main.tex",
+          encoding: "utf8",
+          content:
+            "\\documentclass{article}\\begin{document}Resume\\end{document}",
+        },
+      ],
+    });
+    expect(saved.status).toBe(200);
+    const original = ((await saved.json()) as { record: WorkRecord }).record;
+    const revisionId = (original.data.latexProject as { revisionId: string })
+      .revisionId;
+    const pending: Promise<unknown>[] = [];
+    const compilerEnv = {
+      ...env,
+      LATEX_COMPILER_URL: "https://compiler.example.invalid",
+      LATEX_COMPILER_TOKEN: "synthetic-token",
+    };
+    const configuration = {
+      latexmkVersion: "synthetic",
+      shellEscape: false,
+      customLatexmkrc: false,
+      synctex: true,
+      network: false,
+    };
+    const pdf = "%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF";
+    const originalFetch = globalThis.fetch;
+    const compiler = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (input, init) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        if (new URL(url).origin !== compilerEnv.LATEX_COMPILER_URL)
+          return originalFetch(input, init);
+        return Response.json({
+          success: true,
+          pdfBase64: btoa(pdf),
+          log: "compiled",
+          text: "Resume",
+          metadata: { engine: "pdflatex", configuration },
+        });
+      });
+    try {
+      const queued = await app.fetch(
+        new Request(`http://localhost/api/latex/${document.id}/compile`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ revisionId }),
+        }),
+        compilerEnv,
+        {
+          waitUntil(promise: Promise<unknown>) {
+            pending.push(promise);
+          },
+          passThroughOnException() {},
+        } as unknown as ExecutionContext,
+      );
+      expect(queued.status).toBe(202);
+      await Promise.all(pending);
+      const compiled = (
+        (await (await request(`/api/records/${document.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record;
+      const jobs = compiled.data.latexJobs as {
+        id: string;
+        status: string;
+        pdfAttachmentId: string;
+        metadata: unknown;
+      }[];
+      expect(compiled.version).toBe(original.version);
+      expect(jobs[0]).toMatchObject({
+        status: "succeeded",
+        metadata: { configuration },
+      });
+      expect(compiled.data.primaryAttachmentId).toBe(jobs[0].pdfAttachmentId);
+      // Exercise a source/metadata snapshot read before the build finished.
+      const stale = {
+        ...original,
+        title: "Renamed resume",
+        version: original.version + 1,
+        updatedAt: new Date().toISOString(),
+      };
+      await writeRecord(env.DB, "local-manav", stale, original.version);
+      expect(stale.data.latexJobs).toEqual(jobs);
+      expect(stale.data.primaryAttachmentId).toBe(jobs[0].pdfAttachmentId);
+      const application = await create("Target role", { kind: "application" });
+      const linked = await request(`/api/records/${document.id}`, "PATCH", {
+        version: stale.version,
+        data: {
+          ...stale.data,
+          applicationIds: [application.id],
+          latexJobs: [],
+        },
+      });
+      expect(linked.status).toBe(200);
+      const submitted = await request(
+        `/api/latex/${document.id}/submissions`,
+        "POST",
+        { applicationId: application.id, jobId: jobs[0].id },
+      );
+      expect(submitted.status).toBe(200);
+      expect(
+        (await request(`/api/attachments/${revisionId}`, "DELETE")).status,
+      ).toBe(409);
+      expect(
+        (await request(`/api/attachments/${jobs[0].pdfAttachmentId}`, "DELETE"))
+          .status,
+      ).toBe(409);
+      expect(
+        (await request(`/api/records/${application.id}`, "DELETE")).status,
+      ).toBe(200);
+      const detached = (
+        (await (await request(`/api/records/${document.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record;
+      expect(detached.data.applicationIds).toEqual([]);
+      expect(detached.data.submissions).toMatchObject([
+        {
+          applicationId: application.id,
+          revisionId,
+          pdfAttachmentId: jobs[0].pdfAttachmentId,
+        },
+      ]);
+      expect(
+        (await request(`/api/records/${document.id}`, "DELETE")).status,
+      ).toBe(200);
+      expect(
+        (await request(`/api/latex/${document.id}/revisions/${revisionId}`))
+          .status,
+      ).toBe(200);
+      expect(
+        await (
+          await request(`/api/attachments/${jobs[0].pdfAttachmentId}`)
+        ).text(),
+      ).toBe(pdf);
+      expect(
+        (await request(`/api/records/${document.id}/permanent`, "DELETE"))
+          .status,
+      ).toBe(409);
+      await expect(
+        env.DB.prepare("DELETE FROM attachments WHERE id=?")
+          .bind(jobs[0].pdfAttachmentId)
+          .run(),
+      ).rejects.toThrow(/FOREIGN KEY/);
+    } finally {
+      compiler.mockRestore();
+    }
+  });
 });
 
 describe("private records and saving", () => {

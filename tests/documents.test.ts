@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { DEFAULT_PREFERENCES } from "../shared/model";
+import { preferencesSchema } from "../worker/validation";
+import { connectorBackupSchema } from "../worker/connectors/backup";
 import type { Attachment, WorkRecord } from "../shared/model";
 import {
   DOCX_TYPE,
@@ -13,6 +16,32 @@ import {
 } from "../shared/documents";
 import { validateFile } from "../worker/files";
 import { changedLines } from "../src/features/assets/DocumentPreview";
+
+describe("retired editor-link compatibility", () => {
+  it("discards old integration preferences without weakening other preference validation", () => {
+    expect(
+      preferencesSchema.parse({
+        ...DEFAULT_PREFERENCES,
+        overleaf: "https://example.com/old-source",
+      }),
+    ).toEqual(DEFAULT_PREFERENCES);
+    expect(
+      preferencesSchema.safeParse({
+        ...DEFAULT_PREFERENCES,
+        unknownPreference: true,
+      }).success,
+    ).toBe(false);
+  });
+  it("accepts old connector archives while dropping retired bookkeeping", () => {
+    expect(
+      connectorBackupSchema.parse({
+        connections: [{ id: "retired-editor", provider: "overleaf" }],
+        sources: [{ connectionId: "retired-editor" }],
+        activities: [{ connectionId: "retired-editor", provider: "overleaf" }],
+      }),
+    ).toEqual({ connections: [], sources: [], activities: [] });
+  });
+});
 
 const record = (id: string, data: WorkRecord["data"] = {}): WorkRecord => ({
   id,
@@ -151,16 +180,16 @@ describe("independent document library", () => {
       }),
     ).toContain("10 MB");
   });
-  it("allows Overleaf links and safe profile destinations, rejecting ambiguous or active URLs", () => {
+  it("preserves generic source URLs and safe profile destinations, rejecting active or credential-bearing URLs", () => {
     expect(
       documentMetadataSchema.safeParse({
-        sourceUrl: "https://www.overleaf.com/project/resume",
+        sourceUrl: "https://example.com/source/resume",
         primaryAttachmentId: "own-file",
       }).success,
     ).toBe(true);
     expect(
       documentMetadataSchema.safeParse({
-        overleaf: "https://www.overleaf.com/login",
+        sourceUrl: "https://user:secret@example.com/source",
       }).success,
     ).toBe(false);
     expect(
