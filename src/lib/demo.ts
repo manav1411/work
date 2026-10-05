@@ -21,6 +21,10 @@ import { recruitmentSteps } from "../../shared/applications";
 import { recordDataError } from "../../shared/record-contract";
 import { demoGoals } from "./demo-goals";
 import {
+  DEMO_SHOWCASE_FILES,
+  demoShowcaseRecords,
+} from "../content/demo-showcase";
+import {
   legacyGoalId,
   legacyMappingReport,
   legacyProjectInput,
@@ -56,6 +60,10 @@ interface DemoState {
     { restored: number; attachments: number; warnings: string[] }
   >;
   connectors?: DemoConnectorState;
+  /** Tracks sample records already added so demo upgrades never overwrite edits. */
+  demoSeedKeys?: string[];
+  /** Keeps a deleted sample attachment from being silently re-added. */
+  demoAttachmentKeys?: string[];
 }
 interface ImportItem {
   sourceId: string;
@@ -79,6 +87,91 @@ export function makeRecord(input: RecordInput): WorkRecord {
     updatedAt: now,
     deletedAt: null,
   };
+}
+
+function base64(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function seedDemoShowcase(
+  state: DemoState,
+  validate: (record: WorkRecord) => void,
+): void {
+  const records = demoShowcaseRecords();
+  const recordByKey = new Map<string, WorkRecord>();
+  for (const record of state.records) {
+    const key = record.data.demoSeedKey;
+    if (typeof key === "string" && key) recordByKey.set(key, record);
+  }
+  const seededKeys = new Set(state.demoSeedKeys ?? []);
+  for (const [key] of recordByKey) seededKeys.add(key);
+  const created: WorkRecord[] = [];
+
+  for (const input of records) {
+    const key = input.data?.demoSeedKey;
+    if (typeof key !== "string" || !key || seededKeys.has(key)) continue;
+    const record = makeRecord(input);
+    state.records.push(record);
+    recordByKey.set(key, record);
+    seededKeys.add(key);
+    created.push(record);
+  }
+
+  for (const record of created) {
+    const data = { ...record.data };
+    const applicationKey = data.demoApplicationSeedKey;
+    const interviewKey = data.demoInterviewSeedKey;
+    const storyKeys = data.storySeedKeys;
+    delete data.demoApplicationSeedKey;
+    delete data.demoInterviewSeedKey;
+    delete data.storySeedKeys;
+    if (typeof applicationKey === "string") {
+      const application = recordByKey.get(applicationKey);
+      if (application) {
+        data.applicationId = application.id;
+        if (record.kind === "interview")
+          record.links = [...new Set([...record.links, application.id])];
+      }
+    }
+    if (typeof interviewKey === "string") {
+      const appointment = recordByKey.get(interviewKey);
+      if (appointment) data.interviewId = appointment.id;
+    }
+    if (Array.isArray(storyKeys))
+      data.storyIds = storyKeys.flatMap((key) => {
+        const story = typeof key === "string" ? recordByKey.get(key) : undefined;
+        return story ? [story.id] : [];
+      });
+    record.data = data;
+  }
+
+  const seededAttachments = new Set(state.demoAttachmentKeys ?? []);
+  for (const file of DEMO_SHOWCASE_FILES) {
+    if (seededAttachments.has(file.attachmentKey)) continue;
+    const record = recordByKey.get(file.recordKey);
+    if (!record || record.deletedAt) continue;
+    const id = crypto.randomUUID();
+    const bytes = new TextEncoder().encode(file.content);
+    const attachment: Attachment = {
+      id,
+      recordId: record.id,
+      filename: file.filename,
+      contentType: file.contentType,
+      size: bytes.byteLength,
+      createdAt: new Date().toISOString(),
+    };
+    state.attachments.push(attachment);
+    state.files[id] = base64(file.content);
+    record.data = { ...record.data, primaryAttachmentId: id };
+    seededAttachments.add(file.attachmentKey);
+  }
+
+  created.forEach(validate);
+  state.demoSeedKeys = [...seededKeys];
+  state.demoAttachmentKeys = [...seededAttachments];
 }
 
 export function createDemoStore() {
@@ -149,6 +242,7 @@ export function createDemoStore() {
     )
       throw new ApiError("Choose this document's file.", 400);
   };
+  seedDemoShowcase(state, validate);
   const validateGoal = (directionId: string) => {
     if (
       directionId &&

@@ -1,15 +1,28 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { Pause, Play, RotateCcw, Settings2 } from "lucide-react";
+import {
+  BellRing,
+  Pause,
+  Play,
+  RotateCcw,
+  Settings2,
+  VolumeX,
+} from "lucide-react";
 import { Button, Field, Input } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import {
   freshTimer,
   pausedTimer,
   restoredTimer,
+  advancedTimer,
   startedTimer,
   timerRemaining,
   type TimerState,
 } from "./timer";
+import {
+  startPomodoroAlarm,
+  stopPomodoroAlarm,
+  unlockPomodoroAudio,
+} from "./pomodoro-audio";
 
 interface TimerStore {
   state: TimerState;
@@ -65,7 +78,7 @@ export function Pomodoro() {
       const at = Date.now();
       setNow(at);
       if (timerRemaining(store.state, at) === 0)
-        commit(key, store, pausedTimer(store.state, at));
+        commit(key, store, advancedTimer(store.state, at));
     };
     tick();
     const interval = window.setInterval(tick, 500);
@@ -90,6 +103,10 @@ export function Pomodoro() {
     window.addEventListener("storage", sync);
     return () => window.removeEventListener("storage", sync);
   }, [key, store]);
+  useEffect(() => {
+    if (state.alerting) startPomodoroAlarm();
+    else stopPomodoroAlarm();
+  }, [state.alerting]);
   const remaining = timerRemaining(state, now);
   const seconds = Math.ceil(remaining / 1000);
   const label = `${Math.floor(seconds / 60)
@@ -147,11 +164,6 @@ export function Pomodoro() {
         >
           {label}
         </output>
-        {remaining === 0 && (
-          <span className="learn-timer-complete" role="status">
-            Complete
-          </span>
-        )}
       </div>
       <div className="learn-timer-controls">
         <Button
@@ -160,6 +172,7 @@ export function Pomodoro() {
           aria-label={state.endsAt === null ? "Start timer" : "Pause timer"}
           onClick={() => {
             setNow(Date.now());
+            if (state.endsAt === null) unlockPomodoroAudio();
             commit(
               key,
               store,
@@ -191,6 +204,28 @@ export function Pomodoro() {
           <Settings2 size={16} />
         </Button>
       </div>
+      {state.alerting && (
+        <div className="learn-timer-alarm" role="alert">
+          <span className="learn-timer-alarm-copy">
+            <BellRing size={15} aria-hidden="true" />
+            {state.phase === "break"
+              ? "Focus complete — break time."
+              : "Break complete — focus time."}
+          </span>
+          <Button
+            variant="secondary"
+            className="learn-timer-dismiss"
+            aria-label="Turn off timer alert"
+            onClick={() => {
+              stopPomodoroAlarm();
+              commit(key, store, { ...store.state, alerting: false });
+            }}
+          >
+            <VolumeX size={14} aria-hidden="true" />
+            Turn off sound
+          </Button>
+        </div>
+      )}
       {editing && (
         <form
           className="learn-timer-settings"

@@ -344,6 +344,8 @@
 .application-notes-preview {
   display: block;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -353,6 +355,14 @@
   max-height: none;
   text-align: left;
   align-items: flex-start;
+}
+.application-notes-preview > span {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .radar-notes-preview {
   position: relative;

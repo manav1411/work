@@ -19,11 +19,9 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   });
   await page.goto("/learn?problem=binary-search");
   await expect(
-    page.getByRole("heading", { name: "DSA & Python roadmap", exact: true }),
+    page.getByRole("heading", { name: "Roadmap", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("heading", { name: "150 problem roadmap", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".learn-roadmap")).toContainText("/150");
   await expect(
     page.getByRole("button", { name: "Weeks", exact: true }),
   ).toHaveCount(0);
@@ -39,7 +37,7 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   await expect(
     popover.getByRole("link", { name: "Binary Search", exact: true }),
   ).toHaveAttribute("href", "https://leetcode.com/problems/binary-search/");
-  await expect(popover.getByLabel("Confirmed solve")).toHaveCount(1);
+  await expect(popover.getByLabel("Solved")).toHaveCount(1);
   expect(sourceRequests).toEqual([]);
 });
 
@@ -170,7 +168,7 @@ test("Pomodoro pauses, persists through reload, and settings remain usable", asy
   page,
 }) => {
   await page.goto("/learn");
-  const timer = page.locator(".learn-context-bar .learn-pomodoro");
+  const timer = page.locator(".learn-pomodoro").first();
   await timer.getByRole("button", { name: "Start timer", exact: true }).click();
   await expect(
     timer.getByRole("button", { name: "Pause timer", exact: true }),
@@ -193,7 +191,7 @@ test("Pomodoro pauses, persists through reload, and settings remain usable", asy
   await expect(timer.getByLabel("Break time remaining")).toHaveText("07:00");
 });
 
-test("an expired saved timer finishes accurately after a background interval", async ({
+test("an expired saved timer immediately starts the next phase and sounds an alert", async ({
   page,
 }) => {
   await page.goto("/learn");
@@ -207,10 +205,17 @@ test("an expired saved timer finishes accurately after a background interval", a
     localStorage.setItem(key, JSON.stringify(state));
   });
   await page.reload();
-  await expect(page.getByLabel("Pomodoro time remaining")).toHaveText("00:00");
-  await expect(page.getByText("Complete", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Break time remaining")).not.toHaveText("00:00");
+  await expect(page.locator(".learn-timer-alarm")).toContainText(
+    "Focus complete",
+  );
   await expect(
-    page.getByRole("button", { name: "Start timer", exact: true }),
+    page.getByRole("button", { name: "Pause timer", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Turn off timer alert" }).click();
+  await expect(page.locator(".learn-timer-alarm")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Pause timer", exact: true }),
   ).toBeVisible();
 });
 

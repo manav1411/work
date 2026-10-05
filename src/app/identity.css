@@ -76,7 +76,7 @@
   align-items: center;
   overflow-x: auto;
   scrollbar-width: none;
-  padding: 3px 4px 6px 0;
+  padding: 7px 8px 9px;
   margin: 0 0 22px;
 }
 .section-tabs.section-tabs::-webkit-scrollbar {
@@ -98,6 +98,11 @@
   box-shadow: 2px 2px 0 var(--shadow-colour);
   font-size: 13px;
   font-weight: 700;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.section-tabs.section-tabs > button:not(:disabled):hover {
+  transform: translate(-1px, -2px);
+  box-shadow: 4px 5px 0 var(--shadow-colour);
 }
 .section-tabs.section-tabs
   > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) {
@@ -105,6 +110,20 @@
   color: #fff;
 }
 .section-tabs.section-tabs > button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.editable-tabs.editable-tabs {
+  padding: 7px 8px 9px;
+}
+.editable-tabs.editable-tabs > .sortable-item > .editable-tab {
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.editable-tabs.editable-tabs > .sortable-item > .editable-tab:hover {
+  transform: translate(-1px, -2px);
+  box-shadow: 4px 5px 0 var(--shadow-colour);
+}
+.editable-tabs.editable-tabs > .sortable-item > .editable-tab:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 3px;
 }
@@ -156,6 +175,13 @@
 .action-card .card-hit-target:focus-visible::after {
   outline: 2px solid var(--ink);
   outline-offset: 4px;
+}
+.document-link-card {
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+.document-link-card:has(> .document-link-primary[href]:hover) {
+  transform: translate(-1px, -2px);
+  box-shadow: 4px 5px 0 var(--shadow-colour);
 }
 .action-card:has(.card-hit-target:hover) {
   box-shadow: 4px 4px 0 var(--shadow-colour);
@@ -319,11 +345,12 @@
 .work-symbol .brand-arrow,
 .signin-mark .brand-arrow {
   display: inline-flex;
-  width: 0.82em;
-  height: 0.82em;
+  width: 1.05em;
+  height: 1.05em;
   color: var(--blue);
   animation: brand-arrow-colours 12s ease-in-out infinite;
   vertical-align: baseline;
+  transform: none;
   filter: none;
 }
 .brand-arrow svg {

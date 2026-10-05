@@ -202,7 +202,7 @@ function RoadmapGraph({
             <strong>{item.label}</strong>
             <span>
               {personalised
-                ? `${item.problems.filter((problem) => solved.has(problem.slug)).length}/${item.problems.length} confirmed`
+                ? `${item.problems.filter((problem) => solved.has(problem.slug)).length}/${item.problems.length}`
                 : `${item.problems.length} problems`}
             </span>
           </button>
@@ -262,7 +262,7 @@ export default function Roadmap({ solved, personalised, initialTopic }: Props) {
     () => [...roadmapTopics].sort((a, b) => a.row - b.row || a.col - b.col),
     [],
   );
-  const confirmed = roadmapTopics
+  const solvedCount = roadmapTopics
     .flatMap((topic) => topic.problems)
     .filter((problem) => solved.has(problem.slug)).length;
   return (
@@ -271,7 +271,7 @@ export default function Roadmap({ solved, personalised, initialTopic }: Props) {
         <h2>Roadmap</h2>
         {personalised && (
           <span>
-            {confirmed}/{roadmapTotalProblems} confirmed
+            {solvedCount}/{roadmapTotalProblems}
           </span>
         )}
       </header>

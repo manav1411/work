@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronUp, FileText, GitFork, Plus } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
@@ -50,10 +50,29 @@ export function AssetsPage() {
   const [application, setApplication] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const pageRef = useRef<HTMLDivElement>(null);
   const documents = documentRecords(records);
   const selected = documents.find(
     (record) => record.id === params.get("record"),
   );
+  useEffect(() => {
+    if (!params.has("record") && !params.has("default")) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      const expanded = pageRef.current?.querySelector(
+        ".document-family-expanded, .document-more-expanded",
+      );
+      if (
+        target instanceof Node &&
+        expanded &&
+        !expanded.contains(target)
+      )
+        setParams({});
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [params, setParams]);
   const applications = records.filter(
     (record) => record.kind === "application" && !record.deletedAt,
   );
@@ -120,7 +139,7 @@ export function AssetsPage() {
     );
   }
   return (
-    <div className="page-stack documents-page">
+    <div className="page-stack documents-page" ref={pageRef}>
       <PageHeader title="Documents" />
       {error && (
         <p className="form-error" role="alert">
@@ -370,13 +389,14 @@ export function AssetsPage() {
                     {selected?.id === record.id && <ChevronUp size={18} />}
                   </span>
                 </button>
-                {deletion(record)}
+                {selected?.id === record.id ? null : deletion(record)}
                 {selected?.id === record.id && (
                   <DocumentViewer
                     inline
                     record={record}
                     title={record.title}
                     onBack={() => setParams({})}
+                    onDelete={editing ? () => setDeleting(record) : undefined}
                   />
                 )}
               </Card>

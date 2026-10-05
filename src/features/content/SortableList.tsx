@@ -7,6 +7,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type Modifier,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -20,6 +21,11 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import { useEditMode } from "../../lib/edit-mode";
 import "./content.css";
+
+const horizontalOnly: Modifier = ({ transform }) => ({
+  ...transform,
+  y: 0,
+});
 
 function SortableItem({
   id,
@@ -121,6 +127,7 @@ export function SortableList<T extends { id: string }>({
   return (
     <DndContext
       sensors={sensors}
+      modifiers={horizontal ? [horizontalOnly] : undefined}
       collisionDetection={closestCenter}
       onDragEnd={(event) => void finish(event)}
     >

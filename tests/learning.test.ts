@@ -24,6 +24,7 @@ import {
   freshTimer,
   pausedTimer,
   restoredTimer,
+  advancedTimer,
   startedTimer,
   timerRemaining,
 } from "../src/features/learn/timer";
@@ -362,7 +363,7 @@ describe("learning foundations and timer", () => {
     ])
       expect(learningUsername(value)).toBe("");
   });
-  it("restores a running timer from its deadline, including elapsed background time", () => {
+  it("keeps a running timer accurate across the focus and break loop", () => {
     const running = startedTimer(freshTimer(), 1000);
     expect(
       timerRemaining(
@@ -370,9 +371,22 @@ describe("learning foundations and timer", () => {
         61_000,
       ),
     ).toBe(24 * 60_000);
-    const finished = restoredTimer(running, 2_000_000);
-    expect(finished.endsAt).toBeNull();
-    expect(timerRemaining(finished)).toBe(0);
+    const breakStarted = advancedTimer(running, 1_501_000);
+    expect(breakStarted.phase).toBe("break");
+    expect(breakStarted.endsAt).toBe(1_801_000);
+    expect(timerRemaining(breakStarted, 1_501_000)).toBe(5 * 60_000);
+    expect(breakStarted.alerting).toBe(true);
+
+    const nextFocus = advancedTimer(breakStarted, 1_801_000);
+    expect(nextFocus.phase).toBe("work");
+    expect(nextFocus.endsAt).toBe(3_301_000);
+    expect(timerRemaining(nextFocus, 1_801_000)).toBe(25 * 60_000);
+
+    const restoredAfterSleep = restoredTimer(running, 2_000_000);
+    expect(restoredAfterSleep.phase).toBe("work");
+    expect(restoredAfterSleep.endsAt).toBe(3_301_000);
+    expect(restoredAfterSleep.alerting).toBe(true);
+    expect(timerRemaining(restoredAfterSleep, 2_000_000)).toBe(1_301_000);
   });
   it("pause/resume preserves remaining duration and invalid stored state recovers", () => {
     const paused = pausedTimer(startedTimer(freshTimer(), 1000), 31_000);

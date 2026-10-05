@@ -409,24 +409,27 @@
   width: 100%;
 }
 .document-thumbnail {
-  height: 110px;
+  height: 150px;
   display: grid;
   place-items: center;
   gap: 0.4rem;
-  border-radius: 0;
+  border: 0;
+  border-radius: 10px;
   background: var(--surface-tint);
-  padding: 0.6rem;
+  padding: 0;
   overflow: hidden;
 }
 .document-thumbnail img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  border-radius: inherit;
 }
 .document-thumbnail pre {
   margin: 0;
   width: 100%;
   height: 100%;
+  padding: 0.75rem;
   font-size: 0.65rem;
   white-space: pre-wrap;
   overflow: hidden;
@@ -692,6 +695,21 @@
   align-items: center;
   gap: 0.85rem;
 }
+.document-viewer-toolbar > .inline-actions {
+  align-items: center;
+  gap: 0.55rem;
+}
+.document-viewer-close.button-ghost {
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.document-viewer-close.button-ghost:not(:disabled):hover {
+  background: var(--pink);
+  box-shadow: 2px 2px 0 var(--ink);
+  transform: translate(-1px, -1px);
+}
 .document-viewer-title {
   flex: 1;
   min-width: 180px;
@@ -712,6 +730,14 @@
   border: 0;
   border-radius: 0;
   background: #fff;
+}
+.document-viewer .latex-pdf-preview {
+  width: 100%;
+  flex: 1;
+  min-height: 52dvh;
+  height: 72dvh;
+  border-radius: 11px;
+  overflow: auto;
 }
 .document-viewer:fullscreen .document-preview-frame {
   min-height: calc(100dvh - 110px);
@@ -799,6 +825,10 @@
   }
   .document-preview-frame {
     min-height: 65dvh;
+  }
+  .document-viewer .latex-pdf-preview {
+    min-height: 52dvh;
+    height: 65dvh;
   }
   .document-viewer-placeholder {
     min-height: 50dvh;

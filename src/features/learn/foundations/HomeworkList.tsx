@@ -67,7 +67,7 @@ export default function HomeworkList({
                   problems.filter((problem) => solvedSlugs.has(problem.slug))
                     .length
                 }
-                /{problems.length} confirmed
+                /{problems.length}
               </span>
             )}
           </header>
@@ -80,12 +80,12 @@ export default function HomeworkList({
                     className={confirmed ? "learn-solved" : "muted"}
                     title={
                       confirmed
-                        ? "Confirmed solve"
+                        ? "Solved"
                         : "Not observed in available solve history"
                     }
                   >
                     {confirmed ? (
-                      <CheckCircle2 size={18} aria-label="Confirmed solve" />
+                      <CheckCircle2 size={18} aria-label="Solved" />
                     ) : (
                       <Circle
                         size={18}

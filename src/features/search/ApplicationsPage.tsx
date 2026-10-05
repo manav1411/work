@@ -453,7 +453,7 @@ export function ApplicationsPage() {
                         aria-label={`Open notes for ${record.title}`}
                         onClick={() => setParams({ record: record.id })}
                       >
-                        {record.body || "—"}
+                        <span>{record.body || "—"}</span>
                       </button>
                     </td>
                   </tr>
@@ -502,7 +502,7 @@ export function ApplicationsPage() {
                   <div>
                     <dt>Notes</dt>
                     <dd className="application-notes-preview">
-                      {record.body || "—"}
+                      <span>{record.body || "—"}</span>
                     </dd>
                   </div>
                 </dl>

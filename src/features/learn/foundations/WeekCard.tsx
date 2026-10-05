@@ -64,7 +64,7 @@ export default function WeekCard({
                     progress.solvedSlugs.has(problem.slug),
                   ).length
                 }
-                /{problems.length} confirmed
+                /{problems.length}
               </span>
             )}
             {!!week.tasks?.length && (

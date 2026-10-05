@@ -486,12 +486,6 @@
   line-height: 1.15;
   margin-top: 3px;
 }
-.learn-timer-complete {
-  position: absolute;
-  left: 70px;
-  bottom: 3px;
-  font-size: 9px;
-}
 .learn-timer-controls {
   display: flex;
   gap: 3px;
@@ -502,6 +496,35 @@
   min-height: 30px;
   padding: 6px;
   box-shadow: none;
+}
+.learn-timer-alarm {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--pink);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.learn-timer-alarm-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.learn-timer-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 6px 9px;
+  font-size: 11px;
 }
 .learn-timer-settings {
   flex: 1 1 100%;

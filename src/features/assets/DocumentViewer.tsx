@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, Download, FileText } from "lucide-react";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { ArrowLeft, Download, FileText, Trash2, X } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import {
   documentPreviewKind,
@@ -10,15 +10,19 @@ import { errorMessage } from "../search/domain";
 import { documentBlob, downloadDocumentFile } from "./files";
 import { useDocumentFiles } from "./useDocumentFiles";
 
+const PdfPreview = lazy(() => import("./LatexPdfPreview"));
+
 export function DocumentViewer({
   record,
   title,
   onBack,
+  onDelete,
   inline = false,
 }: {
   record?: WorkRecord;
   title: string;
   onBack: () => void;
+  onDelete?: () => void;
   inline?: boolean;
 }) {
   const {
@@ -101,6 +105,25 @@ export function DocumentViewer({
               <Download size={16} /> Download
             </Button>
           )}
+          {inline && onDelete && (
+            <Button
+              variant="danger"
+              onClick={onDelete}
+              aria-label={`Delete ${title}`}
+            >
+              <Trash2 size={16} /> Delete
+            </Button>
+          )}
+          {inline && (
+            <Button
+              variant="ghost"
+              className="icon-button document-viewer-close"
+              onClick={onBack}
+              aria-label="Close document preview"
+            >
+              <X size={18} />
+            </Button>
+          )}
         </div>
       </div>
       {(error || listError) && (
@@ -129,11 +152,15 @@ export function DocumentViewer({
         blobUrl &&
         file &&
         (documentPreviewKind(file) === "pdf" ? (
-          <iframe
-            className="document-preview-frame"
-            title={`Uploaded copy of ${title}`}
-            src={blobUrl}
-          />
+          <Suspense
+            fallback={
+              <div className="document-viewer-placeholder" role="status">
+                Rendering PDF…
+              </div>
+            }
+          >
+            <PdfPreview url={blobUrl} />
+          </Suspense>
         ) : (
           <div className="document-preview-image">
             <img
