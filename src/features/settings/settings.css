@@ -54,6 +54,8 @@
   padding-top: 17px;
   border-top: 1px solid var(--line);
 }
+.settings-preferences > .field:has(.theme-switch) { align-items: flex-start; }
+.settings-preferences .theme-switch { align-self: flex-start; }
 .settings-destinations {
   display: flex;
   flex-wrap: wrap;

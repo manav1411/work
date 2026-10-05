@@ -191,6 +191,7 @@ function InlineStoryCard({
         input: () => ({
           kind: "story",
           title: ref.current.title,
+          tags: ref.current.tags,
           data: ref.current.data,
         }),
         create,
@@ -224,10 +225,56 @@ function InlineStoryCard({
           ))}
         </div>
       )}
+      {editing && <StoryCompetencies story={story} write={write} />}
       {["situation", "task", "action", "result", "lessons"].map((name) => (
         <StoryField key={name} story={story} name={name} write={write} />
       ))}
     </Card>
+  );
+}
+
+function StoryCompetencies({
+  story,
+  write,
+}: {
+  story: WorkRecord;
+  write: (patch: RecordPatch) => Promise<WorkRecord>;
+}) {
+  const [value, setValue] = useState(story.tags.join(", "));
+  const saved = useRef(story.tags.join(", "));
+  useEffect(() => {
+    const next = story.tags.join(", ");
+    if (next !== saved.current) {
+      saved.current = next;
+      setValue(next);
+    }
+  }, [story.tags]);
+  return (
+    <label className="interview-story-competencies">
+      <span>Competencies</span>
+      <Input
+        aria-label="Story competencies"
+        placeholder="e.g. communication, ownership"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={() => {
+          const tags = [
+            ...new Set(
+              value
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean),
+            ),
+          ];
+          const next = tags.join(", ");
+          if (next === saved.current) return;
+          void write({ tags }).then(() => {
+            saved.current = next;
+          });
+        }}
+      />
+      <small>Separate competencies with commas.</small>
+    </label>
   );
 }
 
@@ -263,6 +310,7 @@ export function StoryBank({
                 const record = await create({
                   kind: "story",
                   title: "Untitled",
+                  tags: [],
                   data: {
                     situation: "",
                     task: "",

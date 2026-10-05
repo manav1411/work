@@ -308,7 +308,12 @@ export function ApplicationsPage() {
                         url={field(company, "careersUrl")}
                         label="Careers"
                       />
-                      <p className="application-notes-preview">
+                      {field(company, "location") && (
+                        <p className="radar-location">
+                          {field(company, "location")}
+                        </p>
+                      )}
+                      <p className="radar-notes-preview">
                         {company.data.radarNotesMigrated
                           ? company.body
                           : radarNotes(company)}
@@ -600,14 +605,6 @@ export function ApplicationsPage() {
                           {record.title}
                         </button>
                         <p>{interviewTime(record, preferences.timezone)}</p>
-                        {field(record, "timezone") &&
-                          field(record, "timezone") !==
-                            preferences.timezone && (
-                            <p className="muted">
-                              Interviewer:{" "}
-                              {interviewTime(record, field(record, "timezone"))}
-                            </p>
-                          )}
                         {field(record, "stepId") && (
                           <p className="muted">
                             {recruitmentSteps(selected.data, true).find(

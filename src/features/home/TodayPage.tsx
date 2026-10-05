@@ -176,7 +176,7 @@ export function TodayPage() {
                 </div>
               )}
               <div className="timeline-axis" />
-              {layout.map(({ item, x, left, lane, cardWidth }) => (
+              {layout.map(({ item, markerX, left, lane, cardWidth }) => (
                 <div
                   key={item.id}
                   className={`timeline-event timeline-${item.kind} ${item.completed ? "is-complete" : ""}`}
@@ -189,7 +189,7 @@ export function TodayPage() {
                   <span
                     className="timeline-event-stem"
                     style={{
-                      left: `${x - left}px`,
+                      left: `${markerX - left}px`,
                       height: `${lane * 100 + 30}px`,
                       top: `-${lane * 100 + 30}px`,
                     }}
@@ -198,7 +198,7 @@ export function TodayPage() {
                     <span
                       className="timeline-event-point"
                       style={{
-                        left: `${x - left - 8}px`,
+                        left: `${markerX - left - 8}px`,
                         top: `${-38 - lane * 100}px`,
                       }}
                     />
@@ -226,7 +226,7 @@ export function TodayPage() {
                 return (
                   <button
                     key={goal.id}
-                    className={`timeline-goal-span timeline-span-tone-${index % 4} ${progress.complete ? "is-complete" : ""}`}
+                    className={`timeline-goal-span ${progress.complete ? "is-complete" : ""}`}
                     style={{
                       left: `${left}%`,
                       width: `${Math.max(3, right - left)}%`,

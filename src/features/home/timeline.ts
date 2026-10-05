@@ -160,13 +160,29 @@ export function timelineLayout(
   const cardWidth = Math.min(180, width * 0.35),
     span = Math.max(1, dayDistance(start, end));
   const lanes: number[] = [];
+  const dateCounts = new Map<string, number>();
+  for (const item of items) dateCounts.set(item.date, (dateCounts.get(item.date) ?? 0) + 1);
+  const dateIndexes = new Map<string, number>();
   return items.map((item) => {
     const x = (dayDistance(start, item.date) / span) * width;
+    const dateIndex = dateIndexes.get(item.date) ?? 0;
+    dateIndexes.set(item.date, dateIndex + 1);
+    const dateCount = dateCounts.get(item.date) ?? 1;
+    const spacing =
+      dateCount > 1
+        ? Math.min(18, 72 / (dateCount - 1), (width - 12) / (dateCount - 1))
+        : 0;
+    const spread = (dateCount - 1) * spacing;
+    const markerStart = Math.max(
+      6,
+      Math.min(width - 6 - spread, x - spread / 2),
+    );
+    const markerX = markerStart + dateIndex * spacing;
     const left = Math.max(0, Math.min(width - cardWidth, x - cardWidth * 0.25));
     let lane = lanes.findIndex((right) => right + 12 <= left);
     if (lane < 0) lane = lanes.length;
     lanes[lane] = left + cardWidth;
-    return { item, x, left, lane, cardWidth };
+    return { item, x, markerX, left, lane, cardWidth };
   });
 }
 export function timelineWeeks(start: string, end: string) {

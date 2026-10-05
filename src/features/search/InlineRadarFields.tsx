@@ -10,7 +10,6 @@ export function radarNotes(record: WorkRecord) {
   return [
     record.body,
     field(record, "reason"),
-    field(record, "location") ? `Location: ${field(record, "location")}` : "",
     field(record, "website") ? `Website: ${field(record, "website")}` : "",
   ]
     .filter(Boolean)
@@ -23,6 +22,7 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
   const initial = {
     title: record.title === "Untitled" ? "" : record.title,
     careersUrl: field(record, "careersUrl"),
+    location: field(record, "location"),
     body: record.data.radarNotesMigrated ? record.body : radarNotes(record),
   };
   const draft = useInlineAutosave(
@@ -32,6 +32,7 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
       const data = RadarCompanyDataSchema.parse({
         ...current.current.data,
         careersUrl: value.careersUrl,
+        location: value.location,
         radarNotesMigrated: true,
       });
       const saved = await update(
@@ -80,6 +81,15 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
           });
           draft.flush();
         }}
+      />
+      <Input
+        aria-label="Location"
+        placeholder="Location (optional)"
+        value={draft.value.location}
+        onChange={(event) =>
+          draft.setValue({ ...draft.value, location: event.target.value })
+        }
+        onBlur={draft.flush}
       />
       <Textarea
         aria-label="Company notes"

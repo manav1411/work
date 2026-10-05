@@ -550,7 +550,7 @@ kbd {
   width: 550px;
   max-height: 88dvh;
   box-shadow: 8px 8px 0 #00000025;
-  overflow: auto;
+  overflow: visible;
 }
 .modal::backdrop {
   background: #10132380;
@@ -562,6 +562,8 @@ kbd {
 }
 .modal-content {
   padding: 28px;
+  max-height: 88dvh;
+  overflow: auto;
 }
 .modal-header {
   display: flex;

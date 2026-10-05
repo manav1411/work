@@ -370,7 +370,8 @@
   border: 0;
   background: var(--paper);
   color: var(--ink);
-  padding: 10px 22px;
+  min-width: 68px;
+  padding: 8px 12px;
   font-weight: 700;
 }
 .theme-switch button[aria-pressed="true"] {

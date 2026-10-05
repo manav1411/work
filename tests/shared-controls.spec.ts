@@ -60,8 +60,8 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
   await page.goto("/settings");
   await page.getByLabel("Display name", { exact: true }).fill("Chosen name");
   await page.getByRole("button", { name: "Dark", exact: true }).click();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".settings-save-status")).toHaveText("Saved");
   await expect(
     page
       .locator(".sidebar")

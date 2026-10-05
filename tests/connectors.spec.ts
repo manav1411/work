@@ -137,7 +137,6 @@ test("clearing the direct LeetCode username prevents retired connector settings 
     page.getByLabel("LeetCode username", { exact: true }),
   ).toHaveValue("previous_handle");
   await page.getByLabel("LeetCode username", { exact: true }).fill("");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator(".settings-save-status")).toHaveText("Saved");
   await page.reload();
   await expect(

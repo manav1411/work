@@ -153,17 +153,15 @@ test("compact preferences persist without altering existing records", async ({
   await page
     .getByLabel("LeetCode username", { exact: true })
     .fill("https://example.com/not-a-profile");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.locator(".toast-error")).toContainText("LeetCode");
+  await expect(page.locator(".settings-save-status")).toHaveText(
+    "Check the LeetCode username.",
+  );
   await page
     .getByLabel("LeetCode username", { exact: true })
     .fill("https://leetcode.com/u/synthetic_engineer/");
-  await page.getByLabel("Reduce motion", { exact: true }).check();
-  await page.getByLabel("Appearance", { exact: true }).selectOption("dark");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(
-    page.getByRole("status", { name: "" }).filter({ hasText: /^Saved$/ }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".settings-save-status")).toHaveText("Saved");
   await page.reload();
   await expect(page.getByLabel("Timezone", { exact: true })).toHaveValue(
     "America/Los_Angeles",
@@ -171,10 +169,6 @@ test("compact preferences persist without altering existing records", async ({
   await expect(
     page.getByLabel("LeetCode username", { exact: true }),
   ).toHaveValue("synthetic_engineer");
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-reduce-motion",
-    "true",
-  );
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   for (const route of [
     "/home",
@@ -189,9 +183,9 @@ test("compact preferences persist without altering existing records", async ({
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   }
   await page.goto("/settings");
-  await page.getByLabel("Appearance", { exact: true }).selectOption("light");
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Light", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator(".settings-save-status")).toHaveText("Saved");
   expect(
     await page.evaluate(
       () => JSON.parse(sessionStorage.getItem("work-demo-v1")!).records,

@@ -292,6 +292,9 @@
 .application-table td {
   overflow-wrap: anywhere;
 }
+.application-table td:last-child {
+  min-width: 0;
+}
 .application-table td strong {
   font-size: 0.9rem;
 }
@@ -314,6 +317,24 @@
   overflow: hidden;
   overflow-wrap: anywhere;
   white-space: pre-line;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  min-height: 2.7em;
+  max-height: 2.7em;
+  text-align: left;
+  align-items: flex-start;
+}
+.radar-notes-preview {
+  position: relative;
+  z-index: 1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.radar-location {
+  color: var(--muted);
   font-size: 0.82rem;
 }
 .application-mobile-cards {

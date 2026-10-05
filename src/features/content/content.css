@@ -151,6 +151,17 @@
 }
 .rich-document-canvas {
   position: relative;
+  min-height: max(64vh, 390px);
+  padding: 22px 26px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.rich-document-canvas > .rich-document-prose {
+  min-height: max(54vh, 320px);
+}
+.rich-document.is-editing .rich-document-canvas {
+  border-color: color-mix(in srgb, var(--blue) 32%, var(--line));
 }
 .rich-document-prose {
   outline: 0;
@@ -160,7 +171,15 @@
 }
 .is-editing .rich-document-prose {
   padding-left: 28px;
-  min-height: 140px;
+}
+@media (max-width: 600px) {
+  .rich-document-canvas {
+    min-height: max(54vh, 300px);
+    padding: 15px 16px;
+  }
+  .rich-document-canvas > .rich-document-prose {
+    min-height: max(43vh, 240px);
+  }
 }
 .rich-document-prose > * {
   margin: 0.6rem 0;

@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { field, type RecordPatch } from "../../../shared/model";
-import { Button, Card, PageHeader } from "../../components/ui";
+import { Button, PageHeader } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
 import { ContentPanel } from "../content/ContentPanel";
@@ -182,7 +182,7 @@ export function InterviewsPage() {
         >
           {tab && (
             <>
-              <Card className="interview-intro">
+              <section className="interview-intro">
                 {editing && tab.key !== "behavioural" && <header className="content-section-heading interview-tab-actions">
                     <DeleteControl
                       label="Delete tab"
@@ -228,7 +228,7 @@ export function InterviewsPage() {
                     }}
                   />
                 )}
-              </Card>
+              </section>
               {tab.key === "behavioural" && <StoryBank />}
             </>
           )}
@@ -244,9 +244,8 @@ export function InterviewsPage() {
                     item.links.includes(record.id)),
               );
               return (
-                <Link
+                <div
                   key={item.id}
-                  to={`/applications?record=${encodeURIComponent(application?.id ?? item.id)}`}
                   className="interview-upcoming-card"
                 >
                   <strong>
@@ -261,7 +260,7 @@ export function InterviewsPage() {
                       field(item, "timezone", preferences.timezone),
                     )}
                   </span>
-                </Link>
+                </div>
               );
             })
           ) : (

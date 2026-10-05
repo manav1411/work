@@ -38,6 +38,13 @@
   gap: 16px;
   margin-bottom: 25px;
 }
+.learn-progress-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.8fr);
+  align-items: stretch;
+  gap: 18px;
+  margin-bottom: 20px;
+}
 .learn-view-controls {
   display: inline-flex;
   gap: 4px;
@@ -416,6 +423,22 @@
   background: var(--paper);
   max-width: 400px;
 }
+.learn-progress-row > .learn-calendar,
+.learn-progress-row > .learn-pomodoro {
+  min-width: 0;
+  min-height: 126px;
+  margin: 0;
+}
+.learn-progress-row > .learn-pomodoro {
+  max-width: none;
+  justify-content: center;
+  gap: 16px;
+  padding: 20px;
+}
+.learn-progress-row .learn-timer-clock {
+  width: 52px;
+  height: 52px;
+}
 .learn-timer-clock {
   width: 39px;
   height: 39px;
@@ -611,13 +634,15 @@
   );
   color: #202128;
 }
+.learn-roadmap-node.learn-roadmap-tone-0,
+.learn-roadmap-list-trigger.learn-roadmap-tone-0,
+.learn-roadmap-list-trigger[aria-expanded="true"].learn-roadmap-tone-0,
 .learn-roadmap-node.learn-roadmap-tone-0 strong,
 .learn-roadmap-node.learn-roadmap-tone-0 span,
 .learn-roadmap-list-trigger.learn-roadmap-tone-0 strong,
 .learn-roadmap-list-trigger.learn-roadmap-tone-0 span {
-  text-shadow:
-    0 0 3px #fff,
-    0 0 3px #fff;
+  color: #fff;
+  text-shadow: none;
 }
 .editable-tabs {
   display: flex;
@@ -748,6 +773,9 @@
   }
 }
 @media (max-width: 850px) {
+  .learn-progress-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .learn-roadmap-graph {
     display: none;
   }
@@ -864,9 +892,11 @@
   margin: 23px 0;
 }
 .learn-editable-topics > .learn-reading-card {
-  padding: 24px;
-  border: 1.5px solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .learn-editable-topics .learn-reading-card > p {
   color: var(--muted);
@@ -877,7 +907,7 @@
 }
 @media (max-width: 600px) {
   .learn-editable-topics > .learn-reading-card {
-    padding: 18px;
+    padding: 2px 0;
   }
   .learn-subject-heading {
     gap: 8px;
@@ -936,8 +966,9 @@
   border-color: #202128;
 }
 .learn-calendar-day.is-today {
-  outline: 2px solid var(--pink);
-  outline-offset: 1px;
+  background: #ffd84a;
+  border-color: #202128;
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px #ffd84a;
 }
 .learn-calendar-day:focus-visible,
 .learn-calendar-day:hover {

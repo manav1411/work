@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ExternalLink, Flame, RefreshCw } from "lucide-react";
+import { Check, ExternalLink, Flame } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLearningData } from "./useLearningData";
 import {
@@ -233,13 +233,6 @@ export default function LeetCodeCalendar() {
           {source.stats.fetchedAt
             ? ` · ${new Date(source.stats.fetchedAt).toLocaleString()}`
             : ""}
-          <button
-            type="button"
-            aria-label="Refresh LeetCode progress"
-            onClick={() => void reload()}
-          >
-            <RefreshCw size={13} />
-          </button>
         </div>
       )}
       {selected && (

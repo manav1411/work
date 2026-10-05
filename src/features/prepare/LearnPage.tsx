@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { Button, Card, PageHeader } from "../../components/ui";
+import { Button, PageHeader } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
 import { CompanyGlyph } from "../../components/CompanyGlyph";
@@ -194,9 +194,6 @@ export function LearnPage() {
       )}
       {track === "dsa" && (
         <>
-          <div className="learn-context-bar">
-            <Pomodoro />
-          </div>
           {learning.error && (
             <div className="learn-source-error" role="alert">
               <span>{learning.error}</span>
@@ -210,7 +207,10 @@ export function LearnPage() {
               </Button>
             </div>
           )}
-          <LeetCodeCalendar />
+          <div className="learn-progress-row">
+            <LeetCodeCalendar />
+            <Pomodoro />
+          </div>
           <Roadmap
             solved={learning.solvedSlugs}
             personalised={learning.configured && Boolean(learning.stats)}
@@ -253,7 +253,7 @@ export function LearnPage() {
         onReorder={(ids) => reorder("topic", ids)}
       >
         {(topic, handle) => (
-          <Card className="learn-reading-card">
+          <section className="learn-reading-card">
             <header className="content-section-heading">
               <h2>
                 {handle}
@@ -297,7 +297,7 @@ export function LearnPage() {
                   : []
               }
             />
-          </Card>
+          </section>
         )}
       </SortableList>
     </div>

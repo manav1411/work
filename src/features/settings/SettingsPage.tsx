@@ -131,6 +131,53 @@ export function SettingsPage() {
     setUsername(leetCodeHandle(preferences.leetcode));
   }, [preferences]);
   useEffect(() => {
+    document.documentElement.dataset.theme = form.theme;
+  }, [form.theme]);
+  useEffect(() => {
+    const handle = leetCodeHandle(username);
+    if (handle && !/^[A-Za-z0-9_-]{1,40}$/.test(handle)) {
+      setSaveStatus("Check the LeetCode username.");
+      return;
+    }
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: form.timezone.trim() }).format();
+    } catch {
+      setSaveStatus("Check the timezone.");
+      return;
+    }
+    const next = {
+      displayName: form.displayName.trim(),
+      timezone: form.timezone.trim(),
+      reducedMotion: preferences.reducedMotion,
+      theme: form.theme,
+      leetcode: handle
+        ? `https://leetcode.com/u/${encodeURIComponent(handle)}/`
+        : "",
+    };
+    if (
+      next.displayName === preferences.displayName &&
+      next.timezone === preferences.timezone &&
+      next.theme === preferences.theme &&
+      next.leetcode === preferences.leetcode
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      setSaveStatus("Saving…");
+      void savePreferences(next).then(
+        () => setSaveStatus("Saved"),
+        (error: unknown) => {
+          setSaveStatus("Could not save");
+          notify(
+            error instanceof Error ? error.message : "Settings could not be saved.",
+            "error",
+          );
+        },
+      );
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [form, username, preferences, savePreferences, notify]);
+  useEffect(() => {
     if (!user) return;
     setEditorDrafts(editorDraftsFor(user.id, records));
     try {
@@ -169,29 +216,6 @@ export function SettingsPage() {
       setBusy("");
     }
   };
-  const save = () =>
-    run("preferences", async () => {
-      try {
-        new Intl.DateTimeFormat("en", {
-          timeZone: form.timezone.trim(),
-        }).format();
-      } catch {
-        throw new Error("Enter a valid timezone, such as Australia/Melbourne.");
-      }
-      const handle = leetCodeHandle(username);
-      if (handle && !/^[A-Za-z0-9_-]{1,40}$/.test(handle))
-        throw new Error("Enter a valid LeetCode username or profile URL.");
-      await savePreferences({
-        displayName: form.displayName.trim(),
-        timezone: form.timezone.trim(),
-        reducedMotion: false,
-        theme: form.theme,
-        leetcode: handle
-          ? `https://leetcode.com/u/${encodeURIComponent(handle)}/`
-          : "",
-      });
-      setSaveStatus("Saved");
-    });
   const exportBackup = () =>
     run("export", async () => {
       await downloadWorkBackup(mode);
@@ -376,30 +400,25 @@ export function SettingsPage() {
               {mode === "demo" ? "Leave demo" : "Sign out"}
             </Button>
           </div>
-          <form
-            className="stack settings-preferences"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void save();
-            }}
-            onChange={() => setSaveStatus("")}
-          >
+          <div className="stack settings-preferences">
             <Field label="Display name">
               <Input
                 value={form.displayName}
                 maxLength={100}
                 placeholder={user?.name || "Your name"}
-                onChange={(event) =>
-                  setForm({ ...form, displayName: event.target.value })
-                }
+                onChange={(event) => {
+                  setSaveStatus("");
+                  setForm({ ...form, displayName: event.target.value });
+                }}
               />
             </Field>
             <Field label="Timezone">
               <Input
                 value={form.timezone}
-                onChange={(event) =>
-                  setForm({ ...form, timezone: event.target.value })
-                }
+                onChange={(event) => {
+                  setSaveStatus("");
+                  setForm({ ...form, timezone: event.target.value });
+                }}
                 list="settings-timezones"
               />
               <datalist id="settings-timezones">
@@ -420,7 +439,11 @@ export function SettingsPage() {
                     type="button"
                     key={theme}
                     aria-pressed={form.theme === theme}
-                    onClick={() => setForm({ ...form, theme })}
+                    onClick={() => {
+                      setSaveStatus("");
+                      document.documentElement.dataset.theme = theme;
+                      setForm({ ...form, theme });
+                    }}
                   >
                     {theme === "light" ? "Light" : "Dark"}
                   </button>
@@ -436,20 +459,16 @@ export function SettingsPage() {
                 autoComplete="off"
                 maxLength={200}
                 onChange={(event) => {
+                  setSaveStatus("");
                   setUsername(event.target.value);
                 }}
                 placeholder="Username or profile URL"
               />
             </Field>
-            <div className="inline-actions">
-              <Button type="submit" disabled={!!busy}>
-                {busy === "preferences" ? "Saving…" : "Save"}
-              </Button>
-              <span className="settings-save-status" role="status">
-                {saveStatus}
-              </span>
-            </div>
-          </form>
+            <span className="settings-save-status" role="status">
+              {saveStatus}
+            </span>
+          </div>
         </Card>
         <Card className="stack" id="recovery">
           <h2>Backup & recovery</h2>

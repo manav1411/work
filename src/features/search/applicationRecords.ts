@@ -88,5 +88,9 @@ export function nextScheduledDate(
 export function interviewTime(record: WorkRecord, timezone: string): string {
   const value = field(record, "startsAt");
   if (!value || Number.isNaN(new Date(value).getTime())) return "Time not set";
-  return `${new Intl.DateTimeFormat("en-AU", { dateStyle: "medium", timeStyle: "short", timeZone: timezone }).format(new Date(value))} · ${timezone}`;
+  return new Intl.DateTimeFormat("en-AU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timezone,
+  }).format(new Date(value));
 }

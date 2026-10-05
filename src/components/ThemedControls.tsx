@@ -107,6 +107,7 @@ export function ThemedSelect({
           className="themed-select-content"
           position="popper"
           sideOffset={5}
+          collisionPadding={12}
         >
           <SelectPrimitive.Viewport>
             {choices.map((choice, index) => (
@@ -225,6 +226,7 @@ export function DateInput({
           <Popover.Content
             ref={calendar}
             sideOffset={6}
+            collisionPadding={12}
             className="themed-calendar"
           >
             <div className="calendar-heading">
