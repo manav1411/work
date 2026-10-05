@@ -32,7 +32,8 @@ function getDocument(records: WorkRecord[], type: DocumentType): DocumentLink {
       (item) =>
         documentUrl(field(item, "sourceUrl")) ||
         documentUrl(field(item, "overleaf")),
-    );
+    ) ||
+    candidates[0];
   if (!record) return { url: "" };
   // A deliberately cleared default must not revive an old preference or duplicate.
   const value =

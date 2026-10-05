@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { WorkRecord } from "../shared/model";
+import { enterEditMode } from "./edit-mode-helper";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
@@ -16,6 +17,7 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
   });
   await page.reload();
+  await enterEditMode(page, "Interviews");
 });
 
 test("behavioural and technical main text persist independently and STAR stories remain reusable", async ({
@@ -194,6 +196,7 @@ test("appointment preparation creates content only on save and references the sa
     return { applicationId, interviewId, storyId };
   });
   await page.goto(`/interviews?interview=${ids.interviewId}`);
+  await enterEditMode(page, "Interviews");
   expect(
     await page.evaluate(
       () =>
@@ -245,6 +248,23 @@ test("appointment preparation creates content only on save and references the sa
   await page
     .getByRole("link", { name: "Appointment details", exact: true })
     .click();
+  const details = page.getByRole("dialog", {
+    name: "Behavioural round",
+    exact: true,
+  });
+  await expect(
+    details.getByRole("button", { name: "Save interview" }),
+  ).toHaveCount(0);
+  const appointmentUrl = page.url();
+  await details
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await enterEditMode(page, "Applications");
+  await page.goto(appointmentUrl);
   const edit = page.getByRole("dialog", {
     name: "Edit interview",
     exact: true,

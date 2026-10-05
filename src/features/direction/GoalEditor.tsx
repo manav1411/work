@@ -265,7 +265,7 @@ export function GoalEditor({
                       type="button"
                       variant="ghost"
                       className="icon-button"
-                      aria-label={`Remove ${milestone.title || "milestone"}`}
+                      aria-label={`Delete ${milestone.title || "milestone"}`}
                       onClick={() =>
                         set({
                           milestones: form.milestones.filter(

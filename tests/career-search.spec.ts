@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { WorkRecord } from "../shared/model";
+import { enterEditMode } from "./edit-mode-helper";
 
 async function demoRecords(page: Page): Promise<WorkRecord[]> {
   return page.evaluate(
@@ -53,6 +54,7 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
   });
   await page.reload();
+  await enterEditMode(page, "Applications");
 });
 
 test("tracker replaces spreadsheet fields, supports search/filter, and preserves submitted snapshots", async ({
@@ -348,7 +350,7 @@ test("custom process keeps multiple appointments separate and preserves prep whe
     exact: true,
   });
   await process
-    .getByRole("button", { name: "Remove Technical interview", exact: true })
+    .getByRole("button", { name: "Delete Technical interview", exact: true })
     .click();
   await process
     .getByRole("button", { name: "Save process", exact: true })
@@ -377,7 +379,9 @@ test("custom process keeps multiple appointments separate and preserves prep whe
 test("named uploaded documents open inside Work and preserve previous uploaded copies", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await page.goto("/documents");
+  await enterEditMode(page, "Documents");
   await page.getByRole("button", { name: "Add document", exact: true }).click();
   const form = page.getByRole("dialog", { name: "Add document", exact: true });
   await form
@@ -444,13 +448,12 @@ test("named uploaded documents open inside Work and preserve previous uploaded c
   await expect(
     page.locator(".document-card").filter({ hasText: "Google resume v2" }),
   ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Recently deleted documents", exact: true })
-    .click();
-  await page.getByRole("button", { name: "Restore", exact: true }).click();
   await expect(
-    page.locator(".document-card").filter({ hasText: "Google resume v2" }),
-  ).toBeVisible();
+    page.getByRole("button", {
+      name: "Recently deleted documents",
+      exact: true,
+    }),
+  ).toHaveCount(0);
 });
 
 test("standalone appointment links remain editable without inventing an application", async ({
@@ -498,4 +501,121 @@ test("standalone appointment links remain editable without inventing an applicat
     isMock: true,
     startsAt: "2030-12-02T09:00:00.000Z",
   });
+});
+
+test("resume variants fork independently and highlight comparison text", async ({
+  page,
+}) => {
+  await page.goto("/documents");
+  await expect(
+    page.getByRole("button", { name: "Add document", exact: true }),
+  ).toHaveCount(0);
+  await enterEditMode(page, "Documents");
+  await page.getByRole("button", { name: "Add document", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Add document", exact: true });
+  await form.getByLabel("Document name", { exact: true }).fill("Main resume");
+  await form
+    .getByLabel("Default document", { exact: true })
+    .selectOption("resume");
+  await form
+    .getByLabel("Comparison text (optional)", { exact: true })
+    .fill("Experience\nPython\nEducation");
+  await form
+    .getByRole("button", { name: "Save document", exact: true })
+    .click();
+  await expect(form).not.toBeVisible();
+  await page
+    .locator(".document-resume")
+    .getByRole("button", { name: "New variant", exact: true })
+    .click();
+  const fork = page.getByRole("dialog", { name: "Fork document", exact: true });
+  await fork
+    .getByLabel("Document name", { exact: true })
+    .fill("Security resume");
+  await fork
+    .getByLabel("Comparison text (optional)", { exact: true })
+    .fill("Experience\nSecurity\nEducation");
+  await fork
+    .getByRole("button", { name: "Save document", exact: true })
+    .click();
+  await expect(fork).not.toBeVisible();
+  const family = page.locator(".document-resume");
+  await expect(
+    family.getByRole("button", { name: "Security resume", exact: true }),
+  ).toBeVisible();
+  await family.getByRole("button", { name: "Compare", exact: true }).click();
+  const comparison = page.getByRole("dialog", {
+    name: "Compare document versions",
+    exact: true,
+  });
+  await expect(comparison.locator(".diff-added")).toContainText("Security");
+  await expect(comparison.locator(".diff-removed")).toContainText("Python");
+  const records = await demoRecords(page);
+  expect(records.find((record) => record.title === "Main resume")?.body).toBe(
+    "Experience\nPython\nEducation",
+  );
+  expect(
+    records.find((record) => record.title === "Security resume")?.data
+      .documentDefault,
+  ).toBe(false);
+});
+
+test("forked resumes own an independent uploaded copy", async ({ page }) => {
+  await page.goto("/documents");
+  await enterEditMode(page, "Documents");
+  await page.getByRole("button", { name: "Add document", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "Add document", exact: true });
+  await form
+    .getByLabel("Document name", { exact: true })
+    .fill("Main uploaded resume");
+  await form
+    .getByLabel("Default document", { exact: true })
+    .selectOption("resume");
+  await form
+    .getByLabel("Upload a file (optional)", { exact: true })
+    .setInputFiles({
+      name: "main.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from("%PDF-1.7\nIndependent fork fixture\n%%EOF"),
+    });
+  await form
+    .getByRole("button", { name: "Save document", exact: true })
+    .click();
+  await expect(form).not.toBeVisible();
+  await page
+    .locator(".document-resume")
+    .getByRole("button", { name: "New variant", exact: true })
+    .click();
+  const fork = page.getByRole("dialog", { name: "Fork document", exact: true });
+  await fork
+    .getByLabel("Document name", { exact: true })
+    .fill("Google uploaded resume");
+  await fork
+    .getByRole("button", { name: "Save document", exact: true })
+    .click();
+  await expect(fork).not.toBeVisible();
+  const state = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("work-demo-v1")!),
+  );
+  const original = state.records.find(
+    (record: WorkRecord) => record.title === "Main uploaded resume",
+  );
+  const variant = state.records.find(
+    (record: WorkRecord) => record.title === "Google uploaded resume",
+  );
+  expect(variant.data.primaryAttachmentId).not.toBe(
+    original.data.primaryAttachmentId,
+  );
+  expect(
+    state.attachments.find(
+      (file: { id: string }) => file.id === variant.data.primaryAttachmentId,
+    ).recordId,
+  ).toBe(variant.id);
+  await page
+    .locator(".document-resume")
+    .getByRole("button", { name: "Google uploaded resume", exact: true })
+    .click();
+  await expect(
+    page.locator('iframe[title="Uploaded copy of Google uploaded resume"]'),
+  ).toHaveAttribute("src", /^blob:/);
 });

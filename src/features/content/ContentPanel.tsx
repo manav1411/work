@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  ExternalLink,
-  Pencil,
-  Plus,
-  RotateCcw,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ExternalLink, Pencil, Plus } from "lucide-react";
 import {
   contentMatches,
   orderedRecords,
@@ -27,6 +20,8 @@ import {
   Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useEditMode } from "../../lib/edit-mode";
+import { CompanyGlyph } from "../../components/CompanyGlyph";
 import { AutosaveNote } from "./AutosaveNote";
 import { DeleteControl } from "./DeleteControl";
 import "./content.css";
@@ -45,6 +40,7 @@ export function ContentPanel({
   seeds?: SeedResource[];
 }) {
   const { records, create, update, remove, notify } = useWorkspace();
+  const { editing } = useEditMode();
   const [editor, setEditor] = useState<{
     kind: "resource" | "note";
     record?: WorkRecord;
@@ -108,9 +104,6 @@ export function ContentPanel({
             : seeds.length + index,
       })),
   ].sort((a, b) => a.order - b.order);
-  const seedOverrides = storedResources.filter(
-    (record) => record.data.hidden && field(record, "seedResourceId"),
-  );
   const perform = async (action: () => Promise<unknown>) => {
     setError("");
     try {
@@ -156,23 +149,26 @@ export function ContentPanel({
     for (const [order, item] of next.entries())
       await update(item.id, { data: { ...item.data, order } });
   };
+  if (!editing && resources.length === 0 && sections.length === 0) return null;
   return (
     <div className="content-panel">
       <header className="content-panel-heading">
         <h3>Resources & notes</h3>
-        <div className="inline-actions">
-          <Button
-            variant="secondary"
-            onClick={() => setEditor({ kind: "resource" })}
-          >
-            <Plus size={15} />
-            Add resource
-          </Button>
-          <Button variant="ghost" onClick={() => setEditor({ kind: "note" })}>
-            <Plus size={15} />
-            Add notes section
-          </Button>
-        </div>
+        {editing && (
+          <div className="inline-actions">
+            <Button
+              variant="secondary"
+              onClick={() => setEditor({ kind: "resource" })}
+            >
+              <Plus size={15} />
+              Add resource
+            </Button>
+            <Button variant="ghost" onClick={() => setEditor({ kind: "note" })}>
+              <Plus size={15} />
+              Add notes section
+            </Button>
+          </div>
+        )}
       </header>
       {error && (
         <p role="alert" className="content-save-error">
@@ -190,116 +186,105 @@ export function ContentPanel({
               target="_blank"
               rel="noopener noreferrer"
             >
-              <strong>{item.title}</strong>
+              <strong>
+                <CompanyGlyph name={item.title} url={item.url} />
+                {item.title}
+              </strong>
               <ExternalLink size={18} />
             </a>
             {item.body && <p>{item.body}</p>}
-            <div className="content-item-actions">
-              <Button
-                variant="ghost"
-                aria-label={`Edit ${item.title}`}
-                onClick={() =>
-                  setEditor({
-                    kind: "resource",
-                    record: item.record,
-                    seed: item.seed,
-                  })
-                }
-              >
-                <Pencil size={14} />
-              </Button>
-              <Button
-                variant="ghost"
-                aria-label={`Move ${item.title} up`}
-                disabled={index === 0}
-                onClick={() => void perform(() => reorderResources(index, -1))}
-              >
-                <ArrowUp size={14} />
-              </Button>
-              <Button
-                variant="ghost"
-                aria-label={`Move ${item.title} down`}
-                disabled={index === resources.length - 1}
-                onClick={() => void perform(() => reorderResources(index, 1))}
-              >
-                <ArrowDown size={14} />
-              </Button>
-              <DeleteControl
-                label={item.seed ? "Hide resource" : "Delete resource"}
-                onDelete={async () => {
-                  if (item.seed) {
-                    if (item.record)
-                      await update(item.record.id, {
-                        data: { ...item.record.data, hidden: true },
-                      });
-                    else {
-                      const input = resourceInput(item, index);
-                      await create({
-                        ...input,
-                        data: { ...input.data, hidden: true },
-                      });
-                    }
-                  } else if (item.record) await remove(item.record.id);
-                  notify(
-                    item.seed
-                      ? "Resource hidden. Restore it below when needed."
-                      : "Resource removed.",
-                  );
-                }}
-              />
-            </div>
+            {editing && (
+              <div className="content-item-actions">
+                <Button
+                  variant="ghost"
+                  aria-label={`Edit ${item.title}`}
+                  onClick={() =>
+                    setEditor({
+                      kind: "resource",
+                      record: item.record,
+                      seed: item.seed,
+                    })
+                  }
+                >
+                  <Pencil size={14} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  aria-label={`Move ${item.title} up`}
+                  disabled={index === 0}
+                  onClick={() =>
+                    void perform(() => reorderResources(index, -1))
+                  }
+                >
+                  <ArrowUp size={14} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  aria-label={`Move ${item.title} down`}
+                  disabled={index === resources.length - 1}
+                  onClick={() => void perform(() => reorderResources(index, 1))}
+                >
+                  <ArrowDown size={14} />
+                </Button>
+                <DeleteControl
+                  label="Delete resource"
+                  onDelete={async () => {
+                    if (item.seed) {
+                      if (item.record)
+                        await update(item.record.id, {
+                          data: { ...item.record.data, hidden: true },
+                        });
+                      else {
+                        const input = resourceInput(item, index);
+                        await create({
+                          ...input,
+                          data: { ...input.data, hidden: true },
+                        });
+                      }
+                    } else if (item.record) await remove(item.record.id);
+                    notify("Resource deleted.");
+                  }}
+                />
+              </div>
+            )}
           </Card>
         ))}
       </div>
-      {seedOverrides.length > 0 && (
-        <Button
-          variant="ghost"
-          onClick={() =>
-            void perform(async () => {
-              for (const record of seedOverrides)
-                await update(record.id, {
-                  data: { ...record.data, hidden: false },
-                });
-            })
-          }
-        >
-          <RotateCcw size={15} />
-          Restore default resources
-        </Button>
-      )}
       {sections.map((section, index) => (
         <Card key={section.id} className="content-section-card">
           <header className="content-section-heading">
             <h3>{section.title}</h3>
-            <div className="content-item-actions">
-              <Button
-                variant="ghost"
-                aria-label={`Rename ${section.title}`}
-                onClick={() => setEditor({ kind: "note", record: section })}
-              >
-                <Pencil size={15} />
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={index === 0}
-                aria-label={`Move ${section.title} up`}
-                onClick={() => void perform(() => reorderSections(index, -1))}
-              >
-                <ArrowUp size={15} />
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={index === sections.length - 1}
-                aria-label={`Move ${section.title} down`}
-                onClick={() => void perform(() => reorderSections(index, 1))}
-              >
-                <ArrowDown size={15} />
-              </Button>
-              <DeleteControl
-                label="Delete section"
-                onDelete={() => remove(section.id)}
-              />
-            </div>
+            {editing && (
+              <div className="content-item-actions">
+                <Button
+                  variant="ghost"
+                  aria-label={`Rename ${section.title}`}
+                  onClick={() => setEditor({ kind: "note", record: section })}
+                >
+                  <Pencil size={15} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={index === 0}
+                  aria-label={`Move ${section.title} up`}
+                  onClick={() => void perform(() => reorderSections(index, -1))}
+                >
+                  <ArrowUp size={15} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={index === sections.length - 1}
+                  aria-label={`Move ${section.title} down`}
+                  onClick={() => void perform(() => reorderSections(index, 1))}
+                >
+                  <ArrowDown size={15} />
+                </Button>
+                <DeleteControl
+                  label="Delete section"
+                  onDelete={() => remove(section.id)}
+                />
+              </div>
+            )}
           </header>
           <AutosaveNote
             record={section}

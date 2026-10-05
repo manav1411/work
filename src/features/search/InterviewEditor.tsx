@@ -1,6 +1,15 @@
 import { useId, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { field, type WorkRecord } from "../../../shared/model";
-import { Button, Field, Input, Modal, Select } from "../../components/ui";
+import {
+  Badge,
+  Button,
+  Field,
+  Input,
+  Markdown,
+  Modal,
+  Select,
+} from "../../components/ui";
 import {
   APPOINTMENT_STATUSES,
   InterviewAppointmentDataSchema,
@@ -11,7 +20,9 @@ import { isoToZonedInput, zonedDateTimeToISO } from "../prepare/helpers";
 import { errorMessage } from "./domain";
 import { useSavingWorkspace as useWorkspace } from "./useSaving";
 import "./applications.css";
-import { applicationCompany } from "./applicationRecords";
+import { applicationCompany, interviewTime } from "./applicationRecords";
+import { CompanyGlyph } from "../../components/CompanyGlyph";
+import { useEditMode } from "../../lib/edit-mode";
 export { associatedInterviews, interviewTime } from "./applicationRecords";
 
 interface InterviewEditorProps {
@@ -24,19 +35,98 @@ interface InterviewEditorProps {
 }
 
 export function InterviewEditor(props: InterviewEditorProps) {
+  const { editing } = useEditMode();
   return (
     <Modal
       open={props.open}
       onClose={props.onClose}
-      title={props.record ? "Edit interview" : "Schedule interview"}
+      title={
+        props.record
+          ? editing
+            ? "Edit interview"
+            : props.record.title
+          : "Schedule interview"
+      }
     >
-      {props.open && (
-        <InterviewForm
-          key={`${props.record?.id || "new"}:${props.record?.version || 0}:${props.applicationId || ""}:${props.stepId || ""}`}
-          {...props}
-        />
-      )}
+      {props.open &&
+        (editing ? (
+          <InterviewForm
+            key={`${props.record?.id || "new"}:${props.record?.version || 0}:${props.applicationId || ""}:${props.stepId || ""}`}
+            {...props}
+          />
+        ) : props.record ? (
+          <InterviewDetails record={props.record} />
+        ) : (
+          <p className="muted">
+            Hold Applications for 3 seconds to enable editing.
+          </p>
+        ))}
     </Modal>
+  );
+}
+
+function InterviewDetails({ record }: { record: WorkRecord }) {
+  const { records, preferences } = useWorkspace();
+  const application = records.find(
+    (item) =>
+      item.kind === "application" &&
+      (item.id === field(record, "applicationId") ||
+        record.links.includes(item.id)),
+  );
+  const company = application ? applicationCompany(application, records) : "";
+  const step = application
+    ? recruitmentSteps(application.data, true).find(
+        (item) => item.id === field(record, "stepId"),
+      )
+    : undefined;
+  return (
+    <div className="stack interview-appointment-details">
+      {application && (
+        <p>
+          <CompanyGlyph name={company} />
+          <strong>{company}</strong>
+          {company ? " · " : ""}
+          {application.title}
+        </p>
+      )}
+      <div className="inline-actions">
+        <Badge tone="blue">{field(record, "status", "Scheduled")}</Badge>
+        {step && <span>{step.title}</span>}
+      </div>
+      <p>{interviewTime(record, preferences.timezone)}</p>
+      {field(record, "timezone") &&
+        field(record, "timezone") !== preferences.timezone && (
+          <p className="muted">
+            Interviewer: {interviewTime(record, field(record, "timezone"))}
+          </p>
+        )}
+      {record.body && <Markdown content={record.body} />}
+      <div className="inline-actions">
+        <Link
+          className="text-link"
+          to={`/interviews?interview=${encodeURIComponent(record.id)}`}
+        >
+          Prepare for interview
+        </Link>
+        {[
+          ["Meeting", field(record, "meetingUrl")],
+          ["Source", field(record, "sourceUrl")],
+        ].map(([label, url]) => {
+          const destination = webDestination(url);
+          return destination ? (
+            <a
+              key={label}
+              className="text-link"
+              href={destination}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {label}
+            </a>
+          ) : null;
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -47,6 +137,7 @@ function InterviewForm({
   onClose,
   onRemoved,
 }: InterviewEditorProps) {
+  const { editing: editMode } = useEditMode();
   const { records, preferences, create, update, remove, pending } =
     useWorkspace();
   const applications = records.filter(
@@ -174,7 +265,7 @@ function InterviewForm({
               .map((step) => (
                 <option key={step.id} value={step.id}>
                   {step.title}
-                  {step.archived ? " · removed step" : ""}
+                  {step.archived ? " · deleted step" : ""}
                 </option>
               ))}
           </Select>
@@ -279,7 +370,7 @@ function InterviewForm({
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        {record && (
+        {record && editMode && (
           <Button
             type="button"
             variant="danger"

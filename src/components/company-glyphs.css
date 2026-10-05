@@ -1,0 +1,21 @@
+.company-glyph {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  flex: 0 0 1.1em;
+  margin-inline-end: 0.45em;
+  vertical-align: -0.16em;
+  background: var(--company-glyph-colour, currentColor);
+  mask: var(--company-glyph-image) center / contain no-repeat;
+}
+.company-glyph-profile {
+  display: inline-block;
+  width: 1.1em;
+  height: 1.1em;
+  margin-inline-end: 0.45em;
+  vertical-align: -0.16em;
+  color: var(--ink);
+}
+[data-theme="dark"] .company-glyph {
+  background: var(--ink);
+}

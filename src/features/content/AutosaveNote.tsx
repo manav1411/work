@@ -9,6 +9,7 @@ import {
   Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useEditMode } from "../../lib/edit-mode";
 import { ApiError } from "../../lib/api";
 import "./content.css";
 
@@ -30,6 +31,7 @@ export function AutosaveNote({
   persist?: (body: string, expectedVersion?: number) => Promise<WorkRecord>;
 }) {
   const { create, update, refresh, user, pending } = useWorkspace();
+  const { editing: editMode } = useEditMode();
   const storageKey = `work-content-draft:${user?.id ?? "anonymous"}:${draftKey}`;
   const starting = record?.body ?? initialBody;
   const [body, setBody] = useState(() => {
@@ -161,14 +163,20 @@ export function AutosaveNote({
   }, [body, create, update, storageKey, state, revision, pending]);
   return (
     <div className="content-note">
-      <div className="content-note-toolbar">
-        <SaveState state={pending > 0 && state === "saved" ? "draft" : state} />
-        <Button variant="ghost" onClick={() => setEditing(!editing)}>
-          {editing ? <Eye size={15} /> : <Pencil size={15} />}
-          {editing ? "Preview" : body ? "Edit notes" : "Write notes"}
-        </Button>
-      </div>
-      {editing ? (
+      {(editMode || state !== "saved" || pending > 0) && (
+        <div className="content-note-toolbar">
+          <SaveState
+            state={pending > 0 && state === "saved" ? "draft" : state}
+          />
+          {editMode && (
+            <Button variant="ghost" onClick={() => setEditing(!editing)}>
+              {editing ? <Eye size={15} /> : <Pencil size={15} />}
+              {editing ? "Preview" : body ? "Edit notes" : "Write notes"}
+            </Button>
+          )}
+        </div>
+      )}
+      {editMode && editing ? (
         <Field
           label={label}
           hint="Markdown supports headings, links, lists and checklists (- [ ]). Changes save automatically."

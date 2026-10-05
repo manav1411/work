@@ -33,6 +33,7 @@ import {
   Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useEditMode } from "../../lib/edit-mode";
 import { useGoals } from "../../lib/goals";
 import { useLearningData } from "../learn/useLearningData";
 import {
@@ -68,6 +69,7 @@ function alternatives(record: WorkRecord | null) {
       : "";
 }
 export function DirectionPage() {
+  const { editing: editMode } = useEditMode();
   const workspace = useWorkspace();
   const model = useGoals();
   const learning = useLearningData();
@@ -165,10 +167,12 @@ export function DirectionPage() {
       <PageHeader
         title="Your Direction"
         action={
-          <Button onClick={() => setGoalEditing(null)}>
-            <Plus size={17} />
-            Add goal
-          </Button>
+          editMode && (
+            <Button onClick={() => setGoalEditing(null)}>
+              <Plus size={17} />
+              Add goal
+            </Button>
+          )
         }
       />
       {(failure || model.error) && (
@@ -244,10 +248,12 @@ export function DirectionPage() {
                   ? "Streams & experience"
                   : "Decisions"}
             </h2>
-            <Button variant="secondary" onClick={() => openNew(kind)}>
-              <Plus size={16} />
-              Add {kind === "rotation" ? "stream" : kind}
-            </Button>
+            {editMode && (
+              <Button variant="secondary" onClick={() => openNew(kind)}>
+                <Plus size={16} />
+                Add {kind === "rotation" ? "stream" : kind}
+              </Button>
+            )}
           </div>
           <div className="direction-grid">
             {directions
@@ -273,14 +279,16 @@ export function DirectionPage() {
                         field(record, "status", "Exploring"),
                       )}
                     </Badge>
-                    <Button
-                      variant="ghost"
-                      className="icon-button"
-                      aria-label={`Edit ${record.title}`}
-                      onClick={() => setEditing(record)}
-                    >
-                      <Pencil size={16} />
-                    </Button>
+                    {editMode && (
+                      <Button
+                        variant="ghost"
+                        className="icon-button"
+                        aria-label={`Edit ${record.title}`}
+                        onClick={() => setEditing(record)}
+                      >
+                        <Pencil size={16} />
+                      </Button>
+                    )}
                   </div>
                   <button
                     className="record-title-button"
@@ -478,42 +486,41 @@ export function DirectionPage() {
                     <ArrowUpRight size={14} />
                   </a>
                 ))}
-            <div className="inline-actions">
-              <Button
-                onClick={() => {
-                  setEditing(selected);
-                  setParams({});
-                }}
-              >
-                Edit {selected.kind === "rotation" ? "stream" : selected.kind}
-              </Button>
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await workspace.remove(selected.id);
+            {editMode && (
+              <div className="inline-actions">
+                <Button
+                  onClick={() => {
+                    setEditing(selected);
                     setParams({});
-                    workspace.notify(
-                      "Direction removed. It remains recoverable in your backup.",
-                      "info",
-                    );
-                  } catch (error) {
-                    setFailure(
-                      error instanceof Error
-                        ? error.message
-                        : "Could not remove direction.",
-                    );
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                <Trash2 size={16} />
-                Remove
-              </Button>
-            </div>
+                  }}
+                >
+                  Edit {selected.kind === "rotation" ? "stream" : selected.kind}
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await workspace.remove(selected.id);
+                      setParams({});
+                      workspace.notify("Direction deleted.", "info");
+                    } catch (error) {
+                      setFailure(
+                        error instanceof Error
+                          ? error.message
+                          : "Could not remove direction.",
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <Trash2 size={16} />
+                  Delete
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </Modal>
@@ -659,41 +666,44 @@ export function DirectionPage() {
                   ? "Reopen"
                   : "Mark complete"}
               </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setGoalEditing(selectedGoal);
-                  setParams({});
-                }}
-              >
-                Edit goal
-              </Button>
-            </div>
-            <details>
-              <summary>Remove goal</summary>
-              <Button
-                variant="danger"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    await model.remove(selectedGoal);
+              {editMode && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setGoalEditing(selectedGoal);
                     setParams({});
-                  } catch (error) {
-                    setFailure(
-                      error instanceof Error
-                        ? error.message
-                        : "Could not remove goal.",
-                    );
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                Remove goal
-              </Button>
-              <p className="muted">Removed goals remain in your backup.</p>
-            </details>
+                  }}
+                >
+                  Edit goal
+                </Button>
+              )}
+            </div>
+            {editMode && (
+              <details>
+                <summary>Delete goal</summary>
+                <Button
+                  variant="danger"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    try {
+                      await model.remove(selectedGoal);
+                      setParams({});
+                    } catch (error) {
+                      setFailure(
+                        error instanceof Error
+                          ? error.message
+                          : "Could not remove goal.",
+                      );
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Delete goal
+                </Button>
+              </details>
+            )}
           </div>
         )}
       </Modal>

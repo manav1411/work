@@ -7,6 +7,7 @@ import {
 import { arrayField, field, type WorkRecord } from "../../../shared/model";
 import { Badge, Button, Card } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useEditMode } from "../../lib/edit-mode";
 import { AutosaveNote } from "../content/AutosaveNote";
 import { ContentPanel } from "../content/ContentPanel";
 import { contentRecordWriter } from "../content/recordWriter";
@@ -24,6 +25,7 @@ export function InterviewPreparation({
   onEditStory: (record?: WorkRecord) => void;
 }) {
   const { records, create, update, preferences } = useWorkspace();
+  const { editing } = useEditMode();
   const prep = interviewPreparation(records, interview);
   const application = records.find(
     (record) =>
@@ -146,12 +148,14 @@ export function InterviewPreparation({
       <section className="interview-selected-stories">
         <header className="content-panel-heading">
           <h3>Stories for this interview</h3>
-          <Button variant="ghost" onClick={() => onEditStory()}>
-            Add a story to your bank
-          </Button>
+          {editing && (
+            <Button variant="ghost" onClick={() => onEditStory()}>
+              Add a story to your bank
+            </Button>
+          )}
         </header>
         {error && <p role="alert">{error}</p>}
-        {stories.length > 0 ? (
+        {editing && stories.length > 0 ? (
           <details className="interview-story-picker">
             <summary>
               Choose from your story bank ({selected.length} selected)
@@ -169,29 +173,33 @@ export function InterviewPreparation({
               </label>
             ))}
           </details>
-        ) : (
+        ) : stories.length === 0 ? (
           <p className="muted">Create a STAR story, then reuse it here.</p>
-        )}
+        ) : null}
         <div className="interview-story-grid">
           {selected.map((id) => {
             const story = stories.find((item) => item.id === id);
             return story ? (
               <Card key={id} className="interview-story-card">
                 <StoryContent story={story} />
-                <Button variant="ghost" onClick={() => onEditStory(story)}>
-                  Edit original story
-                </Button>
+                {editing && (
+                  <Button variant="ghost" onClick={() => onEditStory(story)}>
+                    Edit original story
+                  </Button>
+                )}
               </Card>
             ) : (
               <Card key={id}>
                 <p className="muted">This story is no longer available.</p>
-                <Button
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => void toggleStory(id)}
-                >
-                  Remove reference
-                </Button>
+                {editing && (
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => void toggleStory(id)}
+                  >
+                    Delete reference
+                  </Button>
+                )}
               </Card>
             );
           })}

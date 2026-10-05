@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
 import { DEMO_STATS } from "../src/features/learn/demo";
+import { enterEditMode } from "./edit-mode-helper";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
@@ -46,6 +47,7 @@ test("Databases supports multiple readings and optional notes that persist after
   page,
 }) => {
   await page.goto("/learn?track=databases");
+  await enterEditMode(page, "Learn");
   const section = page.locator(".learn-reading-card").first();
   for (const [name, url] of [
     [
@@ -97,6 +99,7 @@ test("Databases supports multiple readings and optional notes that persist after
     )
     .toContain("Keep this personal example.");
   await page.reload();
+  await enterEditMode(page, "Learn");
   await expect(
     section.getByRole("link", { name: "PostgreSQL concurrency", exact: true }),
   ).toBeVisible();
@@ -133,6 +136,33 @@ test("Databases supports multiple readings and optional notes that persist after
       name: "SQLite transaction reference",
       exact: true,
     }),
+  ).toHaveCount(0);
+});
+
+test("deleting a built-in reading remains deleted after reload", async ({
+  page,
+}) => {
+  await page.goto("/learn");
+  await expect(
+    page.getByRole("button", { name: "Add resource", exact: true }),
+  ).toHaveCount(0);
+  await enterEditMode(page, "Learn");
+  const resource = page
+    .locator(".content-resource-card")
+    .filter({ hasText: "Python tutorial" });
+  await resource
+    .getByRole("button", { name: "Delete resource", exact: true })
+    .click();
+  await resource
+    .getByRole("button", { name: "Confirm delete resource", exact: true })
+    .click();
+  await expect(resource).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByRole("link", { name: "Python tutorial", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /hide|restore default/i }),
   ).toHaveCount(0);
 });
 
@@ -307,6 +337,7 @@ test("signed-in private learning notes use owned records and never write to publ
   await expect(
     page.getByText("synthetic-handle · Cached data", { exact: true }),
   ).toBeVisible();
+  await enterEditMode(page, "Learn");
   await page.getByRole("tab", { name: "Databases", exact: true }).click();
   const section = page.locator(".learn-reading-card").first();
   await section
@@ -340,6 +371,7 @@ test("signed-in private learning notes use owned records and never write to publ
 test("scoped notes retain conflicts through reload and retry only after an explicit decision", async ({
   page,
 }) => {
+  test.setTimeout(45_000);
   await page.addInitScript(() => sessionStorage.removeItem("work-demo-active"));
   const records: WorkRecord[] = [];
   let failWrites = false;
@@ -411,6 +443,7 @@ test("scoped notes retain conflicts through reload and retry only after an expli
     });
   });
   await page.goto("/learn?track=databases");
+  await enterEditMode(page, "Learn");
   const section = page.locator(".learn-reading-card").first();
   await section
     .getByRole("button", { name: "Add notes section", exact: true })

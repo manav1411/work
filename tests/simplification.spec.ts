@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { enterEditMode } from "./edit-mode-helper";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() =>
@@ -15,6 +16,7 @@ test.beforeEach(async ({ page }) => {
     sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
   });
   await page.goto("/direction");
+  await enterEditMode(page, "Your Direction");
 });
 
 test("goal progress persists and explicit completion never fabricates measurements", async ({
@@ -94,9 +96,9 @@ test("dated milestones use actual completion and removing a goal keeps its backu
   await expect(
     page.locator(".goal-card").filter({ hasText: "Release project" }),
   ).toContainText("1 / 2");
-  await detail.locator("summary").filter({ hasText: "Remove goal" }).click();
+  await detail.locator("summary").filter({ hasText: "Delete goal" }).click();
   await detail
-    .getByRole("button", { name: "Remove goal", exact: true })
+    .getByRole("button", { name: "Delete goal", exact: true })
     .click();
   await expect(
     page.locator(".goal-card").filter({ hasText: "Release project" }),
@@ -119,6 +121,7 @@ test("Home has source-linked appointments with scheduling managed in Application
     page.getByRole("button", { name: "Add goal", exact: true }),
   ).toHaveCount(0);
   await page.goto("/applications");
+  await enterEditMode(page, "Applications");
   await page
     .getByRole("button", { name: "New application", exact: true })
     .first()
@@ -158,6 +161,7 @@ test("Home has source-linked appointments with scheduling managed in Application
   await editor
     .getByRole("button", { name: "Save interview", exact: true })
     .click();
+  await page.evaluate(() => sessionStorage.removeItem("work-edit-sections"));
   await page.goto("/home");
   const event = page
     .locator(".timeline-chart .timeline-event button")
@@ -165,6 +169,28 @@ test("Home has source-linked appointments with scheduling managed in Application
   await expect(event).toBeVisible();
   await event.locator(".timeline-event-point").click();
   await expect(page).toHaveURL(/\/applications\?interview=/);
+  const details = page.getByRole("dialog", {
+    name: "Mock appointment",
+    exact: true,
+  });
+  await expect(
+    details.getByRole("link", { name: "Prepare for interview" }),
+  ).toBeVisible();
+  await expect(
+    details.getByRole("button", { name: "Save interview" }),
+  ).toHaveCount(0);
+  const appointmentUrl = page.url();
+  await details
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  // Closing an appointment returns to its application's details. Close that
+  // modal too before interacting with the section navigation.
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Close dialog", exact: true })
+    .click();
+  await enterEditMode(page, "Applications");
+  await page.goto(appointmentUrl);
   editor = page.getByRole("dialog", { name: "Edit interview", exact: true });
   await editor.getByLabel("Date and local time").fill(`${day}T12:00`);
   await editor

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { FileText, Plus, RotateCcw } from "lucide-react";
+import { FileText, Plus, GitFork } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import { documentRecords, documentUrl } from "../../../shared/documents";
 import {
@@ -10,7 +10,8 @@ import {
   Modal,
   PageHeader,
 } from "../../components/ui";
-import { request } from "../../lib/api";
+import { useEditMode } from "../../lib/edit-mode";
+import { DocumentPreview, DocumentComparison } from "./DocumentPreview";
 import { useSavingWorkspace as useWorkspace } from "../search/useSaving";
 import { errorMessage } from "../search/domain";
 import { getDocumentLinks, type DocumentType } from "./documentLinks";
@@ -32,18 +33,22 @@ type DocumentEdit = {
   record?: WorkRecord;
   defaultType?: DocumentType;
   url?: string;
+  forkFrom?: WorkRecord;
 };
 
 export function AssetsPage() {
-  const { records, preferences, remove, restore, pending } = useWorkspace();
+  const { records, preferences, remove, pending } = useWorkspace();
   const [params, setParams] = useSearchParams();
   const defaults = getDocumentLinks(records, preferences);
   const documents = documentRecords(records);
   const [editing, setEditing] = useState<DocumentEdit>();
   const [deleting, setDeleting] = useState<WorkRecord>();
   const [error, setError] = useState("");
-  const [recovery, setRecovery] = useState<WorkRecord[] | null>(null);
-  const [recovering, setRecovering] = useState(false);
+  const { editing: editMode } = useEditMode();
+  const [comparison, setComparison] = useState<{
+    before: string;
+    after: string;
+  }>();
   const selected = documents.find((item) => item.id === params.get("record"));
   const virtual = DEFAULTS.find((item) => item.type === params.get("default"));
   const virtualLink = virtual ? defaults[virtual.key] : undefined;
@@ -58,30 +63,12 @@ export function AssetsPage() {
   function open(record?: WorkRecord, type?: DocumentType) {
     setParams(record ? { record: record.id } : type ? { default: type } : {});
   }
-  async function showRecovery() {
-    setRecovering(true);
-    setError("");
-    try {
-      const response = await request<{ records: WorkRecord[] }>(
-        "/api/records?includeDeleted=true&kind=asset",
-      );
-      setRecovery(
-        response.records.filter(
-          (item) => item.kind === "asset" && !!item.deletedAt,
-        ),
-      );
-    } catch (failure) {
-      setError(errorMessage(failure));
-    } finally {
-      setRecovering(false);
-    }
-  }
   async function deleteDocument() {
     if (!deleting) return;
     try {
       await remove(deleting.id);
       setDeleting(undefined);
-      setRecovery(null);
+
       if (params.get("record") === deleting.id) setParams({});
     } catch (failure) {
       setError(errorMessage(failure));
@@ -103,15 +90,25 @@ export function AssetsPage() {
         key={record?.id || type}
         className={`document-card document-${type || "named"}`}
       >
-        <div className="document-art" aria-hidden="true">
-          <div className="document-paper">
-            <FileText size={38} strokeWidth={1.6} />
-            <i />
-            <i />
-            <i />
+        {!type ? (
+          <button
+            className="document-preview-open"
+            aria-label={`Open ${record?.title}`}
+            onClick={() => open(record)}
+          >
+            {record && <DocumentPreview record={record} />}
+          </button>
+        ) : (
+          <div className="document-art" aria-hidden="true">
+            <div className="document-paper">
+              <FileText size={38} strokeWidth={1.6} />
+              <i />
+              <i />
+              <i />
+            </div>
+            <span className="document-star">✦</span>
           </div>
-          <span className="document-star">✦</span>
-        </div>
+        )}
         <div className="document-card-heading">
           <h2>{record?.title || title}</h2>
           {type && (
@@ -140,14 +137,16 @@ export function AssetsPage() {
                 ? "cover letter"
                 : "document"}
           </Button>
-          <Button
-            variant="ghost"
-            aria-label={`Edit ${record?.title || title}`}
-            onClick={() => edit({ record, defaultType: type, url })}
-          >
-            Edit
-          </Button>
-          {record && (
+          {editMode && (
+            <Button
+              variant="ghost"
+              aria-label={`Edit ${record?.title || title}`}
+              onClick={() => edit({ record, defaultType: type, url })}
+            >
+              Edit
+            </Button>
+          )}
+          {editMode && record && (
             <Button
               variant="ghost"
               aria-label={`Delete ${record.title}`}
@@ -160,6 +159,63 @@ export function AssetsPage() {
             </Button>
           )}
         </div>
+        {type && (
+          <div className="document-variants">
+            {documents
+              .filter(
+                (item) =>
+                  item.id !== record?.id &&
+                  (field(item, "type") === type ||
+                    (type === "letter" &&
+                      field(item, "type") === "cover-letter")),
+              )
+              .map((variant) => (
+                <div className="document-variant-row" key={variant.id}>
+                  <button
+                    className="document-variant-open"
+                    onClick={() => open(variant)}
+                  >
+                    {variant.title}
+                  </button>
+                  {editMode && (
+                    <div className="inline-actions">
+                      <Button
+                        variant="ghost"
+                        aria-label={`Edit ${variant.title}`}
+                        onClick={() => edit({ record: variant })}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        aria-label={`Delete ${variant.title}`}
+                        onClick={() => {
+                          setDeleting(variant);
+                          setError("");
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  )}
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      record &&
+                      setComparison({ before: record.id, after: variant.id })
+                    }
+                  >
+                    Compare
+                  </Button>
+                </div>
+              ))}
+          </div>
+        )}
+        {type && editMode && record && (
+          <Button variant="ghost" onClick={() => edit({ forkFrom: record })}>
+            <GitFork size={16} /> New variant
+          </Button>
+        )}
       </Card>
     );
   }
@@ -197,9 +253,11 @@ export function AssetsPage() {
             title="Documents"
             description="Your documents, uploaded copies and profile links."
             action={
-              <Button onClick={() => edit({})}>
-                <Plus size={18} /> Add document
-              </Button>
+              editMode ? (
+                <Button onClick={() => edit({})}>
+                  <Plus size={18} /> Add document
+                </Button>
+              ) : undefined
             }
           />
           <div className="document-grid">
@@ -212,67 +270,31 @@ export function AssetsPage() {
               ),
             )}
           </div>
-          {documents.some((item) => !defaultIds.has(item.id)) && (
+          {documents.some(
+            (item) =>
+              !defaultIds.has(item.id) &&
+              !["resume", "letter", "cover-letter"].includes(
+                field(item, "type"),
+              ),
+          ) && (
             <section>
               <div className="document-section-heading">
                 <h2>More documents</h2>
               </div>
-              <div className="document-grid">
+              <div className="document-more-grid">
                 {documents
-                  .filter((item) => !defaultIds.has(item.id))
+                  .filter(
+                    (item) =>
+                      !defaultIds.has(item.id) &&
+                      !["resume", "letter", "cover-letter"].includes(
+                        field(item, "type"),
+                      ),
+                  )
                   .map((item) => documentCard(item, item.title))}
               </div>
             </section>
           )}
           <ProfileLinks />
-          <div className="document-recovery">
-            <Button
-              variant="ghost"
-              disabled={recovering}
-              onClick={() => {
-                if (recovery) setRecovery(null);
-                else void showRecovery();
-              }}
-            >
-              <RotateCcw size={16} />{" "}
-              {recovering
-                ? "Loading…"
-                : recovery
-                  ? "Hide deleted documents"
-                  : "Recently deleted documents"}
-            </Button>
-            {recovery && (
-              <Card className="stack">
-                {recovery.length ? (
-                  recovery.map((item) => (
-                    <div className="document-version" key={item.id}>
-                      <strong>{item.title}</strong>
-                      <Button
-                        variant="secondary"
-                        disabled={!!pending}
-                        onClick={() =>
-                          void restore(item.id)
-                            .then(() =>
-                              setRecovery(
-                                (items) =>
-                                  items?.filter(
-                                    (value) => value.id !== item.id,
-                                  ) || null,
-                              ),
-                            )
-                            .catch((failure) => setError(errorMessage(failure)))
-                        }
-                      >
-                        Restore
-                      </Button>
-                    </div>
-                  ))
-                ) : (
-                  <p className="muted">No deleted documents.</p>
-                )}
-              </Card>
-            )}
-          </div>
         </>
       )}
       {error && !editing && !deleting && (
@@ -282,12 +304,23 @@ export function AssetsPage() {
       )}
       <Modal
         open={!!editing}
-        title={editing?.record ? "Edit document" : "Add document"}
+        title={
+          editing?.record
+            ? "Edit document"
+            : editing?.forkFrom
+              ? "Fork document"
+              : "Add document"
+        }
         onClose={() => setEditing(undefined)}
       >
         {editing && (
           <DocumentEditor
-            key={editing.record?.id || editing.defaultType || "new"}
+            key={
+              editing.record?.id ||
+              editing.forkFrom?.id ||
+              editing.defaultType ||
+              "new"
+            }
             {...editing}
             initialUrl={editing.url}
             onClose={() => setEditing(undefined)}
@@ -299,6 +332,62 @@ export function AssetsPage() {
         )}
       </Modal>
       <Modal
+        open={!!comparison}
+        size="large"
+        title="Compare document versions"
+        onClose={() => setComparison(undefined)}
+      >
+        {comparison && (
+          <>
+            <div className="document-comparison-grid">
+              {(["before", "after"] as const).map((side) => (
+                <select
+                  aria-label={
+                    side === "before" ? "Original document" : "Variant document"
+                  }
+                  key={side}
+                  value={comparison[side]}
+                  onChange={(event) =>
+                    setComparison({ ...comparison, [side]: event.target.value })
+                  }
+                >
+                  {documents
+                    .filter(
+                      (item) =>
+                        field(item, "type").replace(
+                          "cover-letter",
+                          "letter",
+                        ) ===
+                        field(
+                          documents.find(
+                            (value) => value.id === comparison.before,
+                          ),
+                          "type",
+                        ).replace("cover-letter", "letter"),
+                    )
+                    .map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.title}
+                      </option>
+                    ))}
+                </select>
+              ))}
+            </div>
+            {documents.find((item) => item.id === comparison.before) &&
+              documents.find((item) => item.id === comparison.after) && (
+                <DocumentComparison
+                  before={documents.find(
+                    (item) => item.id === comparison.before,
+                  )!}
+                  after={documents.find(
+                    (item) => item.id === comparison.after,
+                  )!}
+                />
+              )}
+          </>
+        )}
+      </Modal>
+      <Modal
         open={!!deleting}
         title={`Delete ${deleting?.title || "document"}?`}
         onClose={() => {
@@ -306,8 +395,8 @@ export function AssetsPage() {
         }}
       >
         <p>
-          The document and its uploaded copies can be restored from Recently
-          deleted documents.
+          This removes the document from your workspace. Independent variants
+          remain available.
         </p>
         {error && (
           <p className="form-error" role="alert">

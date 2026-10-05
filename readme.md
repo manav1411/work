@@ -23,7 +23,7 @@ Application outcomes, recruitment step states, and appointment states are distin
 
 Overleaf controls whether its pages can be framed. Its login page blocks cross-origin embedding, so Work uses a large authenticated viewer for uploaded PDFs/images and an external Edit in Overleaf source action. Uploaded PDFs are explicitly uploaded copies, with no live synchronisation claim. Other supported formats, including validated DOCX, are downloadable. The per-file limit is 10 MB.
 
-The prospective TypeSafe/Jev ideas are saved in [jev-ideas.md](jev-ideas.md). No AI API, scraper, email integration, or paid automation is enabled by this change.
+The prospective TypeSafe/Jev ideas are saved in [jev-ideas.md](docs/jev-ideas.md). No AI API, scraper, email integration, or paid automation is enabled by this change.
 
 ## Learning and private content
 

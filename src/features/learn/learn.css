@@ -569,19 +569,23 @@
 }
 .learn-roadmap-node span {
   font-size: 10px;
-  color: var(--muted);
+  color: inherit;
 }
 .learn-roadmap-tone-0 {
-  background: color-mix(in srgb, var(--aqua) 20%, var(--paper));
+  background: var(--blue);
+  color: #fff;
 }
 .learn-roadmap-tone-1 {
-  background: color-mix(in srgb, var(--pink) 17%, var(--paper));
+  background: var(--pink);
+  color: #202128;
 }
 .learn-roadmap-tone-2 {
-  background: color-mix(in srgb, var(--orange) 18%, var(--paper));
+  background: var(--lime);
+  color: #202128;
 }
 .learn-roadmap-tone-3 {
-  background: color-mix(in srgb, var(--lime) 25%, var(--paper));
+  background: var(--aqua);
+  color: #202128;
 }
 .learn-roadmap-selected {
   outline: 2px solid var(--blue);

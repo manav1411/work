@@ -8,25 +8,33 @@ import {
   documentUrl,
   saveDocumentFile,
 } from "../../../shared/documents";
-import { Button, Field, Input, Select } from "../../components/ui";
+import { Button, Field, Input, Select, Textarea } from "../../components/ui";
 import { uploadAttachment } from "../../lib/api";
 import { useWorkspace as useRawWorkspace } from "../../lib/workspace";
 import { useSavingWorkspace as useWorkspace } from "../search/useSaving";
 import { errorMessage } from "../search/domain";
 import type { DocumentType } from "./documentLinks";
-import { downloadDocumentFile, selectDocumentFile } from "./files";
+import {
+  documentBlob,
+  downloadDocumentFile,
+  selectDocumentFile,
+} from "./files";
+import { primaryDocumentFile } from "../../../shared/documents";
+import { getAttachments } from "../../lib/api";
 import { useDocumentFiles } from "./useDocumentFiles";
 
 export function DocumentEditor({
   record,
   defaultType,
   initialUrl = "",
+  forkFrom,
   onSaved,
   onClose,
 }: {
   record?: WorkRecord;
   defaultType?: DocumentType;
   initialUrl?: string;
+  forkFrom?: WorkRecord;
   onSaved: (record: WorkRecord) => void;
   onClose: () => void;
 }) {
@@ -35,6 +43,7 @@ export function DocumentEditor({
   const [savedRecord, setSavedRecord] = useState(record);
   const [name, setName] = useState(
     record?.title ||
+      (forkFrom ? `${forkFrom.title} — variant` : "") ||
       (defaultType === "resume"
         ? "Résumé"
         : defaultType === "letter"
@@ -52,6 +61,10 @@ export function DocumentEditor({
         : "none"),
   );
   const [file, setFile] = useState<File>();
+  const [family, setFamily] = useState(
+    defaultType || field(record || forkFrom, "type", "document"),
+  );
+  const [body, setBody] = useState(record?.body || forkFrom?.body || "");
   const [uploaded, setUploaded] = useState<Attachment>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -75,17 +88,15 @@ export function DocumentEditor({
     try {
       const data = {
         ...workingRecord?.data,
-        type:
-          defaultChoice === "none"
-            ? field(workingRecord, "type", "document")
-            : defaultChoice,
+        type: defaultChoice === "none" ? family : defaultChoice,
         sourceUrl: destination,
         overleaf: destination,
         documentDefault: defaultChoice !== "none",
+        ...(forkFrom ? { forkedFromTitle: forkFrom.title } : {}),
       };
       const next = workingRecord
-        ? await update(workingRecord.id, { title: name.trim(), data })
-        : await create({ kind: "asset", title: name.trim(), data });
+        ? await update(workingRecord.id, { title: name.trim(), body, data })
+        : await create({ kind: "asset", title: name.trim(), body, data });
       setSavedRecord(next);
       if (defaultChoice !== "none") {
         for (const previous of records.filter(
@@ -99,7 +110,24 @@ export function DocumentEditor({
             data: { ...previous.data, documentDefault: false },
           });
       }
-      if (file) {
+      let upload = file;
+      if (
+        !upload &&
+        forkFrom &&
+        !uploaded &&
+        !field(workingRecord, "primaryAttachmentId")
+      ) {
+        const source = primaryDocumentFile(
+          forkFrom,
+          await getAttachments(forkFrom.id),
+        );
+        if (source)
+          upload = new File([await documentBlob(source)], source.filename, {
+            type: source.contentType,
+          });
+        setFile(upload);
+      }
+      if (upload) {
         if (
           next.id.startsWith("offline-") ||
           (workingRecord && next.version <= workingRecord.version) ||
@@ -111,7 +139,7 @@ export function DocumentEditor({
           );
         const attached = await saveDocumentFile(
           {
-            upload: () => uploadAttachment(next.id, file),
+            upload: () => uploadAttachment(next.id, upload!),
             select: (attachment) => selectDocumentFile(next.id, attachment),
           },
           uploaded,
@@ -164,6 +192,33 @@ export function DocumentEditor({
           placeholder="Resume for Google"
         />
       </Field>
+      {forkFrom && (
+        <p className="muted">
+          Independent copy of {forkFrom.title}. Its uploaded file and comparison
+          text are copied; your original stays unchanged. Add a separate
+          Overleaf project link if needed.
+        </p>
+      )}
+      <Field label="Document family">
+        <Select
+          value={family}
+          onChange={(event) => setFamily(event.target.value)}
+        >
+          <option value="document">More documents</option>
+          <option value="resume">Résumé</option>
+          <option value="letter">Cover letter</option>
+        </Select>
+      </Field>
+      <Field
+        label="Comparison text (optional)"
+        hint="Paste the document's text to highlight changes between PDF or DOCX variants. Text uploads are compared directly."
+      >
+        <Textarea
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+          rows={5}
+        />
+      </Field>
       <Field label="Overleaf URL (optional)">
         <Input
           type="url"
@@ -189,7 +244,7 @@ export function DocumentEditor({
             ? "Replace uploaded copy (optional)"
             : "Upload a file (optional)"
         }
-        hint="PDF, DOCX, PNG, JPEG, WebP, GIF, text, Markdown, CSV or JSON · up to 10 MB. PDFs and images open inside Work."
+        hint="PDF, DOCX, PNG, JPEG, WebP, GIF, text, Markdown, CSV or JSON · up to 10 MB. PDFs, images and text open inside Work."
       >
         <Input
           type="file"

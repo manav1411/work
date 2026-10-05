@@ -1,6 +1,6 @@
 :root .button-primary {
-  background: var(--blue);
-  color: #fff;
+  background: var(--pink);
+  color: #202128;
   border: 2px solid var(--ink);
   box-shadow: 3px 3px 0 var(--shadow-colour);
 }
@@ -16,7 +16,7 @@
   color: var(--ink);
 }
 .simple-shell .brand-word > span {
-  color: var(--blue);
+  color: var(--pink);
 }
 .simple-shell .nav-link {
   color: var(--ink);
@@ -56,7 +56,8 @@
   color: var(--muted);
 }
 .simple-shell .mobile-nav > a.active {
-  color: var(--link-colour);
+  color: #fff;
+  background: var(--blue);
 }
 .text-link {
   color: var(--link-colour);
@@ -64,6 +65,105 @@
 .input {
   background: var(--paper);
   color: var(--ink);
+}
+.learn-page .button-primary,
+.interviews-page .button-primary {
+  background: var(--lime);
+}
+.edit-navigation {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.edit-navigation::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--blue) 30%, var(--canvas));
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.edit-navigation.nav-link-active::before,
+.mobile-nav .edit-navigation.active::before {
+  background: #163cc6;
+}
+.edit-navigation.nav-holding::before {
+  animation: navigation-hold 2.75s linear forwards;
+}
+@keyframes navigation-hold {
+  to {
+    transform: scaleX(1);
+  }
+}
+.nav-edit-dot {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  background: var(--lime);
+  border: 1px solid #202128;
+  border-radius: 50%;
+}
+.edit-mode-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0 8px 12px;
+}
+.edit-mode-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 20px;
+  border: 1.5px solid var(--ink);
+  border-radius: 8px;
+  background: var(--lime);
+  color: #202128;
+  font-size: 12px;
+  font-weight: 700;
+}
+.edit-mode-banner button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 4px;
+}
+.timeline-heading h2 {
+  text-decoration-color: var(--pink);
+}
+.timeline-goals h3 {
+  border-left: 5px solid var(--lime);
+  padding-left: 10px;
+}
+.goal-card:nth-child(3n + 2) .goal-progress > span {
+  background: var(--lime);
+}
+.goal-card:nth-child(3n) .goal-progress > span {
+  background: var(--aqua);
+}
+.direction-timeline > section:nth-child(3n + 1) h3 {
+  background: var(--pink);
+}
+.direction-timeline > section:nth-child(3n + 2) h3 {
+  background: var(--lime);
+}
+.radar-card:nth-child(3n + 2) {
+  border-top-color: var(--pink);
+}
+.radar-card:nth-child(3n) {
+  border-top-color: var(--lime);
+}
+@media (prefers-reduced-motion: reduce) {
+  .edit-navigation.nav-holding::before {
+    animation: none;
+    transform: scaleX(1);
+  }
 }
 .timeline-board {
   box-shadow: 5px 5px 0 var(--shadow-colour);

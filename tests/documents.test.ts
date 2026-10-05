@@ -12,6 +12,7 @@ import {
   saveDocumentFile,
 } from "../shared/documents";
 import { validateFile } from "../worker/files";
+import { changedLines } from "../src/features/assets/DocumentPreview";
 
 const record = (id: string, data: WorkRecord["data"] = {}): WorkRecord => ({
   id,
@@ -127,6 +128,12 @@ describe("independent document library", () => {
   });
   it("previews only safe image/PDF formats and offers other files as downloads", () => {
     expect(documentPreviewKind(file("pdf"))).toBe("pdf");
+    expect(documentPreviewKind(file("notes", "resume", "text/markdown"))).toBe(
+      "text",
+    );
+    expect(
+      documentPreviewKind(file("data", "resume", "application/json")),
+    ).toBe("text");
     expect(documentPreviewKind(file("image", "resume", "image/png"))).toBe(
       "image",
     );
@@ -170,6 +177,27 @@ describe("independent document library", () => {
         url: "https://user:password@example.com/",
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("document differences", () => {
+  it("preserves repeated unchanged lines while highlighting changed wording", () => {
+    const diff = changedLines(
+      "Experience\nPython\nPython\nEducation",
+      "Experience\nPython\nSecurity\nEducation",
+    );
+    expect([...diff.removed]).toEqual([2]);
+    expect([...diff.added]).toEqual([2]);
+    expect(diff.truncated).toBe(false);
+  });
+  it("bounds comparison work and reports truncation", () => {
+    const text = Array.from({ length: 501 }, (_, index) => `${index}`).join(
+      "\n",
+    );
+    const diff = changedLines(text, text);
+    expect(diff.before).toHaveLength(500);
+    expect(diff.truncated).toBe(true);
+    expect(diff.added.size).toBe(0);
   });
 });
 

@@ -10,7 +10,6 @@ import {
 } from "react";
 import {
   Link,
-  NavLink,
   Navigate,
   Outlet,
   Route,
@@ -38,6 +37,8 @@ import { field } from "../../shared/model";
 import { Button, EmptyState } from "../components/ui";
 import { jsonRequest, request } from "../lib/api";
 import { useWorkspace } from "../lib/workspace";
+import { EditModeProvider, useEditMode } from "../lib/edit-mode";
+import { EditNavigation } from "./EditNavigation";
 import { TodayPage } from "../features/home/TodayPage";
 import "./shell.css";
 
@@ -330,6 +331,7 @@ function AccountMenu({ className = "" }: { className?: string }) {
 }
 
 function Shell() {
+  const { editing, section, toggleSection } = useEditMode();
   const { pending, error, toasts, dismissToast } = useWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileViewport, setMobileViewport] = useState(
@@ -428,19 +430,16 @@ function Shell() {
         </div>
         <nav aria-label="Main navigation">
           {NAV.map((item) => (
-            <NavLink
-              to={item.to}
-              key={item.to}
-              className={({ isActive }) =>
-                `nav-link ${isActive ? "nav-link-active" : ""}`
-              }
-            >
+            <EditNavigation to={item.to} key={item.to} label={item.label}>
               <item.icon size={19} strokeWidth={1.8} />
               <span>{item.label}</span>
-            </NavLink>
+            </EditNavigation>
           ))}
         </nav>
         <div className="sidebar-bottom">
+          <p className="edit-mode-hint">
+            Hold a section for 3 seconds to edit.
+          </p>
           <AccountMenu />
         </div>
       </aside>
@@ -465,6 +464,16 @@ function Shell() {
           <AccountMenu className="mobile-account" />
         </header>
         <main id="main-content" className="page-container">
+          {editing && (
+            <div className="edit-mode-banner" role="status">
+              <span>
+                Editing {NAV.find((item) => item.to === section)?.label}
+              </span>
+              <button onClick={() => toggleSection(section)}>
+                Done editing
+              </button>
+            </div>
+          )}
           {pending > 0 && (
             <Link className="pending-changes" to="/settings#device-drafts">
               {pending} unsynced change{pending === 1 ? "" : "s"}. Review in
@@ -490,10 +499,10 @@ function Shell() {
         inert={mobileOpen || undefined}
       >
         {NAV.slice(0, 3).map((item) => (
-          <NavLink to={item.to} key={item.to}>
+          <EditNavigation to={item.to} label={item.label} mobile key={item.to}>
             <item.icon size={19} />
             {item.label}
-          </NavLink>
+          </EditNavigation>
         ))}
         <button
           aria-label="More navigation"
@@ -580,7 +589,13 @@ export default function App() {
   if (!user) return <Login />;
   return (
     <Routes>
-      <Route element={<Shell />}>
+      <Route
+        element={
+          <EditModeProvider>
+            <Shell />
+          </EditModeProvider>
+        }
+      >
         <Route index element={<Navigate to="/home" replace />} />
         <Route path="home" element={<TodayPage />} />
         <Route path="learn" element={<LearnPage />} />

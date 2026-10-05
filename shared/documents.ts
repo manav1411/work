@@ -96,8 +96,14 @@ export function primaryDocumentFile(
 
 export function documentPreviewKind(
   file: Attachment,
-): "pdf" | "image" | "download" {
+): "pdf" | "image" | "text" | "download" {
   if (file.contentType === "application/pdf") return "pdf";
+  if (
+    ["text/plain", "text/markdown", "text/csv", "application/json"].includes(
+      file.contentType,
+    )
+  )
+    return "text";
   return ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
     file.contentType,
   )

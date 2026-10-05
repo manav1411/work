@@ -38,7 +38,7 @@ export function DeleteControl({
               }
             }}
           >
-            {busy ? "Removing…" : `Confirm ${label.toLowerCase()}`}
+            {busy ? "Deleting…" : `Confirm ${label.toLowerCase()}`}
           </Button>
           <Button
             variant="ghost"

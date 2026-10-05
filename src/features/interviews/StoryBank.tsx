@@ -14,6 +14,7 @@ import {
   Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useEditMode } from "../../lib/edit-mode";
 import { splitTags } from "../prepare/helpers";
 import { DeleteControl } from "../content/DeleteControl";
 import { storyMatches } from "./domain";
@@ -24,6 +25,7 @@ export function StoryBank({
   onEdit: (record?: WorkRecord) => void;
 }) {
   const { records, create, remove, notify } = useWorkspace();
+  const { editing } = useEditMode();
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState("");
   const [duplicating, setDuplicating] = useState("");
@@ -42,10 +44,12 @@ export function StoryBank({
           <p className="eyebrow">Situation · Task · Action · Result</p>
           <h2>Story bank</h2>
         </div>
-        <Button onClick={() => onEdit()}>
-          <Plus size={16} />
-          Add STAR story
-        </Button>
+        {editing && (
+          <Button onClick={() => onEdit()}>
+            <Plus size={16} />
+            Add STAR story
+          </Button>
+        )}
       </header>
       <div className="interview-story-filters">
         <Input
@@ -73,46 +77,48 @@ export function StoryBank({
               className={`interview-story-card content-tone-${index % 4}`}
             >
               <StoryContent story={story} />
-              <div className="content-item-actions">
-                <Button variant="ghost" onClick={() => onEdit(story)}>
-                  <Pencil size={15} />
-                  Edit
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={!!duplicating}
-                  onClick={async () => {
-                    setDuplicating(story.id);
-                    try {
-                      await create({
-                        kind: "story",
-                        title: `${story.title} (copy)`,
-                        body: story.body,
-                        tags: story.tags,
-                        links: [],
-                        data: { ...story.data },
-                      });
-                      notify("Story duplicated.");
-                    } catch (failure) {
-                      notify(
-                        failure instanceof Error
-                          ? failure.message
-                          : "Story could not be duplicated.",
-                        "error",
-                      );
-                    } finally {
-                      setDuplicating("");
-                    }
-                  }}
-                >
-                  <Copy size={15} />
-                  Duplicate
-                </Button>
-                <DeleteControl
-                  label="Delete story"
-                  onDelete={() => remove(story.id)}
-                />
-              </div>
+              {editing && (
+                <div className="content-item-actions">
+                  <Button variant="ghost" onClick={() => onEdit(story)}>
+                    <Pencil size={15} />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={!!duplicating}
+                    onClick={async () => {
+                      setDuplicating(story.id);
+                      try {
+                        await create({
+                          kind: "story",
+                          title: `${story.title} (copy)`,
+                          body: story.body,
+                          tags: story.tags,
+                          links: [],
+                          data: { ...story.data },
+                        });
+                        notify("Story duplicated.");
+                      } catch (failure) {
+                        notify(
+                          failure instanceof Error
+                            ? failure.message
+                            : "Story could not be duplicated.",
+                          "error",
+                        );
+                      } finally {
+                        setDuplicating("");
+                      }
+                    }}
+                  >
+                    <Copy size={15} />
+                    Duplicate
+                  </Button>
+                  <DeleteControl
+                    label="Delete story"
+                    onDelete={() => remove(story.id)}
+                  />
+                </div>
+              )}
             </Card>
           ))}
         </div>
@@ -176,6 +182,7 @@ export function StoryEditor({
   record?: WorkRecord;
   onClose: () => void;
 }) {
+  const { editing } = useEditMode();
   const { create, update } = useWorkspace();
   const [title, setTitle] = useState(record?.title ?? "");
   const [tags, setTags] = useState(record?.tags.join(", ") ?? "");
@@ -191,6 +198,12 @@ export function StoryEditor({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  if (!editing)
+    return record ? (
+      <Modal open onClose={onClose} title={record.title} size="wide">
+        <StoryContent story={record} />
+      </Modal>
+    ) : null;
   return (
     <Modal
       open

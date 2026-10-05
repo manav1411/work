@@ -17,6 +17,7 @@ import { Button, Card } from "../../components/ui";
 import { errorMessage } from "../search/domain";
 import { documentBlob, downloadDocumentFile } from "./files";
 import { useDocumentFiles } from "./useDocumentFiles";
+import { useEditMode } from "../../lib/edit-mode";
 
 export function DocumentViewer({
   record,
@@ -31,6 +32,7 @@ export function DocumentViewer({
   onBack: () => void;
   onEdit: () => void;
 }) {
+  const { editing } = useEditMode();
   const {
     files,
     loading,
@@ -42,6 +44,7 @@ export function DocumentViewer({
     sourceUrl || field(record, "sourceUrl", field(record, "overleaf")),
   );
   const [blobUrl, setBlobUrl] = useState("");
+  const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -50,11 +53,17 @@ export function DocumentViewer({
     let active = true;
     let objectUrl = "";
     setBlobUrl("");
+    setText("");
     setError("");
     setFileLoading(!!file);
     if (file && documentPreviewKind(file) !== "download")
       void documentBlob(file)
-        .then((blob) => {
+        .then(async (blob) => {
+          if (documentPreviewKind(file) === "text") {
+            const content = await blob.text();
+            if (active) setText(content.slice(0, 200_000));
+            return;
+          }
           objectUrl = URL.createObjectURL(blob);
           if (active) setBlobUrl(objectUrl);
           else URL.revokeObjectURL(objectUrl);
@@ -111,12 +120,14 @@ export function DocumentViewer({
               target="_blank"
               rel="noopener noreferrer"
             >
-              Edit in Overleaf <ArrowUpRight size={16} />
+              Open in Overleaf <ArrowUpRight size={16} />
             </a>
           )}
-          <Button variant="ghost" onClick={onEdit}>
-            Edit document
-          </Button>
+          {editing && (
+            <Button variant="ghost" onClick={onEdit}>
+              Edit document
+            </Button>
+          )}
           {blobUrl && (
             <Button
               variant="ghost"
@@ -178,59 +189,79 @@ export function DocumentViewer({
             />
           </div>
         ))}
-      {!loading && !fileLoading && !blobUrl && !error && !listError && (
-        <Card className="document-viewer-placeholder">
-          <FileText size={46} />
-          <h2>
-            {missing
-              ? "Uploaded copy unavailable"
-              : file
-                ? "Ready to download"
-                : destination
-                  ? "Your Overleaf project"
-                  : "Add your document"}
-          </h2>
-          <p className="muted">
-            {missing
-              ? "Your document details are saved. Upload a new copy or select a previous upload in Edit document."
-              : file
-                ? "This format opens in its own app. Download the file to read or edit it."
-                : destination
-                  ? "Open your source project in Overleaf. Upload its PDF to read it here; replace the uploaded copy when you make changes."
-                  : "Upload a PDF or image to open it here, or save an Overleaf project link."}
-          </p>
-          <div className="inline-actions">
-            {destination && (
-              <a
-                className="button button-primary"
-                href={destination}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open in Overleaf <ArrowUpRight size={17} />
-              </a>
+      {!loading &&
+        !fileLoading &&
+        file &&
+        documentPreviewKind(file) === "text" &&
+        !error && (
+          <>
+            <pre className="document-preview-text">{text}</pre>
+            {text.length >= 200_000 && (
+              <p className="muted">
+                Preview shows the first 200,000 characters. Download the file
+                for its full contents.
+              </p>
             )}
-            {file ? (
-              <Button
-                onClick={() =>
-                  void downloadDocumentFile(file).catch((failure) =>
-                    setError(errorMessage(failure)),
-                  )
-                }
-              >
-                <Download size={17} /> Download file
-              </Button>
-            ) : (
-              <Button
-                variant={destination ? "secondary" : "primary"}
-                onClick={onEdit}
-              >
-                <Upload size={17} /> Upload PDF or file
-              </Button>
-            )}
-          </div>
-        </Card>
-      )}
+          </>
+        )}
+      {!loading &&
+        !fileLoading &&
+        !blobUrl &&
+        !(file && documentPreviewKind(file) === "text") &&
+        !error &&
+        !listError && (
+          <Card className="document-viewer-placeholder">
+            <FileText size={46} />
+            <h2>
+              {missing
+                ? "Uploaded copy unavailable"
+                : file
+                  ? "Ready to download"
+                  : destination
+                    ? "Your Overleaf project"
+                    : "Add your document"}
+            </h2>
+            <p className="muted">
+              {missing
+                ? "Your document details are saved. Upload a new copy or select a previous upload in Edit document."
+                : file
+                  ? "This format opens in its own app. Download the file to read or edit it."
+                  : destination
+                    ? "Open your source project in Overleaf. Upload its PDF to read it here; replace the uploaded copy when you make changes."
+                    : "Upload a PDF or image to open it here, or save an Overleaf project link."}
+            </p>
+            <div className="inline-actions">
+              {destination && (
+                <a
+                  className="button button-primary"
+                  href={destination}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open in Overleaf <ArrowUpRight size={17} />
+                </a>
+              )}
+              {file ? (
+                <Button
+                  onClick={() =>
+                    void downloadDocumentFile(file).catch((failure) =>
+                      setError(errorMessage(failure)),
+                    )
+                  }
+                >
+                  <Download size={17} /> Download file
+                </Button>
+              ) : editing ? (
+                <Button
+                  variant={destination ? "secondary" : "primary"}
+                  onClick={onEdit}
+                >
+                  <Upload size={17} /> Upload PDF or file
+                </Button>
+              ) : null}
+            </div>
+          </Card>
+        )}
     </div>
   );
 }

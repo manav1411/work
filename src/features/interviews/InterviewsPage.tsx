@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Pencil, Plus, RotateCcw } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { field, type WorkRecord } from "../../../shared/model";
 import {
@@ -11,6 +11,7 @@ import {
   PageHeader,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useEditMode } from "../../lib/edit-mode";
 import { AutosaveNote } from "../content/AutosaveNote";
 import { ContentPanel } from "../content/ContentPanel";
 import { DeleteControl } from "../content/DeleteControl";
@@ -21,6 +22,7 @@ import { StoryBank, StoryEditor } from "./StoryBank";
 import "./interviews.css";
 
 export function InterviewsPage() {
+  const { editing } = useEditMode();
   const { records, create, update, remove, preferences } = useWorkspace();
   const [params, setParams] = useSearchParams();
   const tabs = interviewTabs(records);
@@ -36,9 +38,6 @@ export function InterviewsPage() {
   const [error, setError] = useState("");
   const tabRef = useRef<HTMLDivElement>(null);
   const upcoming = upcomingInterviews(records);
-  const hiddenTabs = interviewTabs(records, true).filter(
-    (item) => item.record?.data.hidden,
-  );
   useEffect(() => {
     const requested = params.get("record");
     const story = records.find(
@@ -86,10 +85,12 @@ export function InterviewsPage() {
         title="Interviews"
         description="Keep your principles, stories and round-specific preparation together."
         action={
-          <Button onClick={() => setTabEditor("new")}>
-            <Plus size={16} />
-            Add tab
-          </Button>
+          editing && (
+            <Button onClick={() => setTabEditor("new")}>
+              <Plus size={16} />
+              Add tab
+            </Button>
+          )
         }
       />
       <div
@@ -165,43 +166,45 @@ export function InterviewsPage() {
               <Card className="interview-intro">
                 <header className="content-section-heading">
                   <h2>{tab.title}</h2>
-                  <div className="content-item-actions">
-                    <Button
-                      variant="ghost"
-                      aria-label={`Rename ${tab.title}`}
-                      onClick={() => setTabEditor(tab)}
-                    >
-                      <Pencil size={15} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={tabs.indexOf(tab) === 0}
-                      aria-label={`Move ${tab.title} left`}
-                      onClick={() =>
-                        void perform(() => reorder(tabs.indexOf(tab), -1))
-                      }
-                    >
-                      <ArrowUp size={15} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={tabs.indexOf(tab) === tabs.length - 1}
-                      aria-label={`Move ${tab.title} right`}
-                      onClick={() =>
-                        void perform(() => reorder(tabs.indexOf(tab), 1))
-                      }
-                    >
-                      <ArrowDown size={15} />
-                    </Button>
-                    <DeleteControl
-                      label={tab.key ? "Hide tab" : "Delete tab"}
-                      onDelete={async () => {
-                        if (tab.key) await saveTabData(tab, { hidden: true });
-                        else if (tab.record) await remove(tab.record.id);
-                        setParams({});
-                      }}
-                    />
-                  </div>
+                  {editing && (
+                    <div className="content-item-actions">
+                      <Button
+                        variant="ghost"
+                        aria-label={`Rename ${tab.title}`}
+                        onClick={() => setTabEditor(tab)}
+                      >
+                        <Pencil size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={tabs.indexOf(tab) === 0}
+                        aria-label={`Move ${tab.title} left`}
+                        onClick={() =>
+                          void perform(() => reorder(tabs.indexOf(tab), -1))
+                        }
+                      >
+                        <ArrowUp size={15} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={tabs.indexOf(tab) === tabs.length - 1}
+                        aria-label={`Move ${tab.title} right`}
+                        onClick={() =>
+                          void perform(() => reorder(tabs.indexOf(tab), 1))
+                        }
+                      >
+                        <ArrowDown size={15} />
+                      </Button>
+                      <DeleteControl
+                        label="Delete tab"
+                        onDelete={async () => {
+                          if (tab.key) await saveTabData(tab, { hidden: true });
+                          else if (tab.record) await remove(tab.record.id);
+                          setParams({});
+                        }}
+                      />
+                    </div>
+                  )}
                 </header>
                 <AutosaveNote
                   key={tab.id}
@@ -235,23 +238,6 @@ export function InterviewsPage() {
             <Card>
               <p>Add a preparation tab to begin.</p>
             </Card>
-          )}
-          {hiddenTabs.length > 0 && (
-            <Button
-              variant="ghost"
-              onClick={() =>
-                void perform(async () => {
-                  for (const item of hiddenTabs)
-                    if (item.record)
-                      await update(item.record.id, {
-                        data: { ...item.record.data, hidden: false },
-                      });
-                })
-              }
-            >
-              <RotateCcw size={15} />
-              Restore default tabs
-            </Button>
           )}
           {params.has("interview") && !interview && (
             <p role="alert">

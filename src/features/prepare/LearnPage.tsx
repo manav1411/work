@@ -6,7 +6,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  RotateCcw,
 } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { learningUsername } from "../../../shared/learning";
@@ -20,6 +19,7 @@ import {
   Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useEditMode } from "../../lib/edit-mode";
 import { Pomodoro } from "../learn/Pomodoro";
 import { useLearningData } from "../learn/useLearningData";
 import Roadmap from "../learn/foundations/Roadmap";
@@ -35,6 +35,7 @@ import { DeleteControl } from "../content/DeleteControl";
 import "../learn/learn.css";
 
 export function LearnPage() {
+  const { editing } = useEditMode();
   const { records, preferences, mode, create, update, remove } = useWorkspace();
   const learning = useLearningData();
   const [params, setParams] = useSearchParams();
@@ -53,12 +54,6 @@ export function LearnPage() {
     topic.problems.some((problem) => problem.slug === params.get("problem")),
   )?.id;
   const topics = learningTopics(records, track);
-  const hiddenTopics = learningTopics(records, track, true).filter(
-    (item) => item.record?.data.hidden,
-  );
-  const hiddenSubjects = learningSubjects(records, true).filter(
-    (item) => item.record?.data.hidden && item.id !== "dsa",
-  );
   const selectTrack = (id: string) =>
     setParams(id === "dsa" ? {} : { track: id });
   const perform = async (action: () => Promise<unknown>) => {
@@ -109,10 +104,12 @@ export function LearnPage() {
       <PageHeader
         title="Learn"
         action={
-          <Button onClick={() => setEditor({ type: "track" })}>
-            <Plus size={16} />
-            Add topic
-          </Button>
+          editing && (
+            <Button onClick={() => setEditor({ type: "track" })}>
+              <Plus size={16} />
+              Add topic
+            </Button>
+          )
         }
       />
       <div
@@ -172,50 +169,52 @@ export function LearnPage() {
       >
         <div className="learn-subject-heading">
           <p>{subject.description}</p>
-          <div className="content-item-actions">
-            <Button
-              variant="ghost"
-              onClick={() => setEditor({ type: "track", item: subject })}
-            >
-              <Pencil size={15} />
-              Edit topic
-            </Button>
-            <Button
-              variant="ghost"
-              aria-label="Move topic left"
-              disabled={subjects.indexOf(subject) === 0}
-              onClick={() =>
-                void perform(() =>
-                  reorder("track", subjects.indexOf(subject), -1),
-                )
-              }
-            >
-              <ArrowUp size={15} />
-            </Button>
-            <Button
-              variant="ghost"
-              aria-label="Move topic right"
-              disabled={subjects.indexOf(subject) === subjects.length - 1}
-              onClick={() =>
-                void perform(() =>
-                  reorder("track", subjects.indexOf(subject), 1),
-                )
-              }
-            >
-              <ArrowDown size={15} />
-            </Button>
-            {track !== "dsa" && (
-              <DeleteControl
-                label={subject.seedId ? "Hide topic" : "Delete topic"}
-                onDelete={async () => {
-                  if (subject.seedId)
-                    await saveItem("track", subject, { hidden: true });
-                  else if (subject.record) await remove(subject.record.id);
-                  selectTrack("dsa");
-                }}
-              />
-            )}
-          </div>
+          {editing && (
+            <div className="content-item-actions">
+              <Button
+                variant="ghost"
+                onClick={() => setEditor({ type: "track", item: subject })}
+              >
+                <Pencil size={15} />
+                Edit topic
+              </Button>
+              <Button
+                variant="ghost"
+                aria-label="Move topic left"
+                disabled={subjects.indexOf(subject) === 0}
+                onClick={() =>
+                  void perform(() =>
+                    reorder("track", subjects.indexOf(subject), -1),
+                  )
+                }
+              >
+                <ArrowUp size={15} />
+              </Button>
+              <Button
+                variant="ghost"
+                aria-label="Move topic right"
+                disabled={subjects.indexOf(subject) === subjects.length - 1}
+                onClick={() =>
+                  void perform(() =>
+                    reorder("track", subjects.indexOf(subject), 1),
+                  )
+                }
+              >
+                <ArrowDown size={15} />
+              </Button>
+              {track !== "dsa" && (
+                <DeleteControl
+                  label="Delete topic"
+                  onDelete={async () => {
+                    if (subject.seedId)
+                      await saveItem("track", subject, { hidden: true });
+                    else if (subject.record) await remove(subject.record.id);
+                    selectTrack("dsa");
+                  }}
+                />
+              )}
+            </div>
+          )}
         </div>
         {track === "dsa" && (
           <>
@@ -322,7 +321,7 @@ export function LearnPage() {
             />
           </>
         )}
-        {track !== "dsa" && (
+        {editing && track !== "dsa" && (
           <Button
             variant="secondary"
             onClick={() => setEditor({ type: "topic" })}
@@ -336,43 +335,45 @@ export function LearnPage() {
             <Card key={topic.id} className="learn-reading-card">
               <header className="content-section-heading">
                 <h2>{topic.title}</h2>
-                <div className="content-item-actions">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setEditor({ type: "topic", item: topic })}
-                    aria-label={`Edit ${topic.title}`}
-                  >
-                    <Pencil size={15} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={index === 0}
-                    aria-label={`Move ${topic.title} up`}
-                    onClick={() =>
-                      void perform(() => reorder("topic", index, -1))
-                    }
-                  >
-                    <ArrowUp size={15} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={index === topics.length - 1}
-                    aria-label={`Move ${topic.title} down`}
-                    onClick={() =>
-                      void perform(() => reorder("topic", index, 1))
-                    }
-                  >
-                    <ArrowDown size={15} />
-                  </Button>
-                  <DeleteControl
-                    label={topic.seedId ? "Hide section" : "Delete section"}
-                    onDelete={async () => {
-                      if (topic.seedId)
-                        await saveItem("topic", topic, { hidden: true });
-                      else if (topic.record) await remove(topic.record.id);
-                    }}
-                  />
-                </div>
+                {editing && (
+                  <div className="content-item-actions">
+                    <Button
+                      variant="ghost"
+                      onClick={() => setEditor({ type: "topic", item: topic })}
+                      aria-label={`Edit ${topic.title}`}
+                    >
+                      <Pencil size={15} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={index === 0}
+                      aria-label={`Move ${topic.title} up`}
+                      onClick={() =>
+                        void perform(() => reorder("topic", index, -1))
+                      }
+                    >
+                      <ArrowUp size={15} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={index === topics.length - 1}
+                      aria-label={`Move ${topic.title} down`}
+                      onClick={() =>
+                        void perform(() => reorder("topic", index, 1))
+                      }
+                    >
+                      <ArrowDown size={15} />
+                    </Button>
+                    <DeleteControl
+                      label="Delete section"
+                      onDelete={async () => {
+                        if (topic.seedId)
+                          await saveItem("topic", topic, { hidden: true });
+                        else if (topic.record) await remove(topic.record.id);
+                      }}
+                    />
+                  </div>
+                )}
               </header>
               {topic.summary && <p>{topic.summary}</p>}
               <ContentPanel
@@ -398,23 +399,6 @@ export function LearnPage() {
             </Card>
           ))}
         </div>
-        {(hiddenTopics.length > 0 || hiddenSubjects.length > 0) && (
-          <Button
-            variant="ghost"
-            onClick={() =>
-              void perform(async () => {
-                for (const item of [...hiddenSubjects, ...hiddenTopics])
-                  if (item.record)
-                    await update(item.record.id, {
-                      data: { ...item.record.data, hidden: false },
-                    });
-              })
-            }
-          >
-            <RotateCcw size={15} />
-            Restore hidden defaults
-          </Button>
-        )}
       </div>
       {editor && (
         <TopicEditor

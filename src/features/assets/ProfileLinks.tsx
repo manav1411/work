@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { ArrowUpRight, Link2, Plus } from "lucide-react";
+import { ArrowUpRight, Plus } from "lucide-react";
+import { CompanyGlyph } from "../../components/CompanyGlyph";
+import { useEditMode } from "../../lib/edit-mode";
 import { field, type WorkRecord } from "../../../shared/model";
 import { webDestination } from "../../../shared/documents";
 import { Button, Card, Field, Input, Modal } from "../../components/ui";
@@ -20,6 +22,7 @@ type EditingLink = {
 };
 
 export function ProfileLinks() {
+  const { editing: editMode } = useEditMode();
   const {
     records,
     preferences,
@@ -109,15 +112,17 @@ export function ProfileLinks() {
             Your profiles and useful destinations, together.
           </p>
         </div>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            setEditing({ title: "", url: "" });
-            setError("");
-          }}
-        >
-          <Plus size={17} /> Add link
-        </Button>
+        {editMode && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setEditing({ title: "", url: "" });
+              setError("");
+            }}
+          >
+            <Plus size={17} /> Add link
+          </Button>
+        )}
       </div>
       {removed && (
         <div className="document-recovery-notice" role="status">
@@ -153,7 +158,7 @@ export function ProfileLinks() {
             key={item.key || item.record?.id}
             className={`document-link-card document-link-${index % 4}`}
           >
-            <Link2 size={21} />
+            <CompanyGlyph name={item.title} url={item.url} />
             {item.url ? (
               <a href={item.url} target="_blank" rel="noopener noreferrer">
                 {item.title} <ArrowUpRight size={17} />
@@ -161,30 +166,32 @@ export function ProfileLinks() {
             ) : (
               <strong>{item.title}</strong>
             )}
-            <div className="inline-actions">
-              <Button
-                variant="ghost"
-                aria-label={`${item.url ? "Edit" : "Add"} ${item.title} link`}
-                onClick={() => {
-                  setEditing(item);
-                  setError("");
-                }}
-              >
-                {item.url ? "Edit" : "Add link"}
-              </Button>
-              {item.url && (
+            {editMode && (
+              <div className="inline-actions">
                 <Button
                   variant="ghost"
-                  aria-label={`Delete ${item.title} link`}
+                  aria-label={`${item.url ? "Edit" : "Add"} ${item.title} link`}
                   onClick={() => {
-                    setDeleting(item);
+                    setEditing(item);
                     setError("");
                   }}
                 >
-                  Delete
+                  {item.url ? "Edit" : "Add link"}
                 </Button>
-              )}
-            </div>
+                {item.url && (
+                  <Button
+                    variant="ghost"
+                    aria-label={`Delete ${item.title} link`}
+                    onClick={() => {
+                      setDeleting(item);
+                      setError("");
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
+              </div>
+            )}
           </Card>
         ))}
       </div>

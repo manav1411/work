@@ -54,11 +54,14 @@ import {
 import { errorMessage, stageHistory } from "./domain";
 import { useSavingWorkspace as useWorkspace } from "./useSaving";
 import { applicationCompany, applicationContact } from "./applicationRecords";
+import { CompanyGlyph } from "../../components/CompanyGlyph";
+import { useEditMode } from "../../lib/edit-mode";
 import "./applications.css";
 
 export const APPLICATION_STAGES = APPLICATION_STATUSES;
 
 export function ApplicationsPage() {
+  const { editing: editMode } = useEditMode();
   const { records, preferences, remove, restore, pending } = useWorkspace();
   const [params, setParams] = useSearchParams();
   const [editing, setEditing] = useState<WorkRecord | null | undefined>();
@@ -172,12 +175,16 @@ export function ApplicationsPage() {
         title="Applications"
         description="Keep the opportunity, the process, and your next conversation together."
         action={
-          <Button
-            onClick={() => (radar ? setCompanyEditing(null) : newApplication())}
-          >
-            <Plus size={17} />
-            {radar ? "Add company" : "New application"}
-          </Button>
+          editMode ? (
+            <Button
+              onClick={() =>
+                radar ? setCompanyEditing(null) : newApplication()
+              }
+            >
+              <Plus size={17} />
+              {radar ? "Add company" : "New application"}
+            </Button>
+          ) : undefined
         }
       />
       <div
@@ -266,7 +273,7 @@ export function ApplicationsPage() {
               }
               description="Save a company before there is a particular role to apply for."
               action={
-                !companies.length ? (
+                editMode && !companies.length ? (
                   <Button onClick={() => setCompanyEditing(null)}>
                     Add company
                   </Button>
@@ -278,7 +285,13 @@ export function ApplicationsPage() {
               {filteredCompanies.map((company) => (
                 <Card className="radar-card" key={company.id}>
                   <div className="section-heading">
-                    <h3>{company.title}</h3>
+                    <h3>
+                      <CompanyGlyph
+                        name={company.title}
+                        url={field(company, "website") || field(company, "url")}
+                      />
+                      {company.title}
+                    </h3>
                     <Badge tone="blue">On your radar</Badge>
                   </div>
                   {field(company, "location") && (
@@ -305,28 +318,30 @@ export function ApplicationsPage() {
                       Review {niceDate(field(company, "reviewDate"))}
                     </p>
                   )}
-                  <div className="inline-actions radar-actions">
-                    <Button
-                      variant="secondary"
-                      onClick={() => newApplication(company)}
-                    >
-                      <Plus size={15} />
-                      Add application
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setCompanyEditing(company)}
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      aria-label={`Delete ${company.title}`}
-                      onClick={() => setDeleting(company)}
-                    >
-                      <Trash2 size={16} />
-                    </Button>
-                  </div>
+                  {editMode && (
+                    <div className="inline-actions radar-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => newApplication(company)}
+                      >
+                        <Plus size={15} />
+                        Add application
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => setCompanyEditing(company)}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        aria-label={`Delete ${company.title}`}
+                        onClick={() => setDeleting(company)}
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  )}
                 </Card>
               ))}
             </div>
@@ -345,7 +360,7 @@ export function ApplicationsPage() {
               : "Your application spreadsheet, with room for the whole process."
           }
           action={
-            !applications.length ? (
+            editMode && !applications.length ? (
               <Button onClick={() => newApplication()}>New application</Button>
             ) : undefined
           }
@@ -374,7 +389,12 @@ export function ApplicationsPage() {
               <tbody>
                 {filtered.map((record) => (
                   <tr key={record.id}>
-                    <td>{applicationCompany(record, records)}</td>
+                    <td>
+                      <CompanyGlyph
+                        name={applicationCompany(record, records)}
+                      />
+                      {applicationCompany(record, records)}
+                    </td>
                     <td>
                       <button
                         className="application-open"
@@ -418,6 +438,9 @@ export function ApplicationsPage() {
                     onClick={() => setParams({ record: record.id })}
                   >
                     <span className="application-company">
+                      <CompanyGlyph
+                        name={applicationCompany(record, records)}
+                      />
                       {applicationCompany(record, records)}
                     </span>
                     <strong>{record.title}</strong>
@@ -472,21 +495,26 @@ export function ApplicationsPage() {
           <div className="stack application-detail">
             <div className="section-heading">
               <div className="inline-actions">
-                <strong>{applicationCompany(selected, records)}</strong>
+                <strong>
+                  <CompanyGlyph name={applicationCompany(selected, records)} />
+                  {applicationCompany(selected, records)}
+                </strong>
                 <Status record={selected} />
               </div>
-              <div className="inline-actions">
-                <Button variant="ghost" onClick={() => setEditing(selected)}>
-                  Edit application
-                </Button>
-                <Button
-                  variant="ghost"
-                  aria-label="Delete application"
-                  onClick={() => setDeleting(selected)}
-                >
-                  <Trash2 size={17} />
-                </Button>
-              </div>
+              {editMode && (
+                <div className="inline-actions">
+                  <Button variant="ghost" onClick={() => setEditing(selected)}>
+                    Edit application
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    aria-label="Delete application"
+                    onClick={() => setDeleting(selected)}
+                  >
+                    <Trash2 size={17} />
+                  </Button>
+                </div>
+              )}
             </div>
             <Destination url={field(selected, "url")} label="Listing" />
             <dl className="application-dates">
@@ -514,12 +542,14 @@ export function ApplicationsPage() {
             <section className="application-detail-section">
               <div className="section-heading">
                 <h3>Recruitment process</h3>
-                <Button
-                  variant="secondary"
-                  onClick={() => setProcessEditing(true)}
-                >
-                  Edit process
-                </Button>
+                {editMode && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setProcessEditing(true)}
+                  >
+                    Edit process
+                  </Button>
+                )}
               </div>
               <ProcessTimeline
                 record={selected}
@@ -534,13 +564,15 @@ export function ApplicationsPage() {
             <section className="application-detail-section">
               <div className="section-heading">
                 <h3>Appointments</h3>
-                <Button
-                  variant="secondary"
-                  onClick={() => setInterviewEditing(null)}
-                >
-                  <Plus size={15} />
-                  Schedule interview
-                </Button>
+                {editMode && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setInterviewEditing(null)}
+                  >
+                    <Plus size={15} />
+                    Schedule interview
+                  </Button>
+                )}
               </div>
               {interviews.length ? (
                 <div className="interview-list">
@@ -574,7 +606,7 @@ export function ApplicationsPage() {
                             {recruitmentSteps(selected.data, true).find(
                               (step) => step.id === field(record, "stepId"),
                             )?.archived
-                              ? " · removed step"
+                              ? " · deleted step"
                               : ""}
                           </p>
                         )}
@@ -783,6 +815,7 @@ function ProcessTimeline({
   timezone: string;
   onSchedule: (stepId: string) => void;
 }) {
+  const { editing: editMode } = useEditMode();
   const steps = recruitmentSteps(record.data);
   if (!steps.length)
     return (
@@ -828,14 +861,16 @@ function ProcessTimeline({
                 {field(appointment, "status", "Scheduled")}
               </Link>
             ))}
-            {step.kind !== "submission" && step.kind !== "offer" && (
-              <button
-                className="recruitment-schedule"
-                onClick={() => onSchedule(step.id)}
-              >
-                Schedule appointment
-              </button>
-            )}
+            {editMode &&
+              step.kind !== "submission" &&
+              step.kind !== "offer" && (
+                <button
+                  className="recruitment-schedule"
+                  onClick={() => onSchedule(step.id)}
+                >
+                  Schedule appointment
+                </button>
+              )}
           </li>
         );
       })}
@@ -1345,7 +1380,7 @@ function ProcessForm({
                 <Button
                   type="button"
                   variant="ghost"
-                  aria-label={`Remove ${step.title}`}
+                  aria-label={`Delete ${step.title}`}
                   onClick={() =>
                     setData(archiveRecruitmentStep(draft(), step.id))
                   }
@@ -1441,7 +1476,7 @@ function ProcessForm({
       </Button>
       {allSteps.some((step) => step.archived) && (
         <details className="application-optional">
-          <summary>Removed steps</summary>
+          <summary>Deleted steps</summary>
           <p className="muted">
             Appointments and preparation stay attached. Reassign an appointment
             by editing it, or restore a step here.

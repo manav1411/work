@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
+import { enterEditMode } from "./edit-mode-helper";
 
 async function openDemo(page: Page, route = "/home") {
   await page.addInitScript(() => {
@@ -511,6 +512,8 @@ test("device drafts survive reload, export, and retry while sign-out waits for s
       json: { error: "Unexpected test request" },
     });
   });
+  await page.goto("/applications");
+  await enterEditMode(page, "Applications");
   await page.goto(`/applications?record=${application.id}`);
   await page
     .getByRole("button", { name: "Edit application", exact: true })
