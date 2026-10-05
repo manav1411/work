@@ -16,6 +16,9 @@ export function editorDraftsFor(
     `work:goal-draft:${owner}:`,
     `work:direction-draft:${owner}:`,
     `work:latex-draft:${owner}:`,
+    `work-rich-draft:${owner}:`,
+    `work:application-draft:${owner}:`,
+    `work:radar-draft:${owner}:`,
   ];
   const drafts: EditorDraft[] = [];
   try {
@@ -52,11 +55,14 @@ export function editorDraftsFor(
           ? `/interviews?tab=${encodeURIComponent(id)}`
           : key.startsWith(`work:latex-draft:${owner}:`)
             ? `/documents?record=${encodeURIComponent(id)}`
-            : record
-              ? recordUrl(record)
-              : key.startsWith(contentPrefix)
-                ? "/interviews"
-                : "/direction";
+            : key.startsWith(`work:application-draft:${owner}:`) ||
+                key.startsWith(`work:radar-draft:${owner}:`)
+              ? `/applications?record=${encodeURIComponent(id)}`
+              : record
+                ? recordUrl(record)
+                : key.startsWith(contentPrefix)
+                  ? "/interviews"
+                  : "/direction";
       drafts.push({ key, value, title, url });
     }
   } catch {

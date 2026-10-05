@@ -117,6 +117,7 @@ export interface LatexJob {
   }[];
   metadata?: {
     imageDigest?: string;
+    compilerFingerprint?: string;
     texLiveRelease?: string;
     engine?: string;
     inputHash?: string;

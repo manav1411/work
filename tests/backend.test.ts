@@ -27,6 +27,12 @@ import {
   type WorkRecord,
 } from "../shared/model";
 import type { WorkspaceExport } from "../worker/import-export";
+import {
+  commonRecruitmentProcess,
+  selectApplicationStatus,
+  recruitmentSteps,
+  archiveRecruitmentStep,
+} from "../shared/applications";
 
 let miniflare: Miniflare;
 let env: Env;
@@ -38,6 +44,7 @@ const migration = [
   "0005_workspace_improvements.sql",
   "0006_backup_staging.sql",
   "0007_native_latex.sql",
+  "0008_protected_behavioural.sql",
 ]
   .map((filename) =>
     readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
@@ -73,6 +80,17 @@ async function create(
   title = "Synthetic note",
   extra: Record<string, unknown> = {},
 ): Promise<WorkRecord> {
+  if (extra.kind === "application" && !extra.data) {
+    const base = newRecord({
+      kind: "application",
+      title,
+      data: { recruitmentSteps: commonRecruitmentProcess() },
+    });
+    extra = {
+      ...extra,
+      data: selectApplicationStatus(base, "Applied", "2026-10-05"),
+    };
+  }
   const response = await request("/api/records", "POST", {
     kind: "note",
     title,
@@ -152,6 +170,182 @@ beforeEach(async () => {
     env.DB.prepare("DELETE FROM rate_limits"),
     env.DB.prepare("DELETE FROM write_guards"),
   ]);
+});
+
+describe("workspace editing invariants", () => {
+  it("reorders owner records atomically and leaves every order unchanged on a stale version", async () => {
+    const first = await create("First sortable note", { data: { order: 0 } });
+    const second = await create("Second sortable note", { data: { order: 1 } });
+    const stale = await request("/api/records/reorder", "POST", {
+      items: [
+        { id: first.id, version: first.version, order: 1 },
+        { id: second.id, version: 99, order: 0 },
+      ],
+    });
+    expect(stale.status).toBe(409);
+    for (const record of [first, second]) {
+      const stored = (
+        (await (await request(`/api/records/${record.id}`)).json()) as {
+          record: WorkRecord;
+        }
+      ).record;
+      expect(stored.data.order).toBe(record.data.order);
+      expect(stored.version).toBe(record.version);
+    }
+    const sorted = await request("/api/records/reorder", "POST", {
+      items: [
+        { id: first.id, version: 1, order: 1 },
+        { id: second.id, version: 1, order: 0 },
+      ],
+    });
+    expect(sorted.status).toBe(200);
+    const rows = ((await sorted.json()) as { records: WorkRecord[] }).records;
+    expect(
+      rows.map((record) => [record.id, record.data.order, record.version]),
+    ).toEqual([
+      [first.id, 1, 2],
+      [second.id, 0, 2],
+    ]);
+    const foreign = await foreignRecord();
+    expect(
+      (
+        await request("/api/records/reorder", "POST", {
+          items: [{ id: foreign.id, version: 1, order: 0 }],
+        })
+      ).status,
+    ).toBe(404);
+  });
+  it("protects Behavioural deletion, hiding and reclassification while permitting rename and arrangement", async () => {
+    const tab = await create("Behavioural", {
+      data: { category: "interview-tab", tabKey: "behavioural", order: 0 },
+    });
+    expect((await request(`/api/records/${tab.id}`, "DELETE")).status).toBe(
+      400,
+    );
+    for (const data of [
+      { ...tab.data, hidden: true },
+      { category: "ordinary-note" },
+      { ...tab.data, tabKey: "technical" },
+    ])
+      expect(
+        (await request(`/api/records/${tab.id}`, "PATCH", { version: 1, data }))
+          .status,
+      ).toBe(400);
+    expect(
+      (
+        await request(`/api/records/${tab.id}`, "PATCH", {
+          version: 1,
+          title: "Stories and behavioural preparation",
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request("/api/records/reorder", "POST", {
+          items: [{ id: tab.id, version: 2, order: 3 }],
+        })
+      ).status,
+    ).toBe(200);
+    const stored = (
+      (await (await request(`/api/records/${tab.id}`)).json()) as {
+        record: WorkRecord;
+      }
+    ).record;
+    expect(stored.data.tabKey).toBe("behavioural");
+    expect(stored.data.order).toBe(3);
+  });
+  it("requires active owned process steps for new appointments and retains archived membership without advancing the application", async () => {
+    const app = await create("Application with rounds", {
+      kind: "application",
+    });
+    const endpoints = recruitmentSteps(app.data);
+    const round = {
+      id: crypto.randomUUID(),
+      title: "Technical interview",
+      kind: "interview" as const,
+      state: "Planned" as const,
+      date: "",
+    };
+    const updated = await request(`/api/records/${app.id}`, "PATCH", {
+      version: 1,
+      data: {
+        ...app.data,
+        recruitmentSteps: [endpoints[0], round, endpoints[1]],
+      },
+    });
+    expect(updated.status).toBe(200);
+    const application = ((await updated.json()) as { record: WorkRecord })
+      .record;
+    const data = {
+      appointmentVersion: 2,
+      applicationId: app.id,
+      stepId: round.id,
+      startsAt: "2026-11-01T00:00:00.000Z",
+      timezone: "UTC",
+      status: "Scheduled",
+    };
+    for (const invalid of [
+      { ...data, stepId: "" },
+      { ...data, stepId: crypto.randomUUID() },
+      { ...data, stepId: endpoints[0].id },
+      { ...data, appointmentVersion: undefined },
+    ])
+      expect(
+        (
+          await request("/api/records", "POST", {
+            kind: "interview",
+            title: "Invalid appointment",
+            data: invalid,
+          })
+        ).status,
+      ).toBe(400);
+    const appointment = await create("Technical round", {
+      kind: "interview",
+      data,
+    });
+    expect(
+      (
+        await request(`/api/records/${appointment.id}`, "PATCH", {
+          version: 1,
+          data: { ...data, status: "Completed" },
+        })
+      ).status,
+    ).toBe(200);
+    const unchanged = (
+      (await (await request(`/api/records/${app.id}`)).json()) as {
+        record: WorkRecord;
+      }
+    ).record;
+    expect(unchanged.data.applicationStatus).toBe("Applied");
+    expect(
+      recruitmentSteps(unchanged.data).find((step) => step.id === round.id)
+        ?.state,
+    ).toBe("Planned");
+    const archived = archiveRecruitmentStep(application, round.id);
+    expect(
+      (
+        await request(`/api/records/${app.id}`, "PATCH", {
+          version: application.version,
+          data: archived,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request("/api/records", "POST", {
+          kind: "interview",
+          title: "Removed step",
+          data,
+        })
+      ).status,
+    ).toBe(400);
+    const preserved = (
+      (await (await request(`/api/records/${appointment.id}`)).json()) as {
+        record: WorkRecord;
+      }
+    ).record;
+    expect(preserved.data.stepId).toBe(round.id);
+  });
 });
 
 describe("native LaTeX projects", () => {
@@ -345,12 +539,21 @@ describe("native compilation preservation", () => {
               : input.url;
         if (new URL(url).origin !== compilerEnv.LATEX_COMPILER_URL)
           return originalFetch(input, init);
+        if (init?.method === "POST" && new URL(url).pathname === "/jobs")
+          return Response.json({ status: "queued" }, { status: 202 });
         return Response.json({
-          success: true,
-          pdfBase64: btoa(pdf),
-          log: "compiled",
-          text: "Resume",
-          metadata: { engine: "pdflatex", configuration },
+          status: "succeeded",
+          result: {
+            success: true,
+            pdfBase64: btoa(pdf),
+            log: "compiled",
+            text: "Resume",
+            metadata: {
+              engine: "pdflatex",
+              compilerFingerprint: "synthetic-native-fingerprint",
+              configuration,
+            },
+          },
         });
       });
     try {
@@ -369,7 +572,19 @@ describe("native compilation preservation", () => {
         } as unknown as ExecutionContext,
       );
       expect(queued.status).toBe(202);
+      const queuedJob = ((await queued.json()) as { job: { id: string } }).job;
       await Promise.all(pending);
+      const poll = await request(
+        `/api/latex/${document.id}/jobs/${queuedJob.id}`,
+        "GET",
+        undefined,
+        {},
+        compilerEnv,
+      );
+      expect(poll.status).toBe(200);
+      expect(
+        ((await poll.json()) as { job: { status: string } }).job.status,
+      ).toBe("succeeded");
       const compiled = (
         (await (await request(`/api/records/${document.id}`)).json()) as {
           record: WorkRecord;

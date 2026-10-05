@@ -19,6 +19,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { KIND_LABELS } from "../../shared/model";
 import { useWorkspace } from "../lib/workspace";
+import { ThemedSelect, DateInput } from './ThemedControls';
 
 export function Button({
   variant = "primary",
@@ -195,6 +196,7 @@ export const Input = forwardRef<
   HTMLInputElement,
   InputHTMLAttributes<HTMLInputElement>
 >(function Input({ className = "", ...props }, ref) {
+  if (props.type==='date'||props.type==='datetime-local') return <DateInput inputRef={ref} className={className} {...props}/>;
   return <input ref={ref} className={`input ${className}`} {...props} />;
 });
 export const Textarea = forwardRef<
@@ -209,7 +211,7 @@ export function Select({
   className = "",
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={`input select ${className}`} {...props} />;
+  return <ThemedSelect className={className} {...props}/>;
 }
 export function EmptyState({
   title,

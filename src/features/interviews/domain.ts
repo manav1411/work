@@ -1,4 +1,5 @@
 import { field, type WorkRecord } from "../../../shared/model";
+import { legacyInterviewPreparation } from "../../../shared/content";
 
 export interface InterviewTab {
   id: string;
@@ -6,6 +7,8 @@ export interface InterviewTab {
   key?: "behavioural" | "technical";
   record?: WorkRecord;
   order: number;
+  legacyPreparationId?: string;
+  legacyBody?: string;
 }
 export function interviewTabs(
   records: WorkRecord[],
@@ -13,14 +16,14 @@ export function interviewTabs(
 ): InterviewTab[] {
   const tabs = records.filter(
     (record) =>
-      !record.deletedAt &&
+      (!record.deletedAt || record.data.tabKey === "behavioural") &&
       record.kind === "note" &&
       record.data.category === "interview-tab",
   );
   return [
     ...(["behavioural", "technical"] as const).flatMap((key, order) => {
       const record = tabs.find((item) => item.data.tabKey === key);
-      return record?.data.hidden && !includeHidden
+      return record?.data.hidden && key !== "behavioural" && !includeHidden
         ? []
         : [
             {
@@ -43,11 +46,53 @@ export function interviewTabs(
           !record.data.tabKey && (includeHidden || !record.data.hidden),
       )
       .map((record, index) => ({
+        id: field(record, "legacyPreparationId")
+          ? `legacy-prep:${field(record, "legacyPreparationId")}`
+          : record.id,
+        title: record.title,
+        record,
+        ...(field(record, "legacyPreparationId")
+          ? { legacyPreparationId: field(record, "legacyPreparationId") }
+          : {}),
+        order:
+          typeof record.data.order === "number" ? record.data.order : index + 2,
+      })),
+    ...records
+      .filter(
+        (record) =>
+          !record.deletedAt &&
+          record.kind === "note" &&
+          record.data.category === "interview-preparation",
+      )
+      .map((record, index) => ({
         id: record.id,
         title: record.title,
         record,
         order:
-          typeof record.data.order === "number" ? record.data.order : index + 2,
+          typeof record.data.order === "number"
+            ? record.data.order
+            : tabs.length + index + 2,
+      })),
+    ...records
+      .filter(
+        (record) =>
+          !record.deletedAt &&
+          record.kind === "interview" &&
+          legacyInterviewPreparation(record) &&
+          !records.some(
+            (note) =>
+              note.kind === "note" &&
+              ((note.data.category === "interview-preparation" &&
+                field(note, "interviewId") === record.id) ||
+                field(note, "legacyPreparationId") === record.id),
+          ),
+      )
+      .map((record, index) => ({
+        id: `legacy-prep:${record.id}`,
+        title: `${record.title} notes`,
+        legacyPreparationId: record.id,
+        legacyBody: legacyInterviewPreparation(record),
+        order: tabs.length + records.length + index + 2,
       })),
   ].sort((a, b) => a.order - b.order);
 }

@@ -125,18 +125,7 @@ test("native documents expand inline, save source, fork independently and show s
   await enterEditMode(page, "Documents");
   await page.locator("#document-family-resume").click();
   await page
-    .getByRole("button", { name: "Create résumé", exact: true })
-    .click();
-  const dialog = page.getByRole("dialog", {
-    name: "Add document",
-    exact: true,
-  });
-  await dialog.getByLabel("Document name", { exact: true }).fill("Main résumé");
-  await dialog
-    .getByRole("button", { name: "Save document", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Create LaTeX source", exact: true })
+    .getByRole("button", { name: "Write in LaTeX", exact: true })
     .click();
   const editor = page.locator(
     ".latex-source-editor .cm-content[contenteditable=true]",
@@ -147,18 +136,17 @@ test("native documents expand inline, save source, fork independently and show s
     .poll(() => projects.get("asset-1")?.files[0].content)
     .toBe(source);
   await page.getByRole("button", { name: "New variant", exact: true }).click();
-  const fork = page.getByRole("dialog", { name: "Fork document", exact: true });
+  const fork = page.locator(".document-fork-form");
   await fork
-    .getByLabel("Document name", { exact: true })
+    .getByLabel("Variant name", { exact: true })
     .fill("Security résumé");
   await fork
-    .getByRole("button", { name: "Save document", exact: true })
+    .getByRole("button", { name: "Create variant", exact: true })
     .click();
   await expect(page).toHaveURL(/\/documents\?record=asset-2$/);
   await expect(
     page.getByRole("heading", { name: /^Documents\.?$/, exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Source", exact: true }).click();
   await expect(editor).toBeVisible();
   await editor.fill(tailored);
   await expect

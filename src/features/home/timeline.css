@@ -472,3 +472,33 @@
   text-overflow: ellipsis;
   padding: 5px 8px;
 }
+.timeline-interview .timeline-event-point {
+  background: var(--orange);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+.timeline-followup .timeline-event-point {
+  background: var(--aqua);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  border-radius: 0;
+}
+.timeline-goal-span {
+  --goal-colour: var(--blue);
+  background: var(--paper);
+}
+.timeline-span-tone-1 {
+  --goal-colour: var(--pink);
+}
+.timeline-span-tone-2 {
+  --goal-colour: var(--aqua);
+}
+.timeline-span-tone-3 {
+  --goal-colour: var(--orange);
+}
+.timeline-goal-span .timeline-span-fill {
+  background: var(--goal-colour);
+  opacity: 1;
+}
+.timeline-goal-span.is-complete .timeline-span-fill {
+  background: var(--lime);
+}

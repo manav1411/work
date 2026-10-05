@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ExternalLink, Flame, RefreshCw, X } from "lucide-react";
+import { Check, ExternalLink, Flame, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLearningData } from "./useLearningData";
 import {
@@ -30,12 +30,15 @@ export default function LeetCodeCalendar() {
   const root = useRef<HTMLElement>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const dismissing = useRef(false);
-  const closeDetails = () => {
-    setSelected(null);
-    dismissing.current = true;
-    trigger.current?.focus();
-    dismissing.current = false;
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const cancelClose = () => clearTimeout(closeTimer.current);
+  const leave = () => {
+    if (window.matchMedia("(hover: hover)").matches)
+      closeTimer.current = setTimeout(() => setSelected(null), 140);
   };
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const update = () => {
@@ -62,7 +65,12 @@ export default function LeetCodeCalendar() {
   useEffect(() => {
     if (!selected) return;
     const dismiss = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setSelected(null);
+      if (
+        !(event.target as HTMLElement).closest(
+          ".learn-calendar-day,.learn-calendar-popover",
+        )
+      )
+        setSelected(null);
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -121,6 +129,14 @@ export default function LeetCodeCalendar() {
       ref={root}
       className="learn-calendar"
       aria-label="LeetCode progress"
+      onBlur={(event) => {
+        if (
+          !(event.relatedTarget as HTMLElement | null)?.closest(
+            ".learn-calendar-day,.learn-calendar-popover",
+          )
+        )
+          setSelected(null);
+      }}
     >
       <a
         className="learn-calendar-profile"
@@ -128,6 +144,17 @@ export default function LeetCodeCalendar() {
         target="_blank"
         rel="noreferrer"
       >
+        {stats.profile.userAvatar &&
+          /^https:\/\/(?:assets\.leetcode\.com|leetcode\.com|s3-us-west-1\.amazonaws\.com)\//i.test(
+            stats.profile.userAvatar,
+          ) && (
+            <img
+              className="learn-calendar-avatar"
+              src={stats.profile.userAvatar}
+              alt=""
+              referrerPolicy="no-referrer"
+            />
+          )}
         <strong>
           @{stats.username} <ExternalLink size={13} />
         </strong>
@@ -149,13 +176,18 @@ export default function LeetCodeCalendar() {
                 aria-controls={
                   selected === key ? "leetcode-day-details" : undefined
                 }
-                onMouseEnter={() => setSelected(key)}
+                onMouseEnter={() => {
+                  cancelClose();
+                  setSelected(key);
+                }}
+                onMouseLeave={leave}
                 onFocus={(event) => {
                   trigger.current = event.currentTarget;
                   if (!dismissing.current) setSelected(key);
                 }}
                 onClick={(event) => {
                   trigger.current = event.currentTarget;
+                  cancelClose();
                   setSelected(key);
                 }}
               />
@@ -214,20 +246,11 @@ export default function LeetCodeCalendar() {
         <div
           id="leetcode-day-details"
           className="learn-calendar-popover"
-          onMouseLeave={() => {
-            if (!root.current?.contains(document.activeElement))
-              setSelected(null);
-          }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={leave}
         >
           <header>
             <strong>{formatDay(Number(selected))}</strong>
-            <button
-              type="button"
-              aria-label="Close day details"
-              onClick={closeDetails}
-            >
-              <X size={15} />
-            </button>
           </header>
           {selectedProblems.length ? (
             <ul>

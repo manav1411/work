@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RECORD_KINDS } from "../shared/model";
 import { ApiError } from "./env";
 import { recordDataError } from "../shared/record-contract";
+import { normalizeDestinationFields } from "../shared/urls";
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -214,7 +215,7 @@ export async function readJson(request: Request): Promise<unknown> {
     );
   const text = await readLimitedBody(request, MAX_REQUEST_BYTES);
   try {
-    return JSON.parse(new TextDecoder().decode(text));
+    return normalizeDestinationFields(JSON.parse(new TextDecoder().decode(text)));
   } catch {
     throw new ApiError(
       400,

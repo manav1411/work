@@ -1,9 +1,17 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useLocation } from "react-router-dom";
 
 const EditModeContext = createContext<{
   sections: Set<string>;
   toggleSection: (section: string) => void;
+  continueCreation: (section: string) => void;
 } | null>(null);
 
 const STORAGE_KEY = "work-edit-sections";
@@ -17,37 +25,51 @@ const EDITABLE_SECTIONS = new Set([
 ]);
 
 export function EditModeProvider({ children }: { children: ReactNode }) {
-  const [sections, setSections] = useState<Set<string>>(() => {
+  const location = useLocation();
+  const search = new URLSearchParams(location.search);
+  const tab =
+    search.get(location.pathname === "/learn" ? "track" : "tab") || "";
+  const scope = `${location.pathname}:${tab}`;
+  const previous = useRef(scope);
+  const requestedDestination = useRef<string | null>(null);
+  const [sections, setSections] = useState<Set<string>>(new Set());
+  useLayoutEffect(() => {
     try {
-      const stored: unknown = JSON.parse(
-        sessionStorage.getItem(STORAGE_KEY) ?? "[]",
-      );
-      return new Set(
-        Array.isArray(stored)
-          ? stored.filter(
-              (item): item is string =>
-                typeof item === "string" && EDITABLE_SECTIONS.has(item),
-            )
-          : [],
-      );
+      sessionStorage.removeItem(STORAGE_KEY);
     } catch {
-      return new Set();
+      /* optional storage */
     }
-  });
+    if (previous.current === scope) return;
+    previous.current = scope;
+    const target = requestedDestination.current;
+    requestedDestination.current = null;
+    setSections(
+      target && location.pathname === target ? new Set([target]) : new Set(),
+    );
+  }, [scope, location.pathname]);
   const toggleSection = (section: string) =>
     setSections((current) => {
+      if (!EDITABLE_SECTIONS.has(section)) return current;
       const next = new Set(current);
       if (next.has(section)) next.delete(section);
-      else next.add(section);
-      try {
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify([...next]));
-      } catch {
-        /* Edit mode still works when browser storage is unavailable. */
+      else {
+        next.clear();
+        next.add(section);
       }
+      requestedDestination.current =
+        location.pathname !== section && next.has(section) ? section : null;
       return next;
     });
   return (
-    <EditModeContext.Provider value={{ sections, toggleSection }}>
+    <EditModeContext.Provider
+      value={{
+        sections,
+        toggleSection,
+        continueCreation: (section) => {
+          if (sections.has(section)) requestedDestination.current = section;
+        },
+      }}
+    >
       {children}
     </EditModeContext.Provider>
   );
@@ -62,5 +84,6 @@ export function useEditMode() {
     section,
     isEditing: (target: string) => context?.sections.has(target) ?? false,
     toggleSection: context?.toggleSection ?? (() => {}),
+    continueCreation: () => context?.continueCreation(section),
   };
 }

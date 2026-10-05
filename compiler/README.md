@@ -1,41 +1,37 @@
-# Work's private LaTeX compiler
+# Work's private Pi compiler
 
-This is an actual TeX Live/latexmk execution service. It never renders HTML as a substitute PDF. The Work Worker is the authenticated gateway; this service receives bounded source files and sends the same compiled PDF bytes, SyncTeX, compiler log, extracted text and font inspection back to it.
+LaTeX is compiled natively with TeX Live and latexmk on the Raspberry Pi. The source checkout is `/home/manav/base/work_project`; installed service code is `/opt/work-compiler`, managed by `work-compiler.service`. A separate Node 22 runtime keeps the Pi's global Node installation unchanged. Cloudflare Tunnel routes `work-compiler.manavdodia.com` to the controller on `127.0.0.1:8788`, preserving the Pi's other routes.
 
-The job image starts from the full historic TeX Live 2025 snapshot. The gateway resolves the locally built image's immutable `sha256` image ID at startup and executes that exact ID for every job, recording it and the actual engine/version/configuration in each response. Production builds should additionally set `TEX_BASE` to an approved registry **digest**, retain the built image, and avoid unattended rebuilds: the historic TeX tag freezes TeX packages but the Dockerfile's Poppler installation is a separate OS snapshot dependency.
+The controller runs with a systemd dynamic unprivileged account. Each job runs in a separate bubblewrap filesystem/PID/network namespace with only TeX tools/fonts/configuration, its own project directory and a private temporary filesystem. It cannot read other home directories, service secrets, or the host filesystem generally. Shell escape and project `latexmkrc` are disabled; CPU, address-space, file-size, process-count and wall-clock limits apply. No containers or local virtual machines are used.
 
-Image documentation: [Island of TeX Docker images](https://github.com/islandoftex/texlive). Reproducing existing documents requires the same engine, package/font snapshot and project settings. Custom `latexmkrc` files contain executable Perl and are rejected under the default supported policy; unsupported project configuration is reported rather than executed.
+## Installation
 
-## Local setup
-
-Requires Docker and Node 22+. Build the real TeX Live image before starting the service. On macOS, a Docker-compatible VM such as Colima supplies the Linux runtime; production uses a dedicated Linux host. Provisioning the public application does not automatically provision this separate private compiler.
+Install prerequisites on the Pi:
 
 ```sh
-docker build -t work-texlive:2025 compiler
-export WORK_COMPILER_TOKEN='a-long-random-private-token-at-least-24-characters'
-node compiler/server.mjs
+sudo apt-get update
+sudo apt-get install --no-install-recommends texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-luatex latexmk poppler-utils bubblewrap
 ```
 
-`WORK_TEX_IMAGE` selects the already-built image (default `work-texlive:2025`). `WORK_COMPILER_HOST` defaults to localhost; `WORK_COMPILER_PORT` defaults to 8788. Use the same token in the Work gateway's compiler secret. Put this service behind private networking or TLS; do not publish the Docker socket or the token. The gateway process needs permission to launch Docker, and should run on a dedicated compilation host, separate from application secrets and other workloads.
+Copy the compiler files into the project folder. `node install-runtime.mjs` downloads the official Node 22 ARM64 release, checks its published SHA-256 digest and installs it in the project's runtime folder. `sudo sh install-pi.sh` installs and starts the service, generating its private bearer token once in `/etc/work-compiler.env`. `sudo runtime/bin/node configure-tunnel.mjs` adds the dedicated hostname to the existing tunnel and saves a recoverable configuration backup first.
 
-`WORK_COMPILER_TMPDIR` optionally selects an existing job directory visible to the Docker daemon. On macOS with Colima, use a directory under a mounted home folder, for example `.private/compiler-tmp` in this repository; the macOS default temporary directory may not be mounted in the VM. On a Linux host, the ordinary system temporary directory works.
+Cloudflare Access uses a dedicated Service Auth policy and service token. Work's Worker secrets are `LATEX_COMPILER_URL`, `LATEX_COMPILER_TOKEN`, `LATEX_ACCESS_CLIENT_ID`, and `LATEX_ACCESS_CLIENT_SECRET`. Credentials belong only in private service/Worker configuration. Local setup can use an SSH port forward to the controller and the same bearer token, without exposing credentials to the browser.
 
-The token exists only in the parent service. It is never passed as a container environment variable or mounted file. Each job gets its own temporary source/output folder, runs UID/GID 65532, disables shell escape, has no network, drops capabilities, uses a read-only root filesystem and receives CPU/memory/process/time/file-size limits. Source paths, encodings, duplicate paths and collisions are checked before any write. Symlink outputs are never returned. Jobs and directories are removed on success, error, timeout and request cancellation.
+## Queue contract
 
-Use a bounded host temporary filesystem (for example a dedicated 512 MiB tmpfs mounted at the service's `TMPDIR`) and a bounded host process/log policy in production. Individual output files are capped and only PDF/SyncTeX/log/text/font outputs are returned; a bounded temporary filesystem also constrains the sum of any unwanted outputs created by hostile sources. Size the volume/concurrency for two jobs maximum, with a 20-second job deadline. `WORK_COMPILE_TIMEOUT` permits 1,000–22,000 milliseconds so cancellation precedes the Work gateway's 25-second deadline and Worker background-task limit. Runtime containers never pull images or install dependencies.
+All endpoints require the compiler bearer token; tunnel requests also require the Access service credentials.
 
-## HTTP contract
+- `GET /health`: native compiler fingerprint, installed versions and current capacity.
+- `POST /jobs`: `{jobId,engine,mainFile,files:[{path,contentBase64}]}` → bounded queued job. Repeated IDs with the same source are idempotent; a different source with the same ID is rejected.
+- `GET /jobs/:id`: queued/running/succeeded/failed/cancelled state and terminal result with exact PDF bytes, log, extracted text, font report and SyncTeX.
+- `DELETE /jobs/:id`: cancel a queued or running job.
 
-All requests require `Authorization: Bearer <WORK_COMPILER_TOKEN>`.
+The Pi executes one job at a time, with eight pending jobs maximum and a default 90-second deadline. Source projects are limited to 100 files/5 MiB decoded. Terminal state/artifacts expire after one hour and stored results are also count-bounded. Restarted jobs are marked failed rather than silently rerun. Work polls the queue and stores successful outputs in its own private file storage; submitted versions stay tied to immutable source/PDF revisions.
 
-- `GET /health`: actual resolved image digest, active job count and supported engines.
-- `POST /compile`: `{jobId, engine, mainFile, files:[{path,contentBase64}]}`. Engines: `pdflatex`, `xelatex`, `lualatex`. Up to 100 files/20 MiB decoded. The Work gateway may apply a smaller limit. This request waits for compilation and returns `{success,pdfBase64?,synctexBase64?,log,text,fonts,diagnostics,metadata}`. TeX errors produce `success:false` and the real log; malformed requests return 400. Capacity returns 429. Infrastructure failures return 500.
-- `DELETE /jobs/:jobId`: removes a running job container. Closing the compile connection also cancels that job.
+Use `WORK_COMPILER_TMPDIR`, `WORK_COMPILER_PORT`, and `WORK_COMPILE_TIMEOUT` for service configuration. Systemd limits the controller and child processes to 1.5 GiB memory and 128 tasks. Source errors, timeout, cancellation and offline state are surfaced in Work; they never overwrite source drafts or falsely report a successful PDF.
 
-The synchronous channel is intentional: the Worker owns the async job record, background task and browser polling, while the compiler keeps no durable user data. Job IDs must be unique opaque IDs minted by the Worker.
+## Verification and operations
 
-## Verify before hosting
+`runtime/bin/node smoke.mjs` performs a real résumé compile, checks PDF bytes, extracted text and font embedding, then verifies that a source cannot read a private sentinel outside its workspace. This passed on the Pi during implementation. The fingerprint records native engine/package versions and runner configuration, rather than an image ID. Identical package/font/engine settings are required when reproducing an existing document. LaTeX alone does not guarantee every ATS parser's behaviour.
 
-For a focused local verification, run `node compiler/smoke.mjs` after building the image. It verifies one real résumé compile, PDF bytes, extracted text and embedded fonts. Before hosting additional engines or templates, check those intended projects with their chosen engine/package/font snapshot. LaTeX and font fidelity do not guarantee every ATS parser's behaviour.
-
-Record image size, a cold and warm compile duration, peak memory and disk use before choosing a Linux host. No hosting cost estimate is claimed until those measurements exist. This service requires a Docker-capable host; ordinary Worker isolates cannot run TeX Live or launch its containers.
+Inspect `systemctl status work-compiler` and `journalctl -u work-compiler` on the Pi. Reinstall updated source files with `install-pi.sh`, then restart the service. Tunnel configuration backups are under `/etc/cloudflared/config.yml.work-backup-*`; the other existing services must remain configured. Rotate the bearer token and Access service token together with Work's secrets when needed.

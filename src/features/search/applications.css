@@ -48,6 +48,9 @@
 }
 .application-open:hover strong,
 .interview-title:hover {
+  color: inherit;
+}
+.application-destination:hover {
   color: var(--blue);
 }
 .application-vacancy {
@@ -238,6 +241,7 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 0.83rem;
+  table-layout: fixed;
 }
 .application-table th {
   text-align: left;
@@ -259,11 +263,37 @@
   font-weight: 650;
 }
 .application-table td:nth-child(2) {
-  min-width: 150px;
+  width: 18%;
 }
 .application-table td:nth-child(7) {
-  min-width: 120px;
-  max-width: 190px;
+  width: 18%;
+}
+.application-table th:nth-child(1) {
+  width: 15%;
+}
+.application-table th:nth-child(2) {
+  width: 18%;
+}
+.application-table th:nth-child(3) {
+  width: 10%;
+}
+.application-table th:nth-child(4) {
+  width: 15%;
+}
+.application-table th:nth-child(5) {
+  width: 12%;
+}
+.application-table th:nth-child(6) {
+  width: 12%;
+}
+.application-table th:nth-child(7) {
+  width: 18%;
+}
+.application-table td {
+  overflow-wrap: anywhere;
+}
+.application-table td strong {
+  font-size: 0.9rem;
 }
 .application-status {
   display: flex;
@@ -295,7 +325,6 @@
   gap: 1.25rem;
 }
 .radar-card {
-  border-top: 5px solid var(--blue);
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
@@ -339,7 +368,7 @@
   border-color: var(--blue);
 }
 .recruitment-completed {
-  border-top: 5px solid var(--lime);
+  border: 2px solid var(--green, #16864d);
 }
 .recruitment-skipped,
 .recruitment-cancelled {
@@ -369,8 +398,57 @@
   font-size: 0.75rem;
 }
 .recruitment-appointment {
-  color: var(--blue);
+  color: var(--muted);
   overflow-wrap: anywhere;
+}
+.application-intermediate-status {
+  background: #ffd75d;
+  color: #161719;
+  border-color: var(--ink);
+}
+.application-inline-title {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  padding: 0.15rem 0 !important;
+  font-weight: 750;
+}
+.recruitment-step-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.process-drag-handle {
+  touch-action: none;
+  cursor: grab;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  padding: 0.15rem;
+}
+.recruitment-step:hover .process-drag-handle,
+.process-drag-handle:focus-visible {
+  opacity: 1;
+}
+.application-schedule-form {
+  padding: 0.75rem 0;
+}
+.application-table-wrap,
+.recruitment-timeline,
+.application-detail {
+  scrollbar-width: none;
+}
+.application-table-wrap::-webkit-scrollbar,
+.recruitment-timeline::-webkit-scrollbar,
+.application-detail::-webkit-scrollbar {
+  display: none;
+}
+@media (hover: none) {
+  .process-drag-handle {
+    opacity: 1;
+  }
 }
 .recruitment-schedule {
   margin-top: auto;

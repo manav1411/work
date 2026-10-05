@@ -66,6 +66,58 @@
   flex-wrap: wrap;
   align-items: center;
 }
+.document-variant-tree {
+  display: grid;
+  gap: 0.25rem;
+}
+.document-variant-tree .document-variant-row {
+  min-height: 40px;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 0;
+}
+.document-variant-tree .document-variant-select {
+  min-height: 36px;
+  flex: 1;
+  justify-content: flex-start;
+  text-align: left;
+}
+.document-fork-form {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  background: var(--surface-tint);
+}
+.document-link-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
+}
+.document-link-inline input {
+  min-width: 0;
+  flex: 1;
+  background: #ffffff80;
+  color: #202128;
+}
+.document-link-inline input:first-child {
+  max-width: 140px;
+  font-weight: 800;
+}
+.latex-source-pane,
+.latex-pdf-preview,
+.latex-source-editor,
+.latex-source-editor .cm-scroller,
+.document-preview-text {
+  scrollbar-width: none;
+}
+.latex-source-pane::-webkit-scrollbar,
+.latex-pdf-preview::-webkit-scrollbar,
+.latex-source-editor::-webkit-scrollbar,
+.latex-source-editor .cm-scroller::-webkit-scrollbar,
+.document-preview-text::-webkit-scrollbar {
+  display: none;
+}
 .document-variant-chip {
   display: flex;
   align-items: center;
@@ -160,7 +212,31 @@
   overflow: hidden;
 }
 .latex-workbench.with-source {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, var(--latex-split, 50%)) 8px minmax(0, 1fr);
+}
+.latex-resize {
+  appearance: none;
+  writing-mode: vertical-lr;
+  width: 8px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: col-resize;
+  background: var(--surface-tint);
+}
+.latex-resize::-webkit-slider-thumb {
+  appearance: none;
+  width: 8px;
+  height: 40px;
+  background: var(--line);
+}
+.latex-resize::-moz-range-thumb {
+  width: 8px;
+  height: 40px;
+  background: var(--line);
+  border: 0;
+  border-radius: 0;
 }
 .latex-source-pane {
   min-width: 0;
@@ -263,6 +339,9 @@
   }
   .latex-workbench.with-source .latex-pdf-preview,
   .latex-workbench.with-source .latex-empty-preview {
+    display: grid;
+  }
+  .latex-resize {
     display: none;
   }
   .latex-source-pane {
@@ -334,7 +413,7 @@
   display: grid;
   place-items: center;
   gap: 0.4rem;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--surface-tint);
   padding: 0.6rem;
   overflow: hidden;
@@ -390,9 +469,9 @@
 .document-diff {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  border: 1px solid var(--line);
+  border: 0;
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--paper);
   max-height: 70dvh;
   overflow: auto;
@@ -543,6 +622,7 @@
   font-weight: 800;
   text-underline-offset: 0.25em;
   overflow-wrap: anywhere;
+  text-decoration: none;
 }
 .document-link-card .inline-actions {
   margin-left: auto;
@@ -629,8 +709,8 @@
   width: 100%;
   min-height: 72dvh;
   flex: 1;
-  border: 2px solid var(--ink);
-  border-radius: 10px;
+  border: 0;
+  border-radius: 0;
   background: #fff;
 }
 .document-viewer:fullscreen .document-preview-frame {
@@ -641,8 +721,8 @@
   display: grid;
   place-items: center;
   padding: 1rem;
-  border: 2px solid var(--ink);
-  border-radius: 10px;
+  border: 0;
+  border-radius: 0;
   background: var(--paper);
 }
 .document-preview-image img {

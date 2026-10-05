@@ -16,10 +16,10 @@ import {
   Input,
   Modal,
   PageHeader,
-  Select,
 } from "../../components/ui";
 import { downloadFile, jsonRequest, request } from "../../lib/api";
 import { useWorkspace } from "../../lib/workspace";
+import { displayName } from "../../lib/display-name";
 import { editorDraftsFor, type EditorDraft } from "../../lib/device-drafts";
 import {
   downloadWorkBackup,
@@ -182,8 +182,9 @@ export function SettingsPage() {
       if (handle && !/^[A-Za-z0-9_-]{1,40}$/.test(handle))
         throw new Error("Enter a valid LeetCode username or profile URL.");
       await savePreferences({
+        displayName: form.displayName.trim(),
         timezone: form.timezone.trim(),
-        reducedMotion: form.reducedMotion,
+        reducedMotion: false,
         theme: form.theme,
         leetcode: handle
           ? `https://leetcode.com/u/${encodeURIComponent(handle)}/`
@@ -356,12 +357,14 @@ export function SettingsPage() {
           <h2>Account</h2>
           <div className="settings-account-row">
             <span className="settings-account-avatar" aria-hidden="true">
-              {(mode === "demo" ? "D" : user?.name || "A")
+              {(mode === "demo" ? "D" : displayName(preferences, user))
                 .slice(0, 1)
                 .toUpperCase()}
             </span>
             <div>
-              <strong>{mode === "demo" ? "Demo" : user?.name}</strong>
+              <strong>
+                {mode === "demo" ? "Demo" : displayName(preferences, user)}
+              </strong>
               <p>{mode === "demo" ? "Sample data in this tab" : user?.email}</p>
             </div>
             <Button
@@ -381,6 +384,16 @@ export function SettingsPage() {
             }}
             onChange={() => setSaveStatus("")}
           >
+            <Field label="Display name">
+              <Input
+                value={form.displayName}
+                maxLength={100}
+                placeholder={user?.name || "Your name"}
+                onChange={(event) =>
+                  setForm({ ...form, displayName: event.target.value })
+                }
+              />
+            </Field>
             <Field label="Timezone">
               <Input
                 value={form.timezone}
@@ -397,18 +410,22 @@ export function SettingsPage() {
               </datalist>
             </Field>
             <Field label="Appearance">
-              <Select
-                value={form.theme}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    theme: event.target.value as UserPreferences["theme"],
-                  })
-                }
+              <div
+                className="theme-switch"
+                role="group"
+                aria-label="Appearance"
               >
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </Select>
+                {(["light", "dark"] as const).map((theme) => (
+                  <button
+                    type="button"
+                    key={theme}
+                    aria-pressed={form.theme === theme}
+                    onClick={() => setForm({ ...form, theme })}
+                  >
+                    {theme === "light" ? "Light" : "Dark"}
+                  </button>
+                ))}
+              </div>
             </Field>
             <Field
               label="LeetCode username"
@@ -424,16 +441,6 @@ export function SettingsPage() {
                 placeholder="Username or profile URL"
               />
             </Field>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={form.reducedMotion}
-                onChange={(event) =>
-                  setForm({ ...form, reducedMotion: event.target.checked })
-                }
-              />
-              Reduce motion
-            </label>
             <div className="inline-actions">
               <Button type="submit" disabled={!!busy}>
                 {busy === "preferences" ? "Saving…" : "Save"}

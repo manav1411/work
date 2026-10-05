@@ -6,8 +6,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Download, FileCode2, Play, Plus, X } from "lucide-react";
-import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
+import { FileCode2, Play, Plus, X } from "lucide-react";
+import { unzipSync, strFromU8 } from "fflate";
 import { field, type WorkRecord } from "../../../shared/model";
 import {
   validLatexPath,
@@ -17,7 +17,7 @@ import {
   type LatexProject as Project,
 } from "../../../shared/latex";
 import { Button, Input, Select } from "../../components/ui";
-import { ApiError, downloadFile, jsonRequest, request } from "../../lib/api";
+import { ApiError, jsonRequest, request } from "../../lib/api";
 import { useEditMode } from "../../lib/edit-mode";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
@@ -44,6 +44,7 @@ export default function LatexDocumentPanel({
   const [project, setProject] = useState<Project>();
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState(false);
+  const [split, setSplit] = useState(50);
   const [path, setPath] = useState("main.tex");
   const [line, setLine] = useState<number>();
   const [error, setError] = useState("");
@@ -51,6 +52,7 @@ export default function LatexDocumentPanel({
   const [job, setJob] = useState<Job>();
   const [successful, setSuccessful] = useState<Job>();
   const [comparison, setComparison] = useState<Project>();
+  const [comparisonLabel, setComparisonLabel] = useState("");
   const [revisions, setRevisions] =
     useState<{ id: string; createdAt: string }[]>();
   const [text, setText] = useState<string>();
@@ -119,6 +121,40 @@ export default function LatexDocumentPanel({
       active = false;
     };
   }, [api, draftKey]);
+  useEffect(() => {
+    if (
+      loading ||
+      !editing ||
+      project ||
+      recover ||
+      error ||
+      record.data.nativeDocument !== true
+    )
+      return;
+    setProject({
+      version: record.version,
+      revisionId: "",
+      mainFile: "main.tex",
+      engine: "pdflatex",
+      files: [
+        {
+          path: "main.tex",
+          encoding: "utf8",
+          content: template(field(record, "type") === "letter"),
+        },
+      ],
+    });
+    setSource(true);
+  }, [
+    loading,
+    editing,
+    project,
+    recover,
+    error,
+    record.version,
+    record.data.nativeDocument,
+    record.data.type,
+  ]);
   useEffect(() => {
     setText(undefined);
   }, [successful?.textUrl]);
@@ -335,30 +371,23 @@ export default function LatexDocumentPanel({
       setError(errorMessage(failure));
     }
   }
-  function exportSource() {
-    if (!project) return;
-    const files: Record<string, Uint8Array> = {};
-    for (const file of project.files)
-      files[file.path] =
-        file.encoding === "utf8"
-          ? strToU8(file.content)
-          : Uint8Array.from(atob(file.content), (char) => char.charCodeAt(0));
-    const bytes = zipSync(files);
-    downloadFile(
-      new Blob([bytes.buffer as ArrayBuffer], { type: "application/zip" }),
-      `${record.title}-source.zip`,
-    );
-  }
-  async function compare(mode: "fork" | "primary") {
+  async function compare(mode: "fork" | "primary" | "parent") {
     const parent = field(record, "parentVariantId");
     const fork = field(record, "forkRevisionId");
-    const destination = mode === "fork" ? parent : primary?.id;
+    const destination = mode === "primary" ? primary?.id : parent;
     if (!destination || (mode === "fork" && !fork)) return;
     try {
       const result = await request<{ project: Project }>(
         `/api/latex/${encodeURIComponent(destination)}${mode === "fork" ? `/revisions/${encodeURIComponent(fork)}` : ""}`,
       );
       setComparison(result.project);
+      setComparisonLabel(
+        mode === "fork"
+          ? `Fork baseline · ${field(record, "forkedFromTitle", records.find((item) => item.id === parent)?.title || "historical parent")}`
+          : mode === "parent"
+            ? `Current parent · ${records.find((item) => item.id === parent)?.title || "parent"}`
+            : `Primary · ${primary?.title || "main document"}`,
+      );
       setSource(true);
     } catch (failure) {
       setError(errorMessage(failure));
@@ -385,15 +414,14 @@ export default function LatexDocumentPanel({
       <div className="latex-toolbar">
         {project && (
           <>
-            <Button
-              variant={source ? "secondary" : "ghost"}
-              onClick={() => setSource((value) => !value)}
-            >
-              <FileCode2 size={16} /> Source
-            </Button>
-            <Button variant="ghost" onClick={exportSource}>
-              <Download size={16} /> Source ZIP
-            </Button>
+            {!editing && (
+              <Button
+                variant={source ? "secondary" : "ghost"}
+                onClick={() => setSource((value) => !value)}
+              >
+                <FileCode2 size={16} /> Source
+              </Button>
+            )}
             <span className="latex-state" role="status">
               {state}
               {job && ["queued", "running"].includes(job.status)
@@ -527,7 +555,7 @@ export default function LatexDocumentPanel({
           </label>
         </div>
       )}
-      {project && source && (
+      {project && (source || editing) && (
         <details className="latex-settings">
           <summary>Files & settings</summary>
           <div className="inline-actions">
@@ -652,18 +680,32 @@ export default function LatexDocumentPanel({
               Changes from primary
             </Button>
           )}
+          {field(record, "parentVariantId") !== primary?.id &&
+            records.some(
+              (item) => item.id === field(record, "parentVariantId"),
+            ) && (
+              <Button variant="ghost" onClick={() => void compare("parent")}>
+                Changes from current parent
+              </Button>
+            )}
           {comparison && (
             <Button variant="ghost" onClick={() => setComparison(undefined)}>
               <X size={15} /> Close differences
             </Button>
           )}
+          {comparison && comparisonLabel && (
+            <small className="muted">{comparisonLabel}</small>
+          )}
         </div>
       )}
       {(project || successful?.pdfUrl) && (
-        <div className={`latex-workbench ${source ? "with-source" : ""}`}>
+        <div
+          className={`latex-workbench ${source || editing ? "with-source" : ""}`}
+          style={{ "--latex-split": `${split}%` } as React.CSSProperties}
+        >
           <Suspense fallback={<p role="status">Loading editor…</p>}>
             {project &&
-              source &&
+              (source || editing) &&
               ((currentFile || comparedFile)?.encoding === "utf8" ? (
                 <div className="latex-source-pane">
                   <SourceEditor
@@ -725,8 +767,19 @@ export default function LatexDocumentPanel({
                   )}
                 </div>
               ) : (
-                <p>Binary file · available in source ZIP</p>
+                <p>Binary project file · included in your backup</p>
               ))}
+            {(source || editing) && project && (
+              <input
+                className="latex-resize"
+                type="range"
+                min="25"
+                max="75"
+                value={split}
+                aria-label="Source pane width"
+                onChange={(event) => setSplit(Number(event.target.value))}
+              />
+            )}
             {successful?.pdfUrl ? (
               <PdfPreview url={successful.pdfUrl} />
             ) : (

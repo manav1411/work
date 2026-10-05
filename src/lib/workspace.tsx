@@ -239,10 +239,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } catch {
       /* Theme still applies to this session. */
     }
-    document.documentElement.dataset.reduceMotion = String(
-      preferences.reducedMotion,
-    );
-  }, [preferences.theme, preferences.reducedMotion, loading]);
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotion = () => { document.documentElement.dataset.reduceMotion = String(query.matches); };
+    updateMotion(); query.addEventListener('change', updateMotion);
+    return () => query.removeEventListener('change', updateMotion);
+  }, [preferences.theme, loading]);
 
   const create = useCallback(
     async (input: RecordInput): Promise<WorkRecord> => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { field, safeUrl, type Attachment, type WorkRecord } from "./model";
+import { normalizeWebUrl } from "./urls";
 
 export const DOCUMENT_MAX_BYTES = 10 * 1024 * 1024;
 export const DOCX_TYPE =
@@ -24,7 +25,7 @@ export function documentUrl(value: string): string {
 }
 
 export function webDestination(value: string): string {
-  const safe = safeUrl(value.trim());
+  const safe = safeUrl(normalizeWebUrl(value));
   if (!safe || safe.length > 2048) return "";
   const url = new URL(safe);
   return !url.username && !url.password ? safe : "";
@@ -33,6 +34,7 @@ export function webDestination(value: string): string {
 export const documentDestinationSchema = z
   .string()
   .max(2048)
+  .transform(normalizeWebUrl)
   .refine(
     (value) => !value || !!documentUrl(value),
     "Use an HTTP or HTTPS URL without embedded credentials.",
@@ -68,6 +70,7 @@ export const profileLinkDataSchema = z
       .string()
       .min(1)
       .max(2048)
+      .transform(normalizeWebUrl)
       .refine(
         (value) => !!webDestination(value),
         "Use an HTTP or HTTPS URL without embedded credentials.",

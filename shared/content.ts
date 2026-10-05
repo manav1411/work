@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { arrayField, field, type RecordKind, type WorkRecord } from "./model";
+import { richContentSchema } from "./rich-content";
 
 export const CONTENT_VERSION = 1;
 const id = z.string().max(180);
@@ -54,6 +55,14 @@ export const contentSectionDataSchema = z
     ...contextShape,
     category: z.literal("content-section"),
     order,
+  })
+  .passthrough();
+export const contentDocumentDataSchema = z
+  .object({
+    ...contextShape,
+    category: z.literal("content-document"),
+    richContent: richContentSchema.optional(),
+    migratedRecordIds: z.array(id).max(500).optional(),
   })
   .passthrough();
 export const contentResourceDataSchema = z
@@ -111,6 +120,7 @@ export function contentDataSchemaFor(
     "learn-topic": { kind: "topic", schema: learnTopicDataSchema },
     "interview-tab": { kind: "note", schema: interviewTabDataSchema },
     "content-section": { kind: "note", schema: contentSectionDataSchema },
+    "content-document": { kind: "note", schema: contentDocumentDataSchema },
     "content-resource": { kind: "resource", schema: contentResourceDataSchema },
     "interview-preparation": {
       kind: "note",
@@ -125,12 +135,21 @@ export function contentDataError(
   kind: RecordKind,
   data: Record<string, unknown>,
 ): string | null {
+  if (
+    data.richContent !== undefined &&
+    !richContentSchema.safeParse(data.richContent).success
+  )
+    return "Unsupported or unsafe rich document.";
   const schema = contentDataSchemaFor(kind, data);
   if (!schema) return null;
   const result = schema.safeParse(data);
   if (!result.success)
     return result.error.issues[0]?.message ?? "Invalid content data.";
-  if (["content-section", "content-resource"].includes(String(data.category))) {
+  if (
+    ["content-section", "content-resource", "content-document"].includes(
+      String(data.category),
+    )
+  ) {
     const keys = ["topicId", "seedId", "tabId", "tabKey", "interviewId"].filter(
       (key) => typeof data[key] === "string" && data[key],
     );

@@ -41,6 +41,15 @@ interface Props {
   personalised: boolean;
   initialTopic?: string;
 }
+export function topicSolveFraction(
+  slugs: string[],
+  solved: Set<string>,
+): number {
+  const unique = [...new Set(slugs)];
+  return unique.length
+    ? unique.filter((slug) => solved.has(slug)).length / unique.length
+    : 0;
+}
 
 function RoadmapGraph({
   solved,
@@ -169,7 +178,20 @@ function RoadmapGraph({
             ref={(node) => {
               nodeRefs.current[item.id] = node;
             }}
-            style={{ gridColumn: item.col, gridRow: item.row }}
+            style={
+              {
+                gridColumn: item.col,
+                gridRow: item.row,
+                "--solved-fill": `${
+                  personalised
+                    ? topicSolveFraction(
+                        item.problems.map((problem) => problem.slug),
+                        solved,
+                      ) * 100
+                    : 0
+                }%`,
+              } as CSSProperties
+            }
             className={`learn-roadmap-node learn-roadmap-tone-${index % 4} ${selected === item.id ? "learn-roadmap-selected" : ""}`}
             aria-expanded={selected === item.id}
             aria-controls={
@@ -246,7 +268,7 @@ export default function Roadmap({ solved, personalised, initialTopic }: Props) {
   return (
     <section className="learn-roadmap">
       <header className="learn-roadmap-heading">
-        <h2>150 problem roadmap</h2>
+        <h2>Roadmap</h2>
         {personalised && (
           <span>
             {confirmed}/{roadmapTotalProblems} confirmed
@@ -264,6 +286,18 @@ export default function Roadmap({ solved, personalised, initialTopic }: Props) {
           <section key={topic.id}>
             <button
               className={`learn-roadmap-list-trigger learn-roadmap-tone-${roadmapTopics.indexOf(topic) % 4}`}
+              style={
+                {
+                  "--solved-fill": `${
+                    personalised
+                      ? topicSolveFraction(
+                          topic.problems.map((problem) => problem.slug),
+                          solved,
+                        ) * 100
+                      : 0
+                  }%`,
+                } as CSSProperties
+              }
               onClick={() => toggle(topic.id)}
               aria-expanded={selected === topic.id}
               aria-controls={`learn-roadmap-list-${topic.id}`}

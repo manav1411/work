@@ -22,8 +22,8 @@ export function useSavingWorkspace() {
     ...workspace,
     pending,
     create: (input: RecordInput) => track(() => workspace.create(input)),
-    update: (id: string, patch: RecordPatch) =>
-      track(() => workspace.update(id, patch)),
+    update: (id: string, patch: RecordPatch, expectedVersion?: number) =>
+      track(() => workspace.update(id, patch, expectedVersion)),
     remove: (id: string) => track(() => workspace.remove(id)),
     savePreferences: (patch: Partial<UserPreferences>) =>
       track(() => workspace.savePreferences(patch)),

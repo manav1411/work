@@ -1,4 +1,9 @@
 import { field, type RecordData, type WorkRecord } from "../../../shared/model";
+import {
+  applicationDate,
+  applicationStatusLabel,
+  recruitmentSteps,
+} from "../../../shared/applications";
 
 export const CAREER_PATHS = [
   { value: "australia-transfer", label: "Australia → possible US transfer" },
@@ -156,7 +161,7 @@ export function applicationCSV(
   const headers = [
     "Role",
     "Company",
-    "Stage",
+    "Status",
     "Location",
     "Career path",
     "Source URL",
@@ -168,17 +173,22 @@ export function applicationCSV(
     "Compensation",
     "Requirements",
     "Resume versions",
+    "Notes",
+    "Recruitment process",
   ];
   const rows = records.map((record) => [
     record.title,
-    allRecords.find((candidate) => candidate.id === field(record, "companyId"))
-      ?.title || "",
-    field(record, "stage", "Saved"),
+    field(record, "company") ||
+      allRecords.find(
+        (candidate) => candidate.id === field(record, "companyId"),
+      )?.title ||
+      "",
+    applicationStatusLabel(record),
     field(record, "location"),
     field(record, "path"),
     field(record, "url"),
     field(record, "deadline"),
-    field(record, "submittedAt"),
+    applicationDate(record),
     field(record, "followUp"),
     field(record, "nextAction"),
     field(record, "workAuthorisation"),
@@ -188,6 +198,10 @@ export function applicationCSV(
       .map(
         (asset) => `${asset.title} ${asset.label} (record v${asset.version})`,
       )
+      .join("; "),
+    record.body,
+    recruitmentSteps(record.data)
+      .map((step) => `${step.title}: ${step.state}`)
       .join("; "),
   ]);
   return [headers, ...rows]

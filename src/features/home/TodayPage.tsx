@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, ChevronLeft, ChevronRight, Flag } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { goalProgress } from "../../../shared/goals";
 import { addDays, localDate, niceDate } from "../../../shared/model";
 import { Button, PageHeader } from "../../components/ui";
@@ -226,7 +226,7 @@ export function TodayPage() {
                 return (
                   <button
                     key={goal.id}
-                    className="timeline-goal-span"
+                    className={`timeline-goal-span timeline-span-tone-${index % 4} ${progress.complete ? "is-complete" : ""}`}
                     style={{
                       left: `${left}%`,
                       width: `${Math.max(3, right - left)}%`,
@@ -271,73 +271,6 @@ export function TodayPage() {
                 <p className="timeline-empty">
                   No dates scheduled in this period.
                 </p>
-              )}
-            </div>
-            <div className="timeline-goals">
-              <div className="section-heading">
-                <h3>Goals</h3>
-                <span className="muted">
-                  {
-                    model.goals.filter(
-                      (goal) =>
-                        !goalProgress(goal, observedProgress(goal, learning))
-                          .complete,
-                    ).length
-                  }{" "}
-                  active
-                </span>
-              </div>
-              {model.goals.length ? (
-                <div className="goal-grid">
-                  {model.goals.map((goal) => {
-                    const progress = goalProgress(
-                      goal,
-                      observedProgress(goal, learning),
-                    );
-                    return (
-                      <button
-                        className={`goal-card ${progress.complete ? "goal-complete" : ""}`}
-                        key={goal.id}
-                        onClick={() => {
-                          navigate(`/direction?goal=${goal.id}`);
-                        }}
-                      >
-                        <div className="goal-card-top">
-                          <span>
-                            {goal.targetDate
-                              ? niceDate(goal.targetDate)
-                              : "No target date"}
-                          </span>
-                          {progress.complete ? (
-                            <Check size={17} />
-                          ) : (
-                            <Flag size={17} />
-                          )}
-                        </div>
-                        <strong>{goal.title}</strong>
-                        <div
-                          className="goal-progress"
-                          role="progressbar"
-                          aria-label={`${goal.title} progress`}
-                          aria-valuenow={Math.round(progress.percent)}
-                          aria-valuemin={0}
-                          aria-valuemax={100}
-                        >
-                          <span style={{ width: `${progress.percent}%` }} />
-                        </div>
-                        <small>
-                          {goal.measure === "completion"
-                            ? progress.complete
-                              ? "Complete"
-                              : "In progress"
-                            : `${progress.value} / ${progress.target}${goal.unit ? ` ${goal.unit}` : ""}`}
-                        </small>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="muted">No goals added.</p>
               )}
             </div>
           </>

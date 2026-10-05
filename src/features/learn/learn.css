@@ -599,6 +599,69 @@
   outline: 2px solid var(--blue);
   outline-offset: 3px;
 }
+.learn-roadmap-node,
+.learn-roadmap-list-trigger,
+.learn-roadmap-list-trigger[aria-expanded="true"] {
+  background: linear-gradient(
+    to right,
+    var(--topic-background) 0%,
+    var(--topic-background) var(--solved-fill, 0%),
+    color-mix(in srgb, var(--topic-background) 35%, #fff) var(--solved-fill, 0%),
+    color-mix(in srgb, var(--topic-background) 35%, #fff) 100%
+  );
+  color: #202128;
+}
+.learn-roadmap-node.learn-roadmap-tone-0 strong,
+.learn-roadmap-node.learn-roadmap-tone-0 span,
+.learn-roadmap-list-trigger.learn-roadmap-tone-0 strong,
+.learn-roadmap-list-trigger.learn-roadmap-tone-0 span {
+  text-shadow:
+    0 0 3px #fff,
+    0 0 3px #fff;
+}
+.editable-tabs {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  gap: 10px;
+  padding: 3px 4px 6px 0;
+  margin-bottom: 26px;
+  scrollbar-width: none;
+}
+.editable-tabs > .sortable-item {
+  flex: 0 0 auto;
+}
+.editable-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 10px 16px;
+  min-height: 43px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  border-radius: 8px;
+  font-weight: 750;
+  font-size: 13px;
+}
+.editable-tab.active {
+  background: var(--blue);
+  color: white;
+}
+.editable-tab .inline-title {
+  width: 140px;
+}
+.editable-tab .sort-handle {
+  color: inherit;
+  padding: 0;
+}
+.learn-reading-card h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
 .learn-roadmap-popover {
   position: absolute;
   z-index: 3;
@@ -649,8 +712,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 15px;
-  background: var(--paper);
-  color: var(--ink);
+  background: linear-gradient(
+    to right,
+    var(--topic-background) 0%,
+    var(--topic-background) var(--solved-fill, 0%),
+    color-mix(in srgb, var(--topic-background) 35%, #fff) var(--solved-fill, 0%),
+    color-mix(in srgb, var(--topic-background) 35%, #fff) 100%
+  );
+  color: #202128;
   border: 1px solid var(--ink);
   border-radius: 7px;
   padding: 13px;
@@ -661,12 +730,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--muted);
+  color: inherit;
   font-size: 11px;
 }
 .learn-roadmap-list-trigger[aria-expanded="true"] {
-  background: var(--topic-background, var(--lime));
-  color: var(--topic-foreground, #202128);
+  color: #202128;
 }
 .learn-roadmap-list-trigger[aria-expanded="true"] > span {
   color: inherit;
@@ -974,4 +1042,18 @@
   .learn-calendar-total {
     margin-left: 0;
   }
+}
+.learn-calendar-profile {
+  position: relative;
+  padding-left: 46px;
+}
+.learn-calendar-avatar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 36px;
+  width: 36px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  object-fit: cover;
 }

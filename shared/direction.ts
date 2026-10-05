@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeWebUrl } from "./urls";
 
 export const directionDate = z
   .string()
@@ -13,6 +14,7 @@ export const directionDate = z
 const researchUrl = z
   .string()
   .max(2048)
+  .transform(normalizeWebUrl)
   .refine((value) => {
     try {
       const url = new URL(value);
@@ -28,14 +30,14 @@ const researchUrl = z
 export const directionDataSchema = z
   .object({
     category: z.literal("direction"),
-    priority: z.string().max(80).default("Exploratory"),
+    priority: z.string().max(80).optional(),
     status: z.string().max(80).default("Exploring"),
-    location: z.string().max(240).default(""),
-    focus: z.string().max(240).default(""),
-    nextStep: z.string().max(2000).default(""),
-    uncertainties: z.string().max(10_000).default(""),
-    outcome: z.string().max(10_000).default(""),
-    reviewDate: directionDate.default(""),
+    location: z.string().max(240).optional(),
+    focus: z.string().max(240).optional(),
+    nextStep: z.string().max(2000).optional(),
+    uncertainties: z.string().max(10_000).optional(),
+    outcome: z.string().max(10_000).optional(),
+    reviewDate: directionDate.optional(),
     startDate: directionDate.default(""),
     endDate: directionDate.default(""),
     researchLinks: z.array(researchUrl).max(40).default([]),

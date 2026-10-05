@@ -114,7 +114,9 @@ async function load(store: LearningStore, demo: boolean): Promise<void> {
   });
   return store.loadingRequest;
 }
-export function useLearningData() {
+export function useLearningData({
+  revalidateOnEntry = false,
+}: { revalidateOnEntry?: boolean } = {}) {
   const { mode, user, preferences } = useWorkspace();
   const demo = mode === "demo";
   const username = learningUsername(preferences.leetcode);
@@ -132,7 +134,7 @@ export function useLearningData() {
   const value = useSyncExternalStore(subscribe, () => store.value);
   useEffect(() => {
     if (!user) return;
-    if (!store.started) void load(store, demo);
+    if (revalidateOnEntry || !store.started) void load(store, demo);
     const refresh = () => {
       if (
         document.visibilityState === "visible" &&
@@ -142,7 +144,7 @@ export function useLearningData() {
     };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
-  }, [store, demo, user]);
+  }, [store, demo, user, revalidateOnEntry]);
   const reload = useCallback(() => load(store, demo), [store, demo]);
   return { ...value, reload };
 }

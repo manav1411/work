@@ -88,11 +88,18 @@ test("keyboard hold preserves the selected content and edit mode is scoped to it
   await learn.click();
   await expect(
     page.getByRole("status").filter({ hasText: "Editing Learn" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await learn.focus();
   await page.keyboard.down("Space");
   await page.clock.runFor(EDIT_HOLD_DURATION);
   await page.keyboard.up("Space");
+  await expect(
+    page.getByRole("status").filter({ hasText: "Editing Learn" }),
+  ).toBeVisible();
+  await page
+    .getByRole("tab", { name: "Backend engineering", exact: true })
+    .focus();
+  await page.keyboard.press("Enter");
   await expect(
     page.getByRole("status").filter({ hasText: "Editing Learn" }),
   ).toHaveCount(0);

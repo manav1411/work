@@ -101,8 +101,8 @@
 }
 .section-tabs.section-tabs
   > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) {
-  background: var(--lime);
-  color: #202128;
+  background: var(--blue);
+  color: #fff;
 }
 .section-tabs.section-tabs > button:focus-visible {
   outline: 2px solid var(--ink);
@@ -320,4 +320,104 @@
   .simple-shell .sidebar {
     border-right: 2px solid var(--ink);
   }
+}
+.brand .brand-arrow,
+.work-symbol .brand-arrow,
+.signin-mark .brand-arrow {
+  display: inline-flex;
+  width: 0.82em;
+  height: 0.82em;
+  color: var(--blue);
+  animation: brand-arrow-colours 12s ease-in-out infinite;
+  vertical-align: baseline;
+  filter: drop-shadow(
+      1px 0 3px color-mix(in srgb, var(--pink) 40%, transparent)
+    )
+    drop-shadow(-1px 1px 3px color-mix(in srgb, var(--aqua) 35%, transparent));
+}
+.brand-arrow svg {
+  width: 100%;
+  height: 100%;
+}
+@keyframes brand-arrow-colours {
+  0%,
+  100% {
+    color: var(--blue);
+  }
+  25% {
+    color: var(--pink);
+  }
+  50% {
+    color: var(--lime);
+  }
+  75% {
+    color: var(--aqua);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brand-arrow {
+    animation: none !important;
+  }
+}
+.theme-switch {
+  display: inline-flex;
+  border: 1.5px solid var(--ink);
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: 2px 2px 0 var(--shadow-colour);
+}
+.theme-switch button {
+  border: 0;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 10px 22px;
+  font-weight: 700;
+}
+.theme-switch button[aria-pressed="true"] {
+  background: var(--pink);
+  color: #202128;
+}
+.input:focus {
+  border-color: var(--ink);
+  box-shadow: none;
+  outline: none;
+}
+.input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.card-hit-target:focus-visible::after {
+  border-color: var(--ink) !important;
+}
+.modal,
+.modal-body,
+.document-variants,
+.document-variant-strip,
+.latex-source-editor,
+.latex-pdf-preview,
+.application-detail,
+.application-process,
+.section-tabs,
+.tab-list,
+.direction-timeline {
+  scrollbar-width: none;
+}
+.modal::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar,
+.document-variants::-webkit-scrollbar,
+.document-variant-strip::-webkit-scrollbar,
+.latex-source-editor::-webkit-scrollbar,
+.latex-pdf-preview::-webkit-scrollbar,
+.application-detail::-webkit-scrollbar,
+.application-process::-webkit-scrollbar,
+.section-tabs::-webkit-scrollbar,
+.tab-list::-webkit-scrollbar,
+.direction-timeline::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }

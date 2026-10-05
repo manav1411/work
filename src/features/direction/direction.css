@@ -12,14 +12,34 @@
   border: 2px solid var(--ink);
   box-shadow: 4px 4px 0 var(--shadow-colour);
 }
-.direction-path {
-  border-top: 8px solid var(--blue);
+.direction-card h3,
+.goal-inline-card h3 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 22px;
 }
-.direction-rotation {
-  border-top: 8px solid var(--pink);
+.direction-card .inline-title,
+.goal-inline-card .inline-title {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--font-heading);
+  font-size: 22px;
+  font-weight: 750;
 }
-.direction-decision {
-  border-top: 8px solid var(--orange);
+.direction-card .rich-document {
+  min-height: 100px;
+}
+.direction-links .input {
+  min-width: 0;
+}
+.direction-page [data-selected="true"] > .card {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+.goal-inline-card {
+  height: 100%;
 }
 .direction-card .record-title-button {
   font-family: var(--font-heading);

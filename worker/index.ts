@@ -20,6 +20,7 @@ import { goalRoutes } from "./goals";
 import { goalMigrationRoutes } from "./goal-migration";
 import { learningRoutes } from "./learning";
 import { latexRoutes } from "./latex";
+import { applicationStatusLabel } from '../shared/applications';
 import { assertNativeInput, assertProviderPatch } from "./connectors/store";
 import { ProviderFailure } from "./connectors/providers";
 import {
@@ -38,6 +39,7 @@ import {
   validateDataReferences,
   validateLinks,
   writeRecord,
+  updateRecord,
   type AttachmentRow,
   type RecordRow,
 } from "./db/records";
@@ -263,6 +265,104 @@ app.route("/api/goals", goalRoutes);
 app.route("/api/learning", learningRoutes);
 app.route("/api/latex", latexRoutes);
 
+function assertBehaviouralProtected(record: Pick<WorkRecord, "kind" | "data">) {
+  if (
+    record.kind === "note" &&
+    record.data.category === "interview-tab" &&
+    record.data.tabKey === "behavioural"
+  )
+    throw new ApiError(
+      400,
+      "PROTECTED_TAB",
+      "The Behavioural tab contains your STAR story bank and cannot be removed.",
+    );
+}
+function assertCurrentProductInput(record: {
+  kind: string;
+  data?: Record<string, unknown>;
+}) {
+  const data = record.data || {};
+  if (
+    record.kind === "interview" &&
+    (data.appointmentVersion !== 2 || !data.applicationId || !data.stepId)
+  )
+    throw new ApiError(
+      400,
+      "STEP_REQUIRED",
+      "Add a recruitment step to the application before scheduling.",
+    );
+  if (
+    record.kind === "note" &&
+    data.category === "interview-tab" &&
+    data.tabKey === "behavioural" &&
+    data.hidden
+  )
+    throw new ApiError(
+      400,
+      "PROTECTED_TAB",
+      "The Behavioural tab cannot be hidden.",
+    );
+}
+app.post("/api/records/reorder", async (context) => {
+  const { items, key } = parse(
+    z
+      .object({
+        items: z
+          .array(
+            z.object({
+              id: z.string().min(1),
+              version: z.number().int().positive(),
+              order: z.number().int().min(0).max(1000000),
+            }),
+          )
+          .min(1)
+          .max(200),
+        key: z.enum(["order", "directionOrder"]).default("order"),
+      })
+      .strict(),
+    await readJson(context.req.raw),
+  );
+  if (new Set(items.map((item) => item.id)).size !== items.length)
+    throw new ApiError(400, "DUPLICATE_RECORD", "Each item must appear once.");
+  const owner = context.get("user").id;
+  const records = await Promise.all(
+    items.map(async (item) => {
+      const before = await getRecord(context.env.DB, owner, item.id);
+      if (before.version !== item.version)
+        throw new ApiError(
+          409,
+          "VERSION_CONFLICT",
+          "Content changed while arranging it. Refresh and try again.",
+        );
+      return {
+        ...before,
+        data: { ...before.data, [key]: item.order },
+        version: before.version + 1,
+        updatedAt: now(),
+      };
+    }),
+  );
+  const guard = crypto.randomUUID();
+  try {
+    await context.env.DB.batch([
+      context.env.DB.prepare(
+        "INSERT INTO write_guards(id,value) SELECT ?, count(*)=? FROM records r JOIN json_each(?) j ON r.id=json_extract(j.value,'$.id') AND r.version=json_extract(j.value,'$.version') WHERE r.owner_id=? AND r.deleted_at IS NULL",
+      ).bind(guard, items.length, JSON.stringify(items), owner),
+      ...records.map((record, i) =>
+        updateRecord(context.env.DB, owner, record, items[i].version),
+      ),
+      context.env.DB.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
+    ]);
+  } catch {
+    throw new ApiError(
+      409,
+      "VERSION_CONFLICT",
+      "Content changed while arranging it. Nothing was rearranged.",
+    );
+  }
+  return context.json({ records });
+});
+
 app.get("/api/records", async (context) => {
   const includeDeleted = context.req.query("includeDeleted") === "true";
   const kind = context.req.query("kind");
@@ -293,6 +393,7 @@ app.post("/api/records/batch", async (context) => {
   );
   if (state.response) return context.json(state.response);
   const records = payload.records.map((input) => newRecord(input));
+  for (const record of records) assertCurrentProductInput(record);
   for (const input of payload.records) assertNativeInput(input.data);
   for (const record of records)
     await validateRecordContract(context.env.DB, owner, record, records);
@@ -332,6 +433,7 @@ app.post("/api/records/batch", async (context) => {
 
 app.post("/api/records", async (context) => {
   const input = parse(recordSchema, await readJson(context.req.raw));
+  assertCurrentProductInput(input);
   assertNativeInput(input.data);
   const owner = context.get("user").id;
   const state = await checkIdempotency(
@@ -409,6 +511,19 @@ app.patch("/api/records/:id", async (context) => {
     version: before.version + 1,
     updatedAt: now(),
   };
+  if (
+    before.kind === "note" &&
+    before.data.category === "interview-tab" &&
+    before.data.tabKey === "behavioural" &&
+    (record.data.category !== "interview-tab" ||
+      record.data.tabKey !== "behavioural" ||
+      record.data.hidden)
+  )
+    throw new ApiError(
+      400,
+      "PROTECTED_TAB",
+      "The Behavioural tab cannot be removed or hidden.",
+    );
   // Source/build state is owned by the native project API, not stale metadata forms.
   if (before.kind === "asset") {
     for (const key of ["latexProject", "latexJobs", "submissions"]) {
@@ -438,6 +553,9 @@ app.patch("/api/records/:id", async (context) => {
       ],
     };
   }
+  if(record.kind==='application'&&['applicationStatus','selectedStepId','terminalOutcome'].some(key=>record.data[key]!==before.data[key])){
+    record.data={...record.data,stageHistory:[...(Array.isArray(before.data.stageHistory)?before.data.stageHistory:[]).slice(-99),{from:applicationStatusLabel(before),to:applicationStatusLabel(record),at:record.updatedAt,fromStepId:before.data.selectedStepId||'',toStepId:record.data.selectedStepId||''}]};
+  }
   const response = { record };
   try {
     await writeRecord(
@@ -464,6 +582,7 @@ app.delete("/api/records/:id", async (context) => {
     true,
   );
   if (before.deletedAt) return context.json({ record: before });
+  assertBehaviouralProtected(before);
   await assertRecordFilesNotSubmitted(context.env.DB, owner, before.id);
   const record = {
     ...before,
@@ -511,6 +630,7 @@ app.delete("/api/records/:id/permanent", async (context) => {
   const owner = context.get("user").id;
   const recordId = context.req.param("id");
   const record = await getRecord(context.env.DB, owner, recordId, true);
+  assertBehaviouralProtected(record);
   if (!record.deletedAt)
     throw new ApiError(
       409,
@@ -655,7 +775,20 @@ app.get("/api/records/:id/attachments", async (context) => {
 });
 app.post("/api/records/:id/attachments", async (context) => {
   const owner = context.get("user").id;
-  await getRecord(context.env.DB, owner, context.req.param("id"));
+  const document = await getRecord(
+    context.env.DB,
+    owner,
+    context.req.param("id"),
+  );
+  if (
+    document.kind === "asset" &&
+    ["resume", "letter", "cover-letter"].includes(String(document.data.type))
+  )
+    throw new ApiError(
+      400,
+      "NATIVE_DOCUMENT_ONLY",
+      "Résumé and cover-letter PDFs are generated from LaTeX. Upload other files under Other documents.",
+    );
   const bytes = await readLimitedBody(context.req.raw, MAX_FILE_BYTES + 64_000);
   const form = await new Response(bytes.buffer as ArrayBuffer, {
     headers: { "Content-Type": context.req.header("Content-Type") || "" },

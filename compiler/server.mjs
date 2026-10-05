@@ -1,175 +1,29 @@
 import { createServer } from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { promisify } from "node:util";
 import {
   chmod,
   lstat,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
-import { pathToFileURL } from "node:url";
-
-export const LIMITS = {
-  files: 100,
-  bytes: 20 * 1024 * 1024,
-  body: 29 * 1024 * 1024,
-  pdf: 10 * 1024 * 1024,
-  log: 150000,
-};
-const ENGINES = new Set(["pdflatex", "xelatex", "lualatex"]);
-
-export function validateJob(input) {
-  if (
-    !input ||
-    typeof input !== "object" ||
-    !/^[a-zA-Z0-9_-]{1,100}$/.test(input.jobId)
-  )
-    throw new Error("Invalid job ID");
-  if (!ENGINES.has(input.engine)) throw new Error("Unsupported engine");
-  if (
-    !Array.isArray(input.files) ||
-    !input.files.length ||
-    input.files.length > LIMITS.files
-  )
-    throw new Error("Invalid project files");
-  let bytes = 0;
-  const paths = new Set();
-  const files = input.files.map((file) => {
-    if (
-      typeof file.path !== "string" ||
-      !file.path.length ||
-      file.path.length > 240 ||
-      // Reject shell metacharacters as well as archive-control characters.
-      // eslint-disable-next-line no-control-regex
-      /[\u0000-\u001f\u007f:\\`$'";|<>&*?!(){}[\]]/.test(file.path) ||
-      file.path.startsWith("/") ||
-      !/\.(tex|cls|sty|bib|bst|png|jpg|jpeg|pdf|eps|otf|ttf|woff2?|txt|csv|json|def|cfg|clo|fd|dat)$/i.test(
-        file.path,
-      ) ||
-      file.path.split("/").some((part) => !part || part.startsWith(".")) ||
-      file.path.toLowerCase().startsWith("build/") ||
-      file.path.toLowerCase() === "build" ||
-      /(^|\/)(\.?latexmkrc)$/i.test(file.path)
-    )
-      throw new Error("Unsafe or unsupported source path");
-    if (
-      [...paths].some((path) => path.toLowerCase() === file.path.toLowerCase())
-    )
-      throw new Error("Duplicate source path");
-    if (
-      typeof file.contentBase64 !== "string" ||
-      file.contentBase64.length > LIMITS.body ||
-      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
-        file.contentBase64,
-      )
-    )
-      throw new Error("Invalid source encoding");
-    const content = Buffer.from(file.contentBase64, "base64");
-    bytes += content.length;
-    if (bytes > LIMITS.bytes) throw new Error("Project too large");
-    paths.add(file.path);
-    return { path: file.path, content };
-  });
-  if (
-    typeof input.mainFile !== "string" ||
-    !paths.has(input.mainFile) ||
-    !/\.tex$/i.test(input.mainFile)
-  )
-    throw new Error("Main file must be a project .tex file");
-  for (const path of paths) {
-    let parent = posix.dirname(path);
-    while (parent !== ".") {
-      if (paths.has(parent))
-        throw new Error("Source path collides with a directory");
-      parent = posix.dirname(parent);
-    }
-  }
-  return {
-    jobId: input.jobId,
-    engine: input.engine,
-    mainFile: input.mainFile,
-    files,
-  };
-}
-
-export function inputHash(job) {
-  const hash = createHash("sha256").update(
-    JSON.stringify({ engine: job.engine, mainFile: job.mainFile }),
-  );
-  for (const file of [...job.files].sort((a, b) =>
-    a.path.localeCompare(b.path),
-  )) {
-    hash
-      .update("\0")
-      .update(file.path)
-      .update("\0")
-      .update(String(file.content.length))
-      .update("\0")
-      .update(file.content);
-  }
-  return hash.digest("hex");
-}
-
-export function diagnostics(log) {
-  return log
-    .split("\n")
-    .flatMap((line) => {
-      const error = /^(.+?\.\w+):(\d+):\s*(.+)$/.exec(line);
-      if (error)
-        return [
-          {
-            file: error[1].replace(/^\.\//, ""),
-            line: Number(error[2]),
-            severity: "error",
-            message: error[3].slice(0, 1000),
-          },
-        ];
-      if (
-        /^(?:LaTeX|Package .+?) Warning:|^(?:Overfull|Underfull) \\[hv]box/.test(
-          line,
-        )
-      )
-        return [{ severity: "warning", message: line.slice(0, 1000) }];
-      return [];
-    })
-    .slice(0, 200);
-}
-
-function command(args, limit = 65536) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
-    let output = "";
-    const timer = setTimeout(() => {
-      proc.kill("SIGKILL");
-      reject(new Error("Docker control command timed out"));
-    }, 10000);
-    for (const stream of [proc.stdout, proc.stderr])
-      stream.on("data", (chunk) => {
-        output = (output + chunk).slice(-limit);
-      });
-    proc.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    proc.once("close", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve(output);
-      else reject(new Error(output || `Docker exited ${code}`));
-    });
-  });
-}
-async function outputFile(path, limit, tail = false) {
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { LIMITS, validateJob, inputHash, diagnostics } from "./protocol.mjs";
+export { LIMITS, validateJob, inputHash, diagnostics } from "./protocol.mjs";
+const execute = promisify(execFile),
+  base = dirname(fileURLToPath(import.meta.url));
+async function outputFile(path, limit) {
   try {
     const info = await lstat(path);
-    if (!info.isFile() || info.isSymbolicLink() || (info.size > limit && !tail))
+    if (!info.isFile() || info.isSymbolicLink() || info.size > limit)
       return null;
-    const contents = await readFile(path);
-    return tail ? contents.subarray(-limit) : contents;
+    return await readFile(path);
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
@@ -178,103 +32,207 @@ async function outputFile(path, limit, tail = false) {
 
 export async function startCompiler({
   token,
-  image = "work-texlive:2025",
   host = "127.0.0.1",
   port = 8788,
-  timeout = 20000,
-  concurrency = 2,
-  temporaryDirectory = process.env.WORK_COMPILER_TMPDIR || tmpdir(),
+  timeout = 90000,
+  temporaryDirectory = process.env.WORK_COMPILER_TMPDIR || join(base, "state"),
 } = {}) {
   if (!token || token.length < 24)
     throw new Error("WORK_COMPILER_TOKEN must contain at least 24 characters");
-  if (!Number.isFinite(timeout) || timeout < 1000 || timeout > 22000)
-    throw new Error("Compile timeout must be 1000–22000 ms");
-  const info = JSON.parse(await command(["image", "inspect", image]))[0];
-  const imageDigest = info.Id;
-  if (!/^sha256:[a-f0-9]{64}$/.test(imageDigest))
-    throw new Error("Compiler image is not available locally");
-  const jobs = new Map();
-  const auth = Buffer.from(`Bearer ${token}`);
-  async function compile(job, state) {
-    const directory = await mkdtemp(join(temporaryDirectory, "work-tex-"));
-    try {
-      await chmod(directory, 0o777);
-      for (const file of job.files) {
-        const target = join(directory, file.path);
-        await mkdir(dirname(target), { recursive: true, mode: 0o755 });
-        await writeFile(target, file.content, { mode: 0o444 });
+  if (!Number.isFinite(timeout) || timeout < 1000 || timeout > 180000)
+    throw new Error("Compile timeout must be 1000–180000 ms");
+  await mkdir(temporaryDirectory, { recursive: true, mode: 0o700 });
+  const versions = await Promise.all(
+    ["pdflatex", "xelatex", "lualatex", "latexmk", "pdftotext"].map(
+      async (engine) => {
+        const { stdout, stderr } = await execute(
+          engine,
+          [
+            engine === "latexmk"
+              ? "-version"
+              : engine === "pdftotext"
+                ? "-v"
+                : "--version",
+          ],
+          { maxBuffer: 8192 },
+        );
+        return `${engine}:${(stdout || stderr).trim()}`;
+      },
+    ),
+  );
+  await execute("bwrap", ["--version"]);
+  const compilerFingerprint = createHash("sha256")
+    .update(versions.join("\n"))
+    .update(await readFile(join(base, "run-job.sh")))
+    .digest("hex");
+  const auth = Buffer.from(`Bearer ${token}`),
+    jobs = new Map();
+  let active = null;
+  for (const filename of await readdir(temporaryDirectory)) {
+    if (/^work-tex-[a-zA-Z0-9]+$/.test(filename)) {
+      await rm(join(temporaryDirectory, filename), { recursive: true, force: true });
+      continue;
+    }
+    if (/^[a-zA-Z0-9_-]+\.json$/.test(filename)) {
+      try {
+        const state = JSON.parse(
+          await readFile(join(temporaryDirectory, filename), "utf8"),
+        );
+        if (["queued", "running"].includes(state.status)) {
+          state.status = "failed";
+          state.result = {
+            success: false,
+            log: "Compiler restarted before this job finished. Recompile the saved source.",
+            text: "",
+            fonts: "",
+            diagnostics: [],
+            metadata: { compilerFingerprint },
+          };
+          await writeFile(
+            join(temporaryDirectory, filename),
+            JSON.stringify(state),
+            { mode: 0o600 },
+          );
+        }
+        if (Date.now() - state.updatedAt < 3600000) jobs.set(state.id, state);
+        else await rm(join(temporaryDirectory, filename));
+      } catch {
+        /* corrupted state is not usable */
       }
-      await mkdir(join(directory, "build"), { mode: 0o777 });
-      await chmod(join(directory, "build"), 0o777);
-      if (state.cancelled) throw new Error("Compile cancelled");
-      const name = `work-tex-${createHash("sha256").update(job.jobId).digest("hex").slice(0, 24)}`;
-      state.name = name;
+    }
+  }
+  const persist = (state) =>
+    writeFile(
+      join(temporaryDirectory, `${state.id}.json`),
+      JSON.stringify({
+        id: state.id,
+        status: state.status,
+        updatedAt: state.updatedAt,
+        hash: state.hash,
+        result: state.result,
+      }),
+      { mode: 0o600 },
+    );
+  const publicState = (state) => ({
+    id: state.id,
+    status: state.status,
+    updatedAt: state.updatedAt,
+    ...(state.result ? { result: state.result } : {}),
+  });
+  async function compile(state) {
+    const job = state.job,
+      directory = await mkdtemp(join(temporaryDirectory, "work-tex-"));
+    state.directory = directory;
+    await chmod(directory, 0o700);
+    try {
+      for (const file of job.files) {
+        const path = join(directory, file.path);
+        await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+        await writeFile(path, file.content, { mode: 0o600 });
+      }
+      await mkdir(join(directory, "build"), { mode: 0o700 });
       const args = [
-        "run",
-        "--rm",
-        "--pull=never",
-        "--name",
-        name,
-        "--network=none",
-        "--read-only",
-        "--user",
-        "65532:65532",
-        "--cap-drop=ALL",
-        "--security-opt=no-new-privileges",
-        "--pids-limit=128",
-        "--memory=768m",
-        "--memory-swap=768m",
-        "--cpus=1",
-        "--ulimit",
-        "fsize=16384:16384",
+        "--die-with-parent",
+        "--new-session",
+        "--unshare-all",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--symlink",
+        "usr/bin",
+        "/bin",
+        "--symlink",
+        "usr/lib",
+        "/lib",
+        "--symlink",
+        "usr/lib64",
+        "/lib64",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
         "--tmpfs",
-        "/tmp:rw,nosuid,nodev,noexec,size=128m",
-        "--mount",
-        `type=bind,source=${directory},target=/job`,
-        imageDigest,
+        "/tmp",
+        "--dir",
+        "/etc",
+        "--ro-bind",
+        "/etc/fonts",
+        "/etc/fonts",
+        "--ro-bind",
+        "/etc/texmf",
+        "/etc/texmf",
+        "--dir",
+        "/var",
+        "--dir",
+        "/var/lib",
+        "--ro-bind",
+        "/var/lib/texmf",
+        "/var/lib/texmf",
+        "--dir",
+        "/var/cache",
+        "--ro-bind",
+        "/var/cache/fontconfig",
+        "/var/cache/fontconfig",
+        "--bind",
+        directory,
+        "/job",
+        "--ro-bind",
+        join(base, "run-job.sh"),
+        "/runner.sh",
+        "--chdir",
+        "/job",
+        "--clearenv",
+        "--setenv",
+        "PATH",
+        "/usr/bin:/bin",
+        "/usr/bin/prlimit",
+        "--cpu=90",
+        "--as=1073741824",
+        "--fsize=16777216",
+        "--nproc=64",
+        "--",
+        "/bin/sh",
+        "/runner.sh",
         job.engine,
         job.mainFile,
       ];
-      const proc = spawn("docker", args, { stdio: ["ignore", "pipe", "pipe"] });
+      const proc = spawn("bwrap", args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+      });
       state.process = proc;
       let consoleLog = "";
       for (const stream of [proc.stdout, proc.stderr])
         stream.on("data", (chunk) => {
           consoleLog = (consoleLog + chunk).slice(-LIMITS.log);
         });
-      const kill = async () => {
-        state.cancelled = true;
-        await command(["rm", "-f", name]).catch(() => {});
-        proc.kill("SIGKILL");
+      const kill = () => {
+        try {
+          process.kill(-proc.pid, "SIGKILL");
+        } catch {
+          /* already stopped */
+        }
       };
       state.cancel = kill;
-      if (state.cancelled) void kill();
-      const timer = setTimeout(() => void kill(), timeout);
-      const code = await new Promise((resolve, reject) => {
-        proc.once("error", reject);
-        proc.once("close", resolve);
+      const timer = setTimeout(() => {
+        state.timedOut = true;
+        kill();
+      }, timeout);
+      const code = await new Promise((res, rej) => {
+        proc.once("error", rej);
+        proc.once("close", res);
       }).finally(() => clearTimeout(timer));
-      // Always remove a container, including daemon failures/disconnects.
-      await command(["rm", "-f", name]).catch(() => {});
-      const build = join(directory, "build");
-      const pdf =
-        !state.cancelled && code === 0
-          ? await outputFile(join(build, "output.pdf"), LIMITS.pdf)
-          : null;
+      const build = join(directory, "build"),
+        pdf =
+          code === 0 && !state.timedOut
+            ? await outputFile(join(build, "output.pdf"), LIMITS.pdf)
+            : null;
       const log = (
         (
-          await outputFile(join(build, "compile.log"), LIMITS.log, true)
+          await outputFile(join(build, "compile.log"), LIMITS.log)
         )?.toString() || consoleLog
       ).slice(-LIMITS.log);
-      const engineVersion =
-        (await outputFile(join(build, "engine.txt"), 4096))
-          ?.toString()
-          .split("\n")[0] || "";
-      const latexmkVersion =
-        (await outputFile(join(build, "latexmk.txt"), 4096))
-          ?.toString()
-          .trim() || "";
-      return {
+      state.result = {
         success: Boolean(pdf),
         ...(pdf
           ? {
@@ -287,21 +245,20 @@ export async function startCompiler({
               )?.toString("base64"),
             }
           : {}),
-        log: state.cancelled ? `Compile cancelled or timed out.\n${log}` : log,
+        log: state.timedOut ? `Compile timed out.\n${log}` : log,
         text:
           (await outputFile(join(build, "text.txt"), 500000))?.toString() || "",
         fonts:
           (await outputFile(join(build, "fonts.txt"), 20000))?.toString() || "",
         diagnostics: diagnostics(log),
         metadata: {
-          imageDigest,
+          compilerFingerprint,
           texLiveRelease:
-            /TeX Live\s+(\d{4})/.exec(engineVersion)?.[1] || "unknown",
+            /TeX Live\s+(\d{4})/.exec(versions[0])?.[1] || "unknown",
           engine: job.engine,
-          engineVersion,
           inputHash: inputHash(job),
           configuration: {
-            latexmkVersion,
+            latexmkVersion: versions[3].slice(0, 200),
             shellEscape: false,
             customLatexmkrc: false,
             synctex: true,
@@ -309,116 +266,166 @@ export async function startCompiler({
           },
         },
       };
+      if (state.status !== "cancelled")
+        state.status = pdf ? "succeeded" : "failed";
+    } catch (error) {
+      if (state.status !== "cancelled") {
+        state.status = "failed";
+        state.result = {
+          success: false,
+          log: error.message,
+          text: "",
+          fonts: "",
+          diagnostics: [],
+          metadata: { compilerFingerprint },
+        };
+      }
     } finally {
+      state.updatedAt = Date.now();
+      delete state.job;
+      delete state.process;
+      delete state.cancel;
+      delete state.directory;
       await rm(directory, { recursive: true, force: true });
+      await persist(state);
     }
   }
+  async function drain() {
+    if (active) return;
+    const next = [...jobs.values()].find(
+      (state) => state.status === "queued" && state.job,
+    );
+    if (!next) return;
+    active = next;
+    next.status = "running";
+    next.updatedAt = Date.now();
+    await persist(next);
+    await compile(next);
+    active = null;
+    void drain();
+  }
+  const cleanup = setInterval(() => {
+    for (const [id, state] of jobs)
+      if (
+        !["queued", "running"].includes(state.status) &&
+        Date.now() - state.updatedAt > 3600000
+      ) {
+        jobs.delete(id);
+        void rm(join(temporaryDirectory, `${id}.json`), { force: true });
+      }
+  }, 60000);
+  cleanup.unref();
   const server = createServer(async (req, res) => {
-    const reply = (code, body) => {
+    const reply = (status, data) => {
       if (!res.destroyed) {
-        res.writeHead(code, {
+        res.writeHead(status, {
           "content-type": "application/json",
           "cache-control": "no-store",
         });
-        res.end(JSON.stringify(body));
+        res.end(JSON.stringify(data));
       }
     };
     const supplied = Buffer.from(req.headers.authorization || "");
     if (supplied.length !== auth.length || !timingSafeEqual(supplied, auth))
       return reply(401, { error: "Unauthorized" });
-    if (req.method === "GET" && req.url === "/health")
-      return reply(200, {
-        ready: true,
-        imageDigest,
-        activeJobs: jobs.size,
-        engines: [...ENGINES],
-      });
-    if (
-      req.method === "DELETE" &&
-      /^\/jobs\/[a-zA-Z0-9_-]{1,100}$/.test(req.url || "")
-    ) {
-      const state = jobs.get(req.url.slice(6));
-      if (state) {
-        state.cancelled = true;
-        await state.cancel?.();
-      }
-      return reply(200, { cancelled: Boolean(state) });
-    }
-    if (req.method !== "POST" || req.url !== "/compile")
-      return reply(404, { error: "Not found" });
-    if (jobs.size >= concurrency)
-      return reply(429, { error: "Compiler busy; retry shortly" });
-    let state;
-    let job;
     try {
-      let length = 0;
+      if (req.method === "GET" && req.url === "/health")
+        return reply(200, {
+          ready: true,
+          compilerFingerprint,
+          activeJobs: active ? 1 : 0,
+          engines: ["pdflatex", "xelatex", "lualatex"],
+          versions,
+        });
+      const match = /^\/jobs\/([a-zA-Z0-9_-]{1,100})$/.exec(req.url || "");
+      if (match) {
+        const state = jobs.get(match[1]);
+        if (!state) return reply(404, { error: "Job not found" });
+        if (req.method === "DELETE") {
+          if (["queued", "running"].includes(state.status)) {
+            state.status = "cancelled";
+            state.updatedAt = Date.now();
+            state.cancel?.();
+            delete state.job;
+            await persist(state);
+          }
+          return reply(200, publicState(state));
+        }
+        if (req.method === "GET") return reply(200, publicState(state));
+      }
+      if (req.method !== "POST" || req.url !== "/jobs")
+        return reply(404, { error: "Not found" });
       const chunks = [];
+      let length = 0;
       for await (const chunk of req) {
         length += chunk.length;
-        if (length > LIMITS.body) {
-          reply(413, { error: "Project too large" });
-          req.destroy();
-          return;
-        }
+        if (length > LIMITS.body)
+          return reply(413, { error: "Project too large" });
         chunks.push(chunk);
       }
-      job = validateJob(JSON.parse(Buffer.concat(chunks).toString()));
-      // Recheck after reading, since several requests can arrive together.
-      if (jobs.has(job.jobId))
-        return reply(409, { error: "Job already running" });
-      if (jobs.size >= concurrency)
-        return reply(429, { error: "Compiler busy; retry shortly" });
-      state = { cancelled: false };
-      jobs.set(job.jobId, state);
-      res.on("close", () => {
-        if (!res.writableEnded) {
-          state.cancelled = true;
-          void state.cancel?.();
+      const job = validateJob(JSON.parse(Buffer.concat(chunks).toString()));
+      const existing = jobs.get(job.jobId);
+      if (existing) {
+        if (existing.hash !== inputHash(job))
+          return reply(409, {
+            error: "Job ID already belongs to different source",
+          });
+        return reply(200, publicState(existing));
+      }
+      if (
+        [...jobs.values()].filter((state) =>
+          ["queued", "running"].includes(state.status),
+        ).length >= 8
+      )
+        return reply(429, { error: "Compiler queue is full" });
+      if (jobs.size >= 24) {
+        const oldest = [...jobs.values()]
+          .filter((state) => !["queued", "running"].includes(state.status))
+          .sort((a, b) => a.updatedAt - b.updatedAt)[0];
+        if (oldest) {
+          jobs.delete(oldest.id);
+          await rm(join(temporaryDirectory, `${oldest.id}.json`), {
+            force: true,
+          });
         }
-      });
-      reply(200, await compile(job, state));
+      }
+      const state = {
+        id: job.jobId,
+        status: "queued",
+        updatedAt: Date.now(),
+        hash: inputHash(job),
+        job,
+      };
+      jobs.set(state.id, state);
+      await persist(state);
+      reply(202, publicState(state));
+      void drain();
     } catch (error) {
-      reply(state ? 500 : 400, { error: error.message });
-    } finally {
-      if (state) jobs.delete(job.jobId);
+      reply(400, { error: error.message });
     }
   });
-  server.requestTimeout = timeout + 15000;
-  server.headersTimeout = 10000;
   server.on("close", () => {
-    for (const state of jobs.values()) {
-      state.cancelled = true;
-      void state.cancel?.();
-    }
+    clearInterval(cleanup);
+    active?.cancel?.();
   });
-  await new Promise((resolve) => server.listen(port, host, resolve));
+  server.requestTimeout = 15000;
+  await new Promise((res, rej) => {
+    server.once("error", rej);
+    server.listen(port, host, res);
+  });
   return server;
 }
-
 if (
   process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
+  import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  startCompiler({
+  const server = await startCompiler({
     token: process.env.WORK_COMPILER_TOKEN,
-    image: process.env.WORK_TEX_IMAGE,
     host: process.env.WORK_COMPILER_HOST || "127.0.0.1",
     port: Number(process.env.WORK_COMPILER_PORT || 8788),
-    timeout: Number(process.env.WORK_COMPILE_TIMEOUT || 20000),
-  })
-    .then((server) => {
-      process.stdout.write(
-        `Work compiler listening on ${JSON.stringify(server.address())}\n`,
-      );
-      const stop = () => {
-        server.closeAllConnections();
-        server.close(() => process.exit(0));
-      };
-      process.on("SIGTERM", stop);
-      process.on("SIGINT", stop);
-    })
-    .catch((error) => {
-      process.stderr.write(`${error.message}\n`);
-      process.exitCode = 1;
-    });
+    timeout: Number(process.env.WORK_COMPILE_TIMEOUT || 90000),
+  });
+  console.log(
+    `Private native compiler listening on ${JSON.stringify(server.address())}`,
+  );
 }

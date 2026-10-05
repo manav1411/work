@@ -32,7 +32,11 @@ export function formatDuration(seconds: number): string {
 }
 
 /** Convert a wall-clock date in a named IANA zone to UTC, rejecting DST gaps. */
-export function zonedDateTimeToISO(value: string, timezone: string): string {
+export function zonedDateTimeToISO(
+  value: string,
+  timezone: string,
+  occurrence?: "earlier" | "later",
+): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
   if (!match) throw new Error("Enter a valid date and time.");
   const parts = match.slice(1).map(Number);
@@ -82,6 +86,7 @@ export function zonedDateTimeToISO(value: string, timezone: string): string {
     throw new Error(
       "This local time does not exist because of daylight saving. Choose another time.",
     );
+  const candidates = [instant];
   for (const offset of [
     -7_200_000, -3_600_000, -1_800_000, 1_800_000, 3_600_000, 7_200_000,
   ]) {
@@ -94,11 +99,19 @@ export function zonedDateTimeToISO(value: string, timezone: string): string {
       `${alternate.year}-${alternate.month}-${alternate.day}T${alternate.hour}:${alternate.minute}` ===
       value
     )
-      throw new Error(
-        "This local time occurs twice because daylight saving changes. Enter the intended time in UTC instead.",
-      );
+      candidates.push(instant + offset);
   }
-  return new Date(instant).toISOString();
+  if (candidates.length > 1 && !occurrence)
+    throw new Error(
+      "This local time occurs twice because daylight saving changes. Choose the earlier or later occurrence.",
+    );
+  return new Date(
+    occurrence === "earlier"
+      ? Math.min(...candidates)
+      : occurrence === "later"
+        ? Math.max(...candidates)
+        : instant,
+  ).toISOString();
 }
 
 export function isoToZonedInput(value: string, timezone: string): string {

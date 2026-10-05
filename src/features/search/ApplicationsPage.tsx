@@ -1,13 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpRight,
-  CalendarDays,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { ArrowUpRight, CalendarDays, Plus, Trash2 } from "lucide-react";
 import {
   field,
   localDate,
@@ -17,20 +10,15 @@ import {
 import {
   APPLICATION_STATUSES,
   ApplicationDataSchema,
-  RadarCompanyDataSchema,
-  STEP_KINDS,
-  STEP_STATES,
   applicationDate,
   applicationStatus,
-  archiveRecruitmentStep,
-  changeRecruitmentStep,
   commonRecruitmentProcess,
-  currentRecruitmentStep,
   legacyApplicationStage,
   recruitmentSteps,
-  setApplicationStatus,
-  type ApplicationStatus,
-  type RecruitmentStep,
+  applicationStatusLabel,
+  applicationStatusSelection,
+  applicationStatusOptions,
+  selectApplicationStatus,
 } from "../../../shared/applications";
 import {
   Badge,
@@ -50,7 +38,7 @@ import { webDestination } from "../assets/documentLinks";
 import {
   associatedInterviews,
   interviewTime,
-  InterviewEditor,
+  InterviewForm,
 } from "./InterviewEditor";
 import { errorMessage, stageHistory } from "./domain";
 import { useSavingWorkspace as useWorkspace } from "./useSaving";
@@ -58,23 +46,22 @@ import { applicationCompany, applicationContact } from "./applicationRecords";
 import { CompanyGlyph } from "../../components/CompanyGlyph";
 import { useEditMode } from "../../lib/edit-mode";
 import "./applications.css";
+import { InlineProcess } from "./InlineProcess";
+import { InlineApplicationFields } from "./InlineApplicationFields";
+import { InlineRadarFields, radarNotes } from "./InlineRadarFields";
 
 export const APPLICATION_STAGES = APPLICATION_STATUSES;
 
 export function ApplicationsPage() {
   const { editing: editMode } = useEditMode();
-  const { records, preferences, remove, restore, pending } = useWorkspace();
+  const { records, preferences, create, remove, restore, pending } =
+    useWorkspace();
   const [params, setParams] = useSearchParams();
   const [editing, setEditing] = useState<WorkRecord | null | undefined>();
-  const [companyEditing, setCompanyEditing] = useState<
-    WorkRecord | null | undefined
-  >();
   const [prefilledCompany, setPrefilledCompany] = useState<WorkRecord>();
-  const [processEditing, setProcessEditing] = useState(false);
   const [interviewEditing, setInterviewEditing] = useState<
     WorkRecord | null | undefined
   >();
-  const [appointmentStep, setAppointmentStep] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sort, setSort] = useState("updated");
@@ -103,23 +90,6 @@ export function ApplicationsPage() {
       applications.some((item) => item.id === id),
     );
   const selected = applications.find((record) => record.id === selectedId);
-  const linkedDocuments = selected
-    ? records.filter(
-        (document) =>
-          document.kind === "asset" &&
-          !document.deletedAt &&
-          ((Array.isArray(document.data.applicationIds) &&
-            document.data.applicationIds.includes(selected.id)) ||
-            (Array.isArray(document.data.submissions) &&
-              document.data.submissions.some(
-                (submission) =>
-                  submission &&
-                  typeof submission === "object" &&
-                  (submission as Record<string, unknown>).applicationId ===
-                    selected.id,
-              ))),
-      )
-    : [];
   const interviews = selected ? associatedInterviews(records, selected.id) : [];
   const interviewOpen =
     interviewEditing !== undefined ||
@@ -128,7 +98,7 @@ export function ApplicationsPage() {
   const filtered = applications
     .filter(
       (record) =>
-        (!statusFilter || applicationStatus(record) === statusFilter) &&
+        (!statusFilter || applicationStatusLabel(record) === statusFilter) &&
         `${applicationCompany(record, records)} ${record.title} ${field(record, "location")} ${record.body}`
           .toLowerCase()
           .includes(query.toLowerCase()),
@@ -147,9 +117,8 @@ export function ApplicationsPage() {
           b.updatedAt.localeCompare(a.updatedAt)
         );
       if (sort === "status")
-        return (
-          APPLICATION_STATUSES.indexOf(applicationStatus(a)) -
-          APPLICATION_STATUSES.indexOf(applicationStatus(b))
+        return applicationStatusLabel(a).localeCompare(
+          applicationStatusLabel(b),
         );
       return b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id);
     });
@@ -163,12 +132,23 @@ export function ApplicationsPage() {
 
   function closeInterview() {
     setInterviewEditing(undefined);
-    setAppointmentStep("");
     const next = new URLSearchParams(params);
     next.delete("interview");
     next.delete("application");
     if (selected) next.set("record", selected.id);
     setParams(next, { replace: true });
+  }
+  async function addCompany() {
+    try {
+      await create({
+        kind: "company",
+        title: "Untitled",
+        body: "",
+        data: { radar: true },
+      });
+    } catch (failure) {
+      setError(errorMessage(failure));
+    }
   }
   function newApplication(company?: WorkRecord) {
     setPrefilledCompany(company);
@@ -195,9 +175,7 @@ export function ApplicationsPage() {
         action={
           editMode ? (
             <Button
-              onClick={() =>
-                radar ? setCompanyEditing(null) : newApplication()
-              }
+              onClick={() => (radar ? void addCompany() : newApplication())}
             >
               <Plus size={17} />
               {radar ? "Add company" : "New application"}
@@ -264,9 +242,11 @@ export function ApplicationsPage() {
               onChange={(event) => setStatusFilter(event.target.value)}
             >
               <option value="">Every status</option>
-              {APPLICATION_STATUSES.map((value) => (
-                <option key={value}>{value}</option>
-              ))}
+              {[...new Set(applications.map(applicationStatusLabel))].map(
+                (value) => (
+                  <option key={value}>{value}</option>
+                ),
+              )}
             </Select>
             <Select
               aria-label="Sort applications"
@@ -294,9 +274,7 @@ export function ApplicationsPage() {
               description="Save a company before there is a particular role to apply for."
               action={
                 editMode && !companies.length ? (
-                  <Button onClick={() => setCompanyEditing(null)}>
-                    Add company
-                  </Button>
+                  <Button onClick={() => void addCompany()}>Add company</Button>
                 ) : undefined
               }
             />
@@ -304,58 +282,38 @@ export function ApplicationsPage() {
             <div className="radar-grid">
               {filteredCompanies.map((company) => (
                 <Card className="radar-card action-card" key={company.id}>
-                  <div className="section-heading">
-                    <h3>
-                      <CompanyGlyph
-                        name={company.title}
-                        url={field(company, "website") || field(company, "url")}
+                  {editMode ? (
+                    <InlineRadarFields record={company} />
+                  ) : (
+                    <>
+                      <h3>
+                        <CompanyGlyph
+                          name={company.title}
+                          url={field(company, "careersUrl")}
+                        />
+                        {webDestination(field(company, "careersUrl")) ? (
+                          <a
+                            className="card-hit-target"
+                            href={webDestination(field(company, "careersUrl"))}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {company.title}
+                          </a>
+                        ) : (
+                          company.title
+                        )}
+                      </h3>
+                      <Destination
+                        url={field(company, "careersUrl")}
+                        label="Careers"
                       />
-                      {webDestination(
-                        field(company, "careersUrl") ||
-                          field(company, "website") ||
-                          field(company, "url"),
-                      ) ? (
-                        <a
-                          className="card-hit-target"
-                          href={webDestination(
-                            field(company, "careersUrl") ||
-                              field(company, "website") ||
-                              field(company, "url"),
-                          )}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {company.title}
-                        </a>
-                      ) : (
-                        company.title
-                      )}
-                    </h3>
-                    <Badge tone="blue">On your radar</Badge>
-                  </div>
-                  {field(company, "location") && (
-                    <p className="muted">{field(company, "location")}</p>
-                  )}
-                  {field(company, "reason") && (
-                    <p>{field(company, "reason")}</p>
-                  )}
-                  {company.body && (
-                    <p className="application-notes-preview">{company.body}</p>
-                  )}
-                  <div className="inline-actions">
-                    <Destination
-                      url={field(company, "website") || field(company, "url")}
-                      label="Website"
-                    />
-                    <Destination
-                      url={field(company, "careersUrl")}
-                      label="Careers"
-                    />
-                  </div>
-                  {field(company, "reviewDate") && (
-                    <p className="muted">
-                      Review {niceDate(field(company, "reviewDate"))}
-                    </p>
+                      <p className="application-notes-preview">
+                        {company.data.radarNotesMigrated
+                          ? company.body
+                          : radarNotes(company)}
+                      </p>
+                    </>
                   )}
                   {editMode && (
                     <div className="inline-actions radar-actions">
@@ -365,12 +323,6 @@ export function ApplicationsPage() {
                       >
                         <Plus size={15} />
                         Add application
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => setCompanyEditing(company)}
-                      >
-                        Edit
                       </Button>
                       <Button
                         variant="ghost"
@@ -546,13 +498,7 @@ export function ApplicationsPage() {
         </>
       )}
       <Modal
-        open={
-          !!selected &&
-          editing === undefined &&
-          !interviewOpen &&
-          !processEditing &&
-          !deleting
-        }
+        open={!!selected && editing === undefined && !deleting}
         onClose={() => setParams({})}
         title={selected?.title || "Application"}
         size="wide"
@@ -569,9 +515,6 @@ export function ApplicationsPage() {
               </div>
               {editMode && (
                 <div className="inline-actions">
-                  <Button variant="ghost" onClick={() => setEditing(selected)}>
-                    Edit application
-                  </Button>
                   <Button
                     variant="ghost"
                     aria-label="Delete application"
@@ -582,35 +525,29 @@ export function ApplicationsPage() {
                 </div>
               )}
             </div>
-            <Destination url={field(selected, "url")} label="Listing" />
-            {linkedDocuments.length > 0 && (
-              <div className="inline-actions application-document-links">
-                {linkedDocuments.map((document) => (
-                  <Link
-                    key={document.id}
-                    className="text-link"
-                    to={`/documents?record=${encodeURIComponent(document.id)}`}
-                  >
-                    <ArrowUpRight size={14} /> Open {document.title}
-                  </Link>
-                ))}
-              </div>
+            {editMode && (
+              <InlineApplicationFields key={selected.id} record={selected} />
             )}
-            <dl className="application-dates">
-              {[
-                ["Application date", applicationDate(selected)],
-                ["Location", field(selected, "location")],
-                ["Deadline", field(selected, "deadline")],
-                ["Follow-up", field(selected, "followUp")],
-              ]
-                .filter(([, value]) => value)
-                .map(([label, value]) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>{label === "Location" ? value : niceDate(value)}</dd>
-                  </div>
-                ))}
-            </dl>
+            {!editMode && (
+              <Destination url={field(selected, "url")} label="Listing" />
+            )}
+            {!editMode && (
+              <dl className="application-dates">
+                {[
+                  ["Application date", applicationDate(selected)],
+                  ["Location", field(selected, "location")],
+                  ["Deadline", field(selected, "deadline")],
+                  ["Follow-up", field(selected, "followUp")],
+                ]
+                  .filter(([, value]) => value)
+                  .map(([label, value]) => (
+                    <div key={label}>
+                      <dt>{label}</dt>
+                      <dd>{label === "Location" ? value : niceDate(value)}</dd>
+                    </div>
+                  ))}
+              </dl>
+            )}
             {legacyApplicationStage(selected) && (
               <p className="muted">
                 Previous stage:{" "}
@@ -621,24 +558,8 @@ export function ApplicationsPage() {
             <section className="application-detail-section">
               <div className="section-heading">
                 <h3>Recruitment process</h3>
-                {editMode && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => setProcessEditing(true)}
-                  >
-                    Edit process
-                  </Button>
-                )}
               </div>
-              <ProcessTimeline
-                record={selected}
-                interviews={interviews}
-                timezone={preferences.timezone}
-                onSchedule={(stepId) => {
-                  setAppointmentStep(stepId);
-                  setInterviewEditing(null);
-                }}
-              />
+              <InlineProcess record={selected} interviews={interviews} />
             </section>
             <section className="application-detail-section">
               <div className="section-heading">
@@ -649,10 +570,20 @@ export function ApplicationsPage() {
                     onClick={() => setInterviewEditing(null)}
                   >
                     <Plus size={15} />
-                    Schedule interview
+                    Schedule
                   </Button>
                 )}
               </div>
+              {interviewOpen && editMode && (
+                <InterviewForm
+                  key={interviewEditing?.id || linkedInterview?.id || "new"}
+                  open
+                  record={interviewEditing || linkedInterview}
+                  applicationId={selected.id}
+                  onRemoved={setUndo}
+                  onClose={closeInterview}
+                />
+              )}
               {interviews.length ? (
                 <div className="interview-list">
                   {interviews.map((record) => (
@@ -689,22 +620,6 @@ export function ApplicationsPage() {
                               : ""}
                           </p>
                         )}
-                        <div className="inline-actions">
-                          <Destination
-                            url={field(record, "meetingUrl")}
-                            label="Meeting"
-                          />
-                          <Destination
-                            url={field(record, "sourceUrl")}
-                            label="Source"
-                          />
-                          <Link
-                            className="external-link"
-                            to={`/interviews?interview=${encodeURIComponent(record.id)}`}
-                          >
-                            Prepare <ArrowUpRight size={15} />
-                          </Link>
-                        </div>
                       </div>
                       <Badge
                         tone={
@@ -725,7 +640,7 @@ export function ApplicationsPage() {
                 </p>
               )}
             </section>
-            {selected.body && (
+            {!editMode && selected.body && (
               <section className="application-detail-section">
                 <h3>Notes</h3>
                 <Markdown content={selected.body} />
@@ -774,33 +689,6 @@ export function ApplicationsPage() {
         )}
       </Modal>
       <Modal
-        open={companyEditing !== undefined}
-        onClose={() => setCompanyEditing(undefined)}
-        title={companyEditing ? "Edit radar company" : "Add radar company"}
-      >
-        {companyEditing !== undefined && (
-          <CompanyForm
-            key={`${companyEditing?.id || "new"}:${companyEditing?.version || 0}`}
-            record={companyEditing || undefined}
-            onClose={() => setCompanyEditing(undefined)}
-          />
-        )}
-      </Modal>
-      <Modal
-        open={!!selected && processEditing}
-        onClose={() => setProcessEditing(false)}
-        title="Recruitment process"
-        size="wide"
-      >
-        {selected && processEditing && (
-          <ProcessForm
-            key={`${selected.id}:${selected.version}`}
-            record={selected}
-            onClose={() => setProcessEditing(false)}
-          />
-        )}
-      </Modal>
-      <Modal
         open={!!deleting}
         onClose={() => {
           setDeleting(undefined);
@@ -812,7 +700,7 @@ export function ApplicationsPage() {
           <p>
             {deleting?.kind === "company"
               ? "Applications keep their company name. Removing this radar company does not delete them."
-              : "The application is removed from your tracker. Its appointments and preparation stay available."}
+              : "The application is removed from your tracker. Historical appointments remain recoverable."}
           </p>
           {error && (
             <p className="form-error" role="alert">
@@ -833,40 +721,27 @@ export function ApplicationsPage() {
           </div>
         </div>
       </Modal>
-      <InterviewEditor
-        open={interviewOpen}
-        record={interviewEditing || linkedInterview}
-        applicationId={selected?.id}
-        stepId={appointmentStep}
-        onRemoved={setUndo}
-        onClose={closeInterview}
-      />
     </div>
   );
 }
 
 function Status({ record }: { record: WorkRecord }) {
   const status = applicationStatus(record);
-  const current = currentRecruitmentStep(record);
   return (
-    <div className="application-status">
-      <Badge
-        tone={
-          status === "In progress"
-            ? "blue"
-            : ["Offer", "Accepted"].includes(status)
-              ? "lime"
-              : status === "Rejected"
-                ? "pink"
-                : "muted"
-        }
-      >
-        {status}
-      </Badge>
-      {current && !["Accepted", "Rejected", "Withdrawn"].includes(status) && (
-        <small>{current.title}</small>
-      )}
-    </div>
+    <Badge
+      className={
+        status === "In progress" ? "application-intermediate-status" : ""
+      }
+      tone={
+        ["Offer", "Accepted"].includes(status)
+          ? "lime"
+          : status === "Rejected"
+            ? "pink"
+            : "muted"
+      }
+    >
+      {applicationStatusLabel(record)}
+    </Badge>
   );
 }
 function Destination({ url, label }: { url: string; label: string }) {
@@ -883,80 +758,6 @@ function Destination({ url, label }: { url: string; label: string }) {
     </a>
   ) : null;
 }
-function ProcessTimeline({
-  record,
-  interviews,
-  timezone,
-  onSchedule,
-}: {
-  record: WorkRecord;
-  interviews: WorkRecord[];
-  timezone: string;
-  onSchedule: (stepId: string) => void;
-}) {
-  const { editing: editMode } = useEditMode();
-  const steps = recruitmentSteps(record.data);
-  if (!steps.length)
-    return (
-      <p className="muted">
-        Outline the company's rounds before dates are known, or start with a
-        common process.
-      </p>
-    );
-  return (
-    <ol className="recruitment-timeline">
-      {steps.map((step, index) => {
-        const appointments = interviews.filter(
-          (interview) => field(interview, "stepId") === step.id,
-        );
-        return (
-          <li
-            className={`recruitment-step recruitment-${step.state.toLowerCase()}`}
-            key={step.id}
-          >
-            <span className="recruitment-step-number" aria-hidden="true">
-              {index + 1}
-            </span>
-            <strong>{step.title}</strong>
-            <Badge
-              tone={
-                step.state === "Current"
-                  ? "blue"
-                  : step.state === "Completed"
-                    ? "lime"
-                    : "muted"
-              }
-            >
-              {step.state}
-            </Badge>
-            {step.date && <small>{niceDate(step.date)}</small>}
-            {appointments.map((appointment) => (
-              <Link
-                className="recruitment-appointment"
-                key={appointment.id}
-                to={`/interviews?interview=${encodeURIComponent(appointment.id)}`}
-              >
-                {niceDate(field(appointment, "startsAt"), timezone)} ·{" "}
-                {field(appointment, "status", "Scheduled")}
-              </Link>
-            ))}
-            {editMode &&
-              step.kind !== "submission" &&
-              step.kind !== "offer" && (
-                <button
-                  className="recruitment-schedule"
-                  onClick={() => onSchedule(step.id)}
-                >
-                  Schedule appointment
-                </button>
-              )}
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
 function ApplicationForm({
   record,
   company,
@@ -978,7 +779,7 @@ function ApplicationForm({
       : company?.title || "",
     companyId: field(record, "companyId") || company?.id || "",
     title: record?.title || "",
-    status: record ? applicationStatus(record) : ("Saved" as ApplicationStatus),
+    status: record ? applicationStatusSelection(record) : "Applied",
     url: field(record, "url"),
     applicationDate: record ? applicationDate(record) : "",
     location: field(record, "location"),
@@ -986,10 +787,22 @@ function ApplicationForm({
     deadline: field(record, "deadline"),
     followUp: field(record, "followUp"),
     contact: record ? applicationContact(record, records) : "",
-    currentStepId: record ? currentRecruitmentStep(record)?.id || "" : "",
   });
   const [error, setError] = useState("");
-  const steps = record ? recruitmentSteps(record.data) : [];
+  const base: WorkRecord = record || {
+    data: { recruitmentSteps: commonRecruitmentProcess() },
+    title: form.title,
+    id: "new",
+    kind: "application",
+    body: "",
+    tags: [],
+    links: [],
+    version: 1,
+    createdAt: "",
+    updatedAt: "",
+    deletedAt: null,
+  };
+  const statusOptions = applicationStatusOptions(base);
   function change(key: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
   }
@@ -1002,23 +815,19 @@ function ApplicationForm({
       const chosenCompany = companies.find(
         (item) => item.id === form.companyId,
       );
-      if (form.url.trim() && !webDestination(form.url))
-        throw new Error(
-          "Use an http or https listing link without embedded credentials.",
-        );
-      const base =
-        record || ({ data: {}, title: form.title, id: "new" } as WorkRecord);
-      const transitioned = setApplicationStatus(
-        base,
-        form.status,
-        form.currentStepId,
-        localDate(new Date(), preferences.timezone),
-      );
+      const transitioned =
+        record && form.status === applicationStatusSelection(record)
+          ? record.data
+          : selectApplicationStatus(
+              base,
+              form.status,
+              localDate(new Date(), preferences.timezone),
+            );
       const data = ApplicationDataSchema.parse({
         ...transitioned,
         company: form.company.trim(),
         companyId: chosenCompany?.id || "",
-        url: webDestination(form.url),
+        url: form.url.trim(),
         applicationDate:
           form.status === "Saved"
             ? form.applicationDate
@@ -1110,7 +919,7 @@ function ApplicationForm({
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
-                status: event.target.value as ApplicationStatus,
+                status: event.target.value,
                 applicationDate:
                   event.target.value === "Saved"
                     ? ""
@@ -1118,12 +927,19 @@ function ApplicationForm({
                       (event.target.value === "Applied"
                         ? localDate(new Date(), preferences.timezone)
                         : ""),
-                currentStepId: "",
               }))
             }
           >
-            {APPLICATION_STATUSES.map((status) => (
-              <option key={status}>{status}</option>
+            {!statusOptions.some((option) => option.value === form.status) && (
+              <option value={form.status} disabled>
+                {record ? applicationStatusLabel(record) : form.status} ·
+                historical
+              </option>
+            )}
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
           </Select>
         </Field>
@@ -1135,49 +951,9 @@ function ApplicationForm({
           />
         </Field>
       </div>
-      {steps.length > 0 && ["In progress", "Offer"].includes(form.status) && (
-        <Field label="Current recruitment step">
-          <Select
-            required={
-              !(
-                form.status === "In progress" &&
-                steps.some(
-                  (step) =>
-                    !["submission", "offer"].includes(step.kind) &&
-                    step.state === "Completed",
-                )
-              )
-            }
-            value={form.currentStepId}
-            onChange={(event) => change("currentStepId", event.target.value)}
-          >
-            <option value="">
-              {form.status === "In progress" &&
-              steps.some(
-                (step) =>
-                  !["submission", "offer"].includes(step.kind) &&
-                  step.state === "Completed",
-              )
-                ? "Awaiting next round"
-                : "Choose the current step"}
-            </option>
-            {steps
-              .filter((step) =>
-                form.status === "Offer"
-                  ? step.kind === "offer"
-                  : !["submission", "offer"].includes(step.kind),
-              )
-              .map((step) => (
-                <option key={step.id} value={step.id}>
-                  {step.title}
-                </option>
-              ))}
-          </Select>
-        </Field>
-      )}
       <Field label="Listing link">
         <Input
-          type="url"
+          type="text"
           value={form.url}
           maxLength={2048}
           placeholder="Optional"
@@ -1238,357 +1014,6 @@ function ApplicationForm({
       <div className="inline-actions">
         <Button type="submit" disabled={!!pending}>
           {pending ? "Saving…" : "Save application"}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function CompanyForm({
-  record,
-  onClose,
-}: {
-  record?: WorkRecord;
-  onClose: () => void;
-}) {
-  const { create, update, pending } = useWorkspace();
-  const [form, setForm] = useState({
-    title: record?.title || "",
-    website: field(record, "website") || field(record, "url"),
-    careersUrl: field(record, "careersUrl"),
-    location: field(record, "location"),
-    reason: field(record, "reason"),
-    notes: record?.body || "",
-    reviewDate: field(record, "reviewDate"),
-  });
-  const [error, setError] = useState("");
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    try {
-      const data = RadarCompanyDataSchema.parse({
-        ...record?.data,
-        radar: true,
-        website: form.website.trim(),
-        careersUrl: form.careersUrl.trim(),
-        location: form.location.trim(),
-        reason: form.reason.trim(),
-        reviewDate: form.reviewDate,
-      });
-      const input = { title: form.title.trim(), body: form.notes, data };
-      if (!input.title) throw new Error("Enter a company name.");
-      if (record) await update(record.id, input);
-      else await create({ kind: "company", ...input });
-      onClose();
-    } catch (failure) {
-      setError(errorMessage(failure));
-    }
-  }
-  return (
-    <form className="stack" onSubmit={(event) => void save(event)}>
-      {(
-        [
-          ["title", "Company name"],
-          ["website", "Website"],
-          ["careersUrl", "Careers link"],
-          ["location", "Location"],
-          ["reason", "Why it interests you"],
-          ["reviewDate", "Review date"],
-        ] as const
-      ).map(([key, label]) => (
-        <Field key={key} label={label}>
-          <Input
-            required={key === "title"}
-            autoFocus={key === "title"}
-            type={
-              key === "reviewDate"
-                ? "date"
-                : ["website", "careersUrl"].includes(key)
-                  ? "url"
-                  : "text"
-            }
-            maxLength={key === "title" ? 240 : key === "reason" ? 10000 : 2048}
-            value={form[key]}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, [key]: event.target.value }))
-            }
-          />
-        </Field>
-      ))}
-      <Field label="Notes">
-        <Textarea
-          rows={4}
-          value={form.notes}
-          maxLength={100000}
-          onChange={(event) =>
-            setForm((current) => ({ ...current, notes: event.target.value }))
-          }
-        />
-      </Field>
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="inline-actions">
-        <Button type="submit" disabled={!!pending}>
-          {pending ? "Saving…" : "Save company"}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onClose}>
-          Cancel
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function ProcessForm({
-  record,
-  onClose,
-}: {
-  record: WorkRecord;
-  onClose: () => void;
-}) {
-  const { update, pending, preferences } = useWorkspace();
-  const [data, setData] = useState(record.data);
-  const [titles, setTitles] = useState<Record<string, string>>({});
-  const [error, setError] = useState("");
-  const steps = recruitmentSteps(data);
-  const allSteps = recruitmentSteps(data, true);
-  function draft() {
-    return { ...record, data };
-  }
-  function edit(stepId: string, patch: Partial<RecruitmentStep>) {
-    const next = {
-      ...data,
-      recruitmentSteps: allSteps.map((step) =>
-        step.id === stepId ? { ...step, ...patch } : step,
-      ),
-    };
-    const target = recruitmentSteps(next).find((step) => step.id === stepId);
-    setData(
-      target && (patch.kind || patch.state)
-        ? changeRecruitmentStep(
-            { ...record, data: next },
-            stepId,
-            target.state,
-            localDate(new Date(), preferences.timezone),
-          )
-        : next,
-    );
-  }
-  function move(stepId: string, offset: number) {
-    const index = allSteps.findIndex((step) => step.id === stepId);
-    const activeIndex = steps.findIndex((step) => step.id === stepId);
-    const other = steps[activeIndex + offset];
-    if (!other) return;
-    const otherIndex = allSteps.findIndex((step) => step.id === other.id);
-    const reordered = [...allSteps];
-    [reordered[index], reordered[otherIndex]] = [
-      reordered[otherIndex],
-      reordered[index],
-    ];
-    setData({ ...data, recruitmentSteps: reordered });
-  }
-  function addTemplate() {
-    const template = commonRecruitmentProcess();
-    const currentStatus = applicationStatus(draft());
-    if (["Applied", "In progress", "Offer"].includes(currentStatus))
-      template[0].state = "Completed";
-    if (currentStatus === "In progress") template[1].state = "Current";
-    if (currentStatus === "Offer")
-      template[template.length - 1].state = "Current";
-    setData({ ...data, recruitmentSteps: [...allSteps, ...template] });
-  }
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    try {
-      const validated = ApplicationDataSchema.parse({
-        ...data,
-        recruitmentSteps: allSteps.map((step) => ({
-          ...step,
-          title: titles[step.id] ?? step.title,
-        })),
-      });
-      await update(record.id, { data: validated });
-      onClose();
-    } catch (failure) {
-      setError(errorMessage(failure));
-    }
-  }
-  return (
-    <form className="stack" onSubmit={(event) => void save(event)}>
-      <p className="muted">
-        Set up rounds before dates are known. Mark a round complete yourself
-        after its outcome is clear; appointment completion does not advance this
-        process.
-      </p>
-      {!steps.length && (
-        <Button type="button" variant="secondary" onClick={addTemplate}>
-          Start with a common process
-        </Button>
-      )}
-      <ol className="process-editor">
-        {steps.map((step, index) => (
-          <li className="process-editor-step" key={step.id}>
-            <div className="section-heading">
-              <strong>Step {index + 1}</strong>
-              <div className="inline-actions">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={index === 0}
-                  aria-label={`Move ${step.title} earlier`}
-                  onClick={() => move(step.id, -1)}
-                >
-                  <ArrowUp size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={index === steps.length - 1}
-                  aria-label={`Move ${step.title} later`}
-                  onClick={() => move(step.id, 1)}
-                >
-                  <ArrowDown size={16} />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label={`Delete ${step.title}`}
-                  onClick={() =>
-                    setData(archiveRecruitmentStep(draft(), step.id))
-                  }
-                >
-                  <Trash2 size={16} />
-                </Button>
-              </div>
-            </div>
-            <Field label="Step name">
-              <Input
-                required
-                value={titles[step.id] ?? step.title}
-                maxLength={240}
-                onChange={(event) =>
-                  setTitles((current) => ({
-                    ...current,
-                    [step.id]: event.target.value,
-                  }))
-                }
-              />
-            </Field>
-            <div className="form-grid">
-              <Field label="Kind">
-                <Select
-                  value={step.kind}
-                  onChange={(event) =>
-                    edit(step.id, {
-                      kind: event.target.value as RecruitmentStep["kind"],
-                    })
-                  }
-                >
-                  {STEP_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {kind === "submission"
-                        ? "Application submission"
-                        : kind.charAt(0).toUpperCase() + kind.slice(1)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Step state">
-                <Select
-                  value={step.state}
-                  onChange={(event) =>
-                    edit(step.id, {
-                      state: event.target.value as RecruitmentStep["state"],
-                    })
-                  }
-                >
-                  {STEP_STATES.map((state) => (
-                    <option key={state}>{state}</option>
-                  ))}
-                </Select>
-              </Field>
-            </div>
-            <Field
-              label="Date"
-              hint="Optional milestone date. Appointment times belong to their appointments."
-            >
-              <Input
-                type="date"
-                value={step.date}
-                onChange={(event) =>
-                  edit(step.id, { date: event.target.value })
-                }
-              />
-            </Field>
-          </li>
-        ))}
-      </ol>
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={allSteps.length >= 80}
-        onClick={() =>
-          setData({
-            ...data,
-            recruitmentSteps: [
-              ...allSteps,
-              {
-                id: crypto.randomUUID(),
-                title: "New step",
-                kind: "other",
-                state: "Planned",
-                date: "",
-              },
-            ],
-          })
-        }
-      >
-        <Plus size={15} />
-        Add step
-      </Button>
-      {allSteps.some((step) => step.archived) && (
-        <details className="application-optional">
-          <summary>Deleted steps</summary>
-          <p className="muted">
-            Appointments and preparation stay attached. Reassign an appointment
-            by editing it, or restore a step here.
-          </p>
-          {allSteps
-            .filter((step) => step.archived)
-            .map((step) => (
-              <div className="section-heading" key={step.id}>
-                <span>{step.title}</span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() =>
-                    edit(step.id, { archived: false, state: "Planned" })
-                  }
-                >
-                  Restore step
-                </Button>
-              </div>
-            ))}
-        </details>
-      )}
-      <p className="muted">
-        Application status: <strong>{applicationStatus(draft())}</strong>
-      </p>
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="inline-actions">
-        <Button type="submit" disabled={!!pending}>
-          {pending ? "Saving…" : "Save process"}
         </Button>
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel

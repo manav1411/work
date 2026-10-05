@@ -110,6 +110,8 @@ export function remapReferenceFields(
     "attachmentId",
     "primaryAttachmentId",
     "interviewId",
+    // Historical provenance is remapped on copy, but is not a live relationship.
+    "legacyPreparationId",
     "tabId",
     "directionId",
     "sectionId",
@@ -1054,6 +1056,10 @@ export async function restoreWorkspace(
         rewriteData(record.data, record.id, record.kind),
       ),
     }));
+    for(const record of records)if(record.kind==='note'&&record.data.category==='interview-tab'&&record.data.tabKey==='behavioural'){
+      record.deletedAt=null;
+      record.data={...record.data,hidden:false};
+    }
     await validateDataReferences(
       env.DB,
       owner,

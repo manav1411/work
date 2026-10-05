@@ -137,6 +137,12 @@ routes.get("/", async (c) =>
 );
 routes.post("/", async (c) => {
   const input = parse(goalInputSchema, await readJson(c.req.raw));
+  if (!["completion", "leetcode"].includes(input.measure))
+    throw new ApiError(
+      400,
+      "RETIRED_MEASURE",
+      "New goals use completion or LeetCode problems.",
+    );
   const owner = c.get("user").id;
   const state = await checkIdempotency(
     c.env.DB,
@@ -173,6 +179,15 @@ routes.patch("/:id", async (c) => {
       409,
       "VERSION_CONFLICT",
       "This goal changed in another session. Your draft is still open.",
+    );
+  if (
+    fields.measure !== before.measure &&
+    !["completion", "leetcode"].includes(fields.measure)
+  )
+    throw new ApiError(
+      400,
+      "RETIRED_MEASURE",
+      "Choose completion or LeetCode problems when changing the measure.",
     );
   const at = new Date().toISOString();
   await validateDirection(c.env.DB, owner, fields.directionId);

@@ -66,6 +66,7 @@ export async function validateRecordContract(
   const scoped = [
     "content-section",
     "content-resource",
+    "content-document",
     "interview-preparation",
   ].includes(String(record.data.category));
   const application =
@@ -78,7 +79,8 @@ export async function validateRecordContract(
   await related(record.data.directionId, ["path", "rotation", "decision"]);
   if (
     record.data.category === "content-section" ||
-    record.data.category === "content-resource"
+    record.data.category === "content-resource" ||
+    record.data.category === "content-document"
   ) {
     await related(record.data.topicId, ["topic"], "learn-topic");
     await related(record.data.tabId, ["note"], "interview-tab");
@@ -106,7 +108,10 @@ export async function validateRecordContract(
     record.data.stepId &&
     (!application ||
       !recruitmentSteps(application.data, true).some(
-        (step) => step.id === record.data.stepId,
+        (step) =>
+          step.id === record.data.stepId &&
+          (record.data.appointmentVersion !== 2 ||
+            (!step.archived && !["submission", "offer"].includes(step.kind))),
       ))
   )
     throw new ApiError(
@@ -136,7 +141,7 @@ export async function validateRecordContract(
       throw new ApiError(
         400,
         "STEP_IN_USE",
-        "Archive a linked step to preserve its interview and preparation.",
+        "Delete the step recoverably to preserve its appointment history.",
       );
   }
   if (managedDocument(record) && record.data.primaryAttachmentId) {
@@ -171,6 +176,15 @@ export function recordContractStatements(
         owner,
         String(record.data.stepId),
       );
+      if (record.data.appointmentVersion === 2)
+        expression +=
+          " AND EXISTS(SELECT 1 FROM records a JOIN json_each(a.data,'$.recruitmentSteps') step WHERE a.id=? AND a.owner_id=? AND json_extract(step.value,'$.id')=? AND COALESCE(json_extract(step.value,'$.archived'),0)=0 AND json_extract(step.value,'$.kind') NOT IN ('submission','offer'))";
+      if (record.data.appointmentVersion === 2)
+        bindings.push(
+          String(record.data.applicationId),
+          owner,
+          String(record.data.stepId),
+        );
     }
     if (
       record.kind === "application" &&

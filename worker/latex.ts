@@ -213,6 +213,7 @@ async function mutateJobs(
 const metadataSchema = z
   .object({
     imageDigest: z.string().max(200).optional(),
+    compilerFingerprint: z.string().max(128).optional(),
     texLiveRelease: z.string().max(80).optional(),
     engine: latexEngineSchema.optional(),
     inputHash: z.string().max(128).optional(),
@@ -259,6 +260,7 @@ async function runCompile(
   assetId: string,
   job: LatexJob,
   source: LatexSource,
+  retrieveOnly = false,
 ) {
   const attachments: string[] = [];
   try {
@@ -275,32 +277,68 @@ async function runCompile(
       "running"
     )
       return;
-    const url = new URL("/compile", env.LATEX_COMPILER_URL);
+    const url = new URL(
+      retrieveOnly ? `/jobs/${job.id}` : "/jobs",
+      env.LATEX_COMPILER_URL,
+    );
     const response = await fetch(url, {
-      method: "POST",
+      method: retrieveOnly ? "GET" : "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${env.LATEX_COMPILER_TOKEN}`,
+        ...(env.LATEX_ACCESS_CLIENT_ID && env.LATEX_ACCESS_CLIENT_SECRET
+          ? {
+              "CF-Access-Client-Id": env.LATEX_ACCESS_CLIENT_ID,
+              "CF-Access-Client-Secret": env.LATEX_ACCESS_CLIENT_SECRET,
+            }
+          : {}),
       },
-      body: JSON.stringify({
-        jobId: job.id,
-        mainFile: source.mainFile,
-        engine: source.engine,
-        files: source.files.map((file) => ({
-          path: file.path,
-          contentBase64:
-            file.encoding === "base64"
-              ? file.content
-              : toBase64(encode.encode(file.content)),
-        })),
-      }),
-      signal: AbortSignal.timeout(25_000),
+      body: retrieveOnly
+        ? undefined
+        : JSON.stringify({
+            jobId: job.id,
+            mainFile: source.mainFile,
+            engine: source.engine,
+            files: source.files.map((file) => ({
+              path: file.path,
+              contentBase64:
+                file.encoding === "base64"
+                  ? file.content
+                  : toBase64(encode.encode(file.content)),
+            })),
+          }),
+      signal: AbortSignal.timeout(20_000),
     });
     if (!response.ok) throw new Error(`Compiler returned ${response.status}.`);
     const bytes = await readLimitedBody(response, 24 * 1024 * 1024);
-    const result = compilerResultSchema.parse(
-      JSON.parse(new TextDecoder().decode(bytes)),
-    );
+    const remote = z
+      .object({
+        status: z.enum([
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled",
+        ]),
+        result: compilerResultSchema.optional(),
+      })
+      .parse(JSON.parse(new TextDecoder().decode(bytes)));
+    if (["queued", "running"].includes(remote.status)) return;
+    if (remote.status === "cancelled") {
+      await mutateJobs(env, owner, assetId, (jobs) =>
+        jobs.map((item) =>
+          item.id === job.id
+            ? { ...item, status: "cancelled", finishedAt: now() }
+            : item,
+        ),
+      );
+      return;
+    }
+    if (!remote.result)
+      throw new Error(
+        "Compiler returned no result. Recompile the saved source.",
+      );
+    const result = remote.result;
     const latest = await asset(env, owner, assetId);
     if (
       latexJobs(latest.data).find((item) => item.id === job.id)?.status ===
@@ -377,7 +415,7 @@ async function runCompile(
       await discardAttachment(env, owner, attachmentId).catch(() => {});
     await mutateJobs(env, owner, assetId, (jobs) =>
       jobs.map((item) =>
-        item.id === job.id && item.status !== "cancelled"
+        item.id === job.id && ["queued", "running"].includes(item.status)
           ? {
               ...item,
               status: "failed",
@@ -504,7 +542,7 @@ latexRoutes.post("/:assetId/compile", async (context) => {
     job.revisionId === revisionId &&
     (job.status === "succeeded" ||
       (["queued", "running"].includes(job.status) &&
-        Date.parse(job.createdAt) > Date.now() - 60_000));
+        Date.parse(job.createdAt) > Date.now() - 600_000));
   const existing = [...latexJobs(record.data)].reverse().find(reusable);
   if (existing) return context.json({ job: publicJob(existing) });
   if (!context.env.LATEX_COMPILER_URL || !context.env.LATEX_COMPILER_TOKEN)
@@ -533,7 +571,7 @@ latexRoutes.post("/:assetId/compile", async (context) => {
         .filter(
           (item) =>
             !["queued", "running"].includes(item.status) ||
-            Date.parse(item.createdAt) > Date.now() - 60_000,
+            Date.parse(item.createdAt) > Date.now() - 600_000,
         )
         .slice(-(MAX_JOBS - 1)),
       job,
@@ -562,7 +600,30 @@ latexRoutes.get("/:assetId/jobs/:jobId", async (context) => {
     throw new ApiError(404, "NOT_FOUND", "This compilation was not found.");
   if (
     ["queued", "running"].includes(job.status) &&
-    Date.parse(job.createdAt) < Date.now() - 60_000
+    context.env.LATEX_COMPILER_URL &&
+    context.env.LATEX_COMPILER_TOKEN
+  ) {
+    const revision = await sourceRevision(
+      context.env,
+      context.get("user").id,
+      record,
+      job.revisionId,
+    );
+    await runCompile(
+      context.env,
+      context.get("user").id,
+      record.id,
+      job,
+      revision,
+      true,
+    );
+    job = latexJobs(
+      (await asset(context.env, context.get("user").id, record.id)).data,
+    ).find((item) => item.id === job!.id)!;
+  }
+  if (
+    ["queued", "running"].includes(job.status) &&
+    Date.parse(job.createdAt) < Date.now() - 600_000
   ) {
     const jobs = await mutateJobs(
       context.env,
@@ -607,6 +668,14 @@ latexRoutes.delete("/:assetId/jobs/:jobId", async (context) => {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${context.env.LATEX_COMPILER_TOKEN}`,
+          ...(context.env.LATEX_ACCESS_CLIENT_ID &&
+          context.env.LATEX_ACCESS_CLIENT_SECRET
+            ? {
+                "CF-Access-Client-Id": context.env.LATEX_ACCESS_CLIENT_ID,
+                "CF-Access-Client-Secret":
+                  context.env.LATEX_ACCESS_CLIENT_SECRET,
+              }
+            : {}),
         },
         signal: AbortSignal.timeout(5000),
       }).catch(() => {}),

@@ -1,35 +1,250 @@
-import { useState } from "react";
-import { Copy, Pencil, Plus } from "lucide-react";
-import { field, type WorkRecord } from "../../../shared/model";
+import { useRef, useState, useEffect, useMemo } from "react";
+import { Plus } from "lucide-react";
+import {
+  field,
+  type WorkRecord,
+  type RecordPatch,
+} from "../../../shared/model";
+import { contentRecordWriter } from "../content/recordWriter";
 import {
   Badge,
   Button,
   Card,
-  EmptyState,
-  Field,
   Input,
   Markdown,
-  Modal,
   Select,
-  Textarea,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
-import { splitTags } from "../prepare/helpers";
 import { DeleteControl } from "../content/DeleteControl";
+import { InlineTitle } from "../content/InlineTitle";
+import { SortableList } from "../content/SortableList";
+import { reorderRecords } from "../content/reorderRecords";
+import { orderedRecords } from "../../../shared/content";
 import { storyMatches } from "./domain";
 
-export function StoryBank({
-  onEdit,
+function StoryField({
+  story,
+  name,
+  write,
 }: {
-  onEdit: (record?: WorkRecord) => void;
+  story: WorkRecord;
+  name: string;
+  write: (patch: RecordPatch) => Promise<WorkRecord>;
 }) {
-  const { records, create, remove, notify } = useWorkspace();
   const { editing } = useEditMode();
-  const [query, setQuery] = useState("");
-  const [tag, setTag] = useState("");
-  const [duplicating, setDuplicating] = useState("");
-  const stories = records.filter((record) => storyMatches(record, query, tag));
+  const { user } = useWorkspace();
+  const initial =
+    name === "lessons"
+      ? [
+          field(story, "lessons") || field(story, "reflection"),
+          story.data.otherNotesMigrated ? "" : story.body,
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : field(story, name);
+  const draftKey = `work-content-draft:${user?.id ?? "anonymous"}:story:${story.id}:${name}`;
+  const [text, setText] = useState(() => {
+    try {
+      return localStorage.getItem(draftKey) ?? initial;
+    } catch {
+      return initial;
+    }
+  });
+  const [error, setError] = useState("");
+  const [review, setReview] = useState(text !== initial);
+  const blocked = useRef(text !== initial);
+  const saving = useRef(false);
+  const saved = useRef(initial),
+    latest = useRef(text),
+    base = useRef(story),
+    timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  base.current = story;
+  latest.current = text;
+  const save = async () => {
+    clearTimeout(timer.current);
+    const value = latest.current;
+    if (value === saved.current || blocked.current || saving.current) return;
+    saving.current = true;
+    try {
+      await write({
+        data: {
+          [name]: value,
+          ...(name === "lessons" ? { otherNotesMigrated: true } : {}),
+        },
+      });
+      saved.current = value;
+      if (latest.current === value) {
+        try {
+          localStorage.removeItem(draftKey);
+        } catch {
+          /* Optional storage. */
+        }
+      }
+      setError("");
+    } catch (failure) {
+      blocked.current = true;
+      setReview(true);
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Draft could not be saved.",
+      );
+    } finally {
+      saving.current = false;
+      if (!blocked.current && latest.current !== saved.current)
+        timer.current = setTimeout(() => void saveRef.current(), 800);
+    }
+  };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (saving.current || initial === saved.current) return;
+    if (latest.current !== saved.current) {
+      blocked.current = true;
+      setReview(true);
+      setError("Saved story changed. Review your local text before saving.");
+    } else {
+      saved.current = initial;
+      latest.current = initial;
+      setText(initial);
+    }
+  }, [initial]);
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      void saveRef.current();
+    },
+    [],
+  );
+  return (
+    <section className="inline-star-field">
+      <h4>{name[0].toUpperCase() + name.slice(1)}</h4>
+      {editing ? (
+        <textarea
+          aria-label={name[0].toUpperCase() + name.slice(1)}
+          className="inline-star-text"
+          rows={Math.min(12, Math.max(2, text.split("\n").length))}
+          value={text}
+          placeholder={
+            name === "lessons" ? "What you learned…" : `Write the ${name}…`
+          }
+          onBlur={() => void save()}
+          onChange={(event) => {
+            latest.current = event.target.value;
+            setText(event.target.value);
+            try {
+              localStorage.setItem(draftKey, event.target.value);
+            } catch {
+              /* Optional storage. */
+            }
+            clearTimeout(timer.current);
+            timer.current = setTimeout(() => void saveRef.current(), 800);
+          }}
+        />
+      ) : text ? (
+        <Markdown content={text} />
+      ) : (
+        <p className="muted">—</p>
+      )}
+      {(error || review) && (
+        <p role="alert">
+          {error || "Recovered draft — review before saving."}
+          <details>
+            <summary>Compare saved text</summary>
+            <Markdown content={initial} />
+          </details>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              blocked.current = false;
+              setReview(false);
+              setError("");
+              void save();
+            }}
+          >
+            Keep reviewed draft
+          </Button>
+        </p>
+      )}
+    </section>
+  );
+}
+
+function InlineStoryCard({
+  story,
+  handle,
+  autoFocus,
+}: {
+  story: WorkRecord;
+  handle: React.ReactNode;
+  autoFocus: boolean;
+}) {
+  const { create, update, remove } = useWorkspace();
+  const { editing } = useEditMode();
+  const ref = useRef(story);
+  ref.current = story;
+  const write = useMemo(
+    () =>
+      contentRecordWriter({
+        read: () => ref.current,
+        input: () => ({
+          kind: "story",
+          title: ref.current.title,
+          data: ref.current.data,
+        }),
+        create,
+        update,
+      }),
+    [create, update],
+  );
+  return (
+    <Card className="interview-story-card">
+      <header className="content-section-heading">
+        <h3>
+          {handle}
+          <InlineTitle
+            label="Story title"
+            value={story.title}
+            autoFocus={autoFocus}
+            onSave={(title) => write({ title })}
+          />
+        </h3>
+        {editing && (
+          <DeleteControl
+            label="Delete story"
+            onDelete={() => remove(story.id)}
+          />
+        )}
+      </header>
+      {story.tags.length > 0 && (
+        <div className="interview-story-tags">
+          {story.tags.map((tag) => (
+            <Badge key={tag}>{tag}</Badge>
+          ))}
+        </div>
+      )}
+      {["situation", "task", "action", "result", "lessons"].map((name) => (
+        <StoryField key={name} story={story} name={name} write={write} />
+      ))}
+    </Card>
+  );
+}
+
+export function StoryBank({
+  onEdit: _onEdit,
+}: {
+  onEdit?: (record?: WorkRecord) => void;
+}) {
+  const workspace = useWorkspace();
+  const { records, create, notify } = workspace;
+  const { editing } = useEditMode();
+  const [query, setQuery] = useState(""),
+    [tag, setTag] = useState(""),
+    [newId, setNewId] = useState("");
+  const stories = orderedRecords(
+    records.filter((record) => storyMatches(record, query, tag)),
+  );
   const tags = [
     ...new Set(
       records
@@ -40,12 +255,34 @@ export function StoryBank({
   return (
     <section className="interview-story-bank">
       <header className="content-panel-heading">
-        <div>
-          <p className="eyebrow">Situation · Task · Action · Result</p>
-          <h2>Story bank</h2>
-        </div>
+        <h2>Story bank</h2>
         {editing && (
-          <Button onClick={() => onEdit()}>
+          <Button
+            onClick={async () => {
+              try {
+                const record = await create({
+                  kind: "story",
+                  title: "Untitled",
+                  data: {
+                    situation: "",
+                    task: "",
+                    action: "",
+                    result: "",
+                    lessons: "",
+                    order: stories.length,
+                  },
+                });
+                setNewId(record.id);
+              } catch (failure) {
+                notify(
+                  failure instanceof Error
+                    ? failure.message
+                    : "Story could not be created.",
+                  "error",
+                );
+              }
+            }}
+          >
             <Plus size={16} />
             Add STAR story
           </Button>
@@ -54,7 +291,7 @@ export function StoryBank({
       <div className="interview-story-filters">
         <Input
           aria-label="Search stories"
-          placeholder="Search your stories"
+          placeholder="Search stories"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -69,252 +306,55 @@ export function StoryBank({
           ))}
         </Select>
       </div>
-      {stories.length ? (
-        <div className="interview-story-grid">
-          {stories.map((story, index) => (
-            <Card
-              key={story.id}
-              className={`interview-story-card application-row-action content-tone-${index % 4}`}
-              onClick={(event) => {
-                if (
-                  (event.target as HTMLElement).closest(
-                    "button,a,input,select,textarea",
-                  ) ||
-                  window.getSelection()?.toString()
-                )
-                  return;
-                onEdit(story);
-              }}
-            >
-              <StoryContent story={story} onOpen={() => onEdit(story)} />
-              {editing && (
-                <div className="content-item-actions">
-                  <Button variant="ghost" onClick={() => onEdit(story)}>
-                    <Pencil size={15} />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    disabled={!!duplicating}
-                    onClick={async () => {
-                      setDuplicating(story.id);
-                      try {
-                        await create({
-                          kind: "story",
-                          title: `${story.title} (copy)`,
-                          body: story.body,
-                          tags: story.tags,
-                          links: [],
-                          data: { ...story.data },
-                        });
-                        notify("Story duplicated.");
-                      } catch (failure) {
-                        notify(
-                          failure instanceof Error
-                            ? failure.message
-                            : "Story could not be duplicated.",
-                          "error",
-                        );
-                      } finally {
-                        setDuplicating("");
-                      }
-                    }}
-                  >
-                    <Copy size={15} />
-                    Duplicate
-                  </Button>
-                  <DeleteControl
-                    label="Delete story"
-                    onDelete={() => remove(story.id)}
-                  />
-                </div>
-              )}
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          title={
-            query || tag
-              ? "No matching stories"
-              : "Make room for your experience"
-          }
-          description={
-            query || tag
-              ? "Try another phrase or competency."
-              : "Build a few reusable stories about ownership, conflict, collaboration, and what you learned."
-          }
-        />
+      <SortableList
+        className="interview-story-grid"
+        items={stories}
+        onReorder={async (ids) => {
+          await reorderRecords(
+            ids.map((id) => stories.find((item) => item.id === id)!),
+            workspace,
+          );
+        }}
+      >
+        {(story, handle) => (
+          <InlineStoryCard
+            story={story}
+            handle={handle}
+            autoFocus={story.id === newId}
+          />
+        )}
+      </SortableList>
+      {!stories.length && (
+        <p className="muted">
+          {query || tag
+            ? "No matching stories."
+            : "Your stories will appear here."}
+        </p>
       )}
     </section>
   );
 }
 export function StoryContent({
   story,
-  onOpen,
 }: {
   story: WorkRecord;
   onOpen?: () => void;
 }) {
   return (
     <div className="interview-story-content">
-      <h3>
-        {onOpen ? (
-          <button className="story-open" onClick={onOpen}>
-            {story.title}
-          </button>
-        ) : (
-          story.title
-        )}
-      </h3>
-      {story.tags.length > 0 && (
-        <div className="interview-story-tags">
-          {story.tags.map((tag) => (
-            <Badge key={tag} tone="blue">
-              {tag}
-            </Badge>
-          ))}
-        </div>
-      )}
-      {["situation", "task", "action", "result", "lessons"].map(
-        (key) =>
-          (field(story, key) ||
-            (key === "lessons" && field(story, "reflection"))) && (
-            <section key={key}>
-              <h4>
-                {key === "lessons"
-                  ? "Lessons"
-                  : key[0].toUpperCase() + key.slice(1)}
-              </h4>
-              <Markdown
-                content={
-                  field(story, key) ||
-                  (key === "lessons" ? field(story, "reflection") : "")
-                }
-              />
-            </section>
-          ),
-      )}
+      <h3>{story.title}</h3>
+      {["situation", "task", "action", "result", "lessons"].map((key) => (
+        <section key={key}>
+          <h4>{key[0].toUpperCase() + key.slice(1)}</h4>
+          <Markdown
+            content={
+              field(story, key) ||
+              (key === "lessons" ? field(story, "reflection") : "")
+            }
+          />
+        </section>
+      ))}
       {story.body && <Markdown content={story.body} />}
     </div>
-  );
-}
-export function StoryEditor({
-  record,
-  onClose,
-}: {
-  record?: WorkRecord;
-  onClose: () => void;
-}) {
-  const { editing } = useEditMode();
-  const { create, update } = useWorkspace();
-  const [title, setTitle] = useState(record?.title ?? "");
-  const [tags, setTags] = useState(record?.tags.join(", ") ?? "");
-  const [body, setBody] = useState(record?.body ?? "");
-  const [fields, setFields] = useState(
-    Object.fromEntries(
-      ["situation", "task", "action", "result", "lessons"].map((key) => [
-        key,
-        field(record, key) ||
-          (key === "lessons" ? field(record, "reflection") : ""),
-      ]),
-    ),
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  if (!editing)
-    return record ? (
-      <Modal open onClose={onClose} title={record.title} size="wide">
-        <StoryContent story={record} />
-      </Modal>
-    ) : null;
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={record ? "Edit STAR story" : "Add STAR story"}
-      size="wide"
-    >
-      <form
-        className="form-stack"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setBusy(true);
-          setError("");
-          try {
-            const input = {
-              title: title.trim(),
-              body,
-              tags: splitTags(tags),
-              data: { ...record?.data, ...fields },
-            };
-            if (record) await update(record.id, input);
-            else await create({ kind: "story", ...input });
-            onClose();
-          } catch (failure) {
-            setError(
-              failure instanceof Error
-                ? failure.message
-                : "Story could not be saved.",
-            );
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <Field label="Story title">
-          <Input
-            autoFocus
-            required
-            maxLength={240}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </Field>
-        <Field
-          label="Competencies"
-          hint="Comma-separated: ownership, conflict, collaboration, ambiguity…"
-        >
-          <Input
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-          />
-        </Field>
-        {Object.keys(fields).map((key) => (
-          <Field
-            key={key}
-            label={
-              key[0].toUpperCase() +
-              key.slice(1) +
-              (key === "lessons" ? " (optional)" : "")
-            }
-          >
-            <Textarea
-              rows={key === "action" ? 5 : 3}
-              value={fields[key]}
-              onChange={(event) =>
-                setFields({ ...fields, [key]: event.target.value })
-              }
-            />
-          </Field>
-        ))}
-        <Field label="Other notes (optional)">
-          <Textarea
-            rows={3}
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-          />
-        </Field>
-        {error && <p role="alert">{error}</p>}
-        <div className="inline-actions">
-          <Button disabled={busy || !title.trim()}>
-            {busy ? "Saving…" : "Save story"}
-          </Button>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-        </div>
-      </form>
-    </Modal>
   );
 }

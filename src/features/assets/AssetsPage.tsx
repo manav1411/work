@@ -3,113 +3,146 @@ import { useSearchParams } from "react-router-dom";
 import { ChevronUp, FileText, GitFork, Plus } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import { documentRecords } from "../../../shared/documents";
-import { Button, Card, Modal, PageHeader } from "../../components/ui";
+import {
+  Button,
+  Card,
+  Field,
+  Input,
+  Modal,
+  PageHeader,
+  Select,
+} from "../../components/ui";
 import { useEditMode } from "../../lib/edit-mode";
-import { useSavingWorkspace as useWorkspace } from "../search/useSaving";
+import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
-import { getDocumentLinks, type DocumentType } from "./documentLinks";
+import { request, jsonRequest } from "../../lib/api";
 import { DocumentEditor } from "./DocumentEditor";
-import { DocumentPreview, DocumentComparison } from "./DocumentPreview";
+import { DocumentPreview } from "./DocumentPreview";
 import { DocumentViewer } from "./DocumentViewer";
 import { ProfileLinks } from "./ProfileLinks";
+import { InlineTitle } from "../content/InlineTitle";
+import { variantTree } from "./variantTree";
 import "./documents.css";
 const LatexPanel = lazy(() => import("./LatexDocumentPanel"));
 export { getDocumentLinks } from "./documentLinks";
 const FAMILIES = [
-  { type: "resume" as const, key: "resume" as const, title: "Résumé" },
-  {
-    type: "letter" as const,
-    key: "coverLetter" as const,
-    title: "Cover letter",
-  },
-];
-type DocumentEdit = {
-  record?: WorkRecord;
-  defaultType?: DocumentType;
-  forkFrom?: WorkRecord;
-};
-const familyOf = (record?: WorkRecord) =>
+  { type: "resume", title: "Résumé" },
+  { type: "letter", title: "Cover letter" },
+] as const;
+const familyOf = (record: WorkRecord) =>
   field(record, "type").replace("cover-letter", "letter");
+const native = (record: WorkRecord) =>
+  !!record.data.latexProject || record.data.nativeDocument === true;
 
 export function AssetsPage() {
-  const { records, remove, pending } = useWorkspace();
-  const { editing: editMode } = useEditMode();
+  const { records, create, update, remove, refresh, pending } = useWorkspace();
+  const { editing } = useEditMode();
   const [params, setParams] = useSearchParams();
-  const [editing, setEditing] = useState<DocumentEdit>();
+  const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<WorkRecord>();
-  const [error, setError] = useState("");
-  const [sourceReady, setSourceReady] = useState<string[]>([]);
-  const [comparison, setComparison] = useState<{
-    before: WorkRecord;
-    after: WorkRecord;
+  const [fork, setFork] = useState<WorkRecord>();
+  const [forkTarget, setForkTarget] = useState<{
+    parentId: string;
+    record: WorkRecord;
+    forked?: boolean;
   }>();
+  const [name, setName] = useState("");
+  const [application, setApplication] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   const documents = documentRecords(records);
-  const defaults = getDocumentLinks(records);
-  const selected = documents.find((item) => item.id === params.get("record"));
-  const selectedFamily = selected ? familyOf(selected) : params.get("default");
-  function open(record?: WorkRecord, type?: DocumentType) {
-    setParams(record ? { record: record.id } : type ? { default: type } : {});
+  const selected = documents.find(
+    (record) => record.id === params.get("record"),
+  );
+  const applications = records.filter(
+    (record) => record.kind === "application" && !record.deletedAt,
+  );
+  function open(record: WorkRecord) {
+    setParams({ record: record.id });
   }
-  function edit(value: DocumentEdit) {
-    setEditing(value);
+  async function createNative(type: "resume" | "letter", parent?: WorkRecord) {
+    setBusy(true);
     setError("");
+    try {
+      const result =
+        parent && forkTarget?.parentId === parent.id
+          ? forkTarget.record
+          : await create({
+              kind: "asset",
+              title: parent
+                ? name.trim() || "Untitled variant"
+                : type === "resume"
+                  ? "Main résumé"
+                  : "Main cover letter",
+              data: {
+                type,
+                nativeDocument: true,
+                documentDefault: !parent,
+                ...(parent ? { forkedFromTitle: parent.title } : {}),
+                ...(application ? { applicationIds: [application] } : {}),
+              },
+            });
+      if (parent && !forkTarget)
+        setForkTarget({ parentId: parent.id, record: result });
+      if (
+        parent &&
+        !(forkTarget?.parentId === parent.id && forkTarget.forked)
+      ) {
+        await request(
+          `/api/latex/${encodeURIComponent(parent.id)}/fork`,
+          jsonRequest("POST", { targetAssetId: result.id }),
+        );
+        setForkTarget({ parentId: parent.id, record: result, forked: true });
+      }
+      await refresh();
+      setFork(undefined);
+      setForkTarget(undefined);
+      setName("");
+      setApplication("");
+      open(result);
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
   }
-  function collapse(type?: DocumentType) {
-    setParams({});
-    requestAnimationFrame(() =>
-      document
-        .getElementById(
-          type ? `document-family-${type}` : `document-card-${selected?.id}`,
-        )
-        ?.focus(),
-    );
-  }
-  function management(record: WorkRecord) {
+  function deletion(record: WorkRecord) {
     return (
-      editMode && (
-        <div className="inline-actions document-management">
-          <Button
-            variant="ghost"
-            aria-label={`Edit ${record.title}`}
-            onClick={() => edit({ record })}
-          >
-            Edit
-          </Button>
-          <Button
-            variant="ghost"
-            aria-label={`Delete ${record.title}`}
-            onClick={() => {
-              setDeleting(record);
-              setError("");
-            }}
-          >
-            Delete
-          </Button>
-        </div>
+      editing && (
+        <Button
+          variant="ghost"
+          onClick={() => setDeleting(record)}
+          aria-label={`Delete ${record.title}`}
+        >
+          Delete
+        </Button>
       )
     );
   }
   return (
     <div className="page-stack documents-page">
-      <PageHeader
-        title="Documents"
-        action={
-          editMode ? (
-            <Button onClick={() => edit({})}>
-              <Plus size={18} /> Add document
-            </Button>
-          ) : undefined
-        }
-      />
+      <PageHeader title="Documents" />
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
       <div className="document-grid">
         {FAMILIES.map((family) => {
-          const primary = defaults[family.key].record;
-          const expanded = selectedFamily === family.type;
           const variants = documents.filter(
-            (item) => familyOf(item) === family.type,
+            (record) => native(record) && familyOf(record) === family.type,
           );
+          const primary =
+            variants.find((record) => record.data.documentDefault === true) ||
+            variants.find((record) => !field(record, "parentVariantId")) ||
+            variants[0];
+          const expanded =
+            params.get("default") === family.type ||
+            (selected &&
+              native(selected) &&
+              familyOf(selected) === family.type);
           const current =
-            selected && familyOf(selected) === family.type ? selected : primary;
+            selected && variants.includes(selected) ? selected : primary;
           return (
             <Card
               key={family.type}
@@ -118,9 +151,13 @@ export function AssetsPage() {
               <button
                 id={`document-family-${family.type}`}
                 className="document-family-open"
-                aria-expanded={expanded}
+                aria-expanded={!!expanded}
                 onClick={() =>
-                  expanded ? collapse(family.type) : open(primary, family.type)
+                  expanded
+                    ? setParams({})
+                    : primary
+                      ? open(primary)
+                      : setParams({ default: family.type })
                 }
               >
                 {!expanded && (
@@ -148,97 +185,140 @@ export function AssetsPage() {
               {expanded && (
                 <div className="document-family-content">
                   <div
-                    className="document-variant-strip"
+                    className="document-variant-tree"
                     aria-label={`${family.title} variants`}
                   >
-                    {variants.map((variant) => (
-                      <div className="document-variant-chip" key={variant.id}>
-                        <button
-                          className={`document-variant-select ${current?.id === variant.id ? "is-selected" : ""}`}
-                          onClick={() => open(variant)}
+                    {variantTree(variants).map(
+                      ({ record, depth, historicalParent }) => (
+                        <div
+                          key={record.id}
+                          className="document-variant-row"
+                          style={{ paddingLeft: `${depth * 1.2}rem` }}
                         >
-                          {variant.title}
-                          {primary?.id === variant.id && (
-                            <span className="document-default-label">Main</span>
+                          {depth > 0 && <GitFork size={14} />}
+                          <button
+                            className={`document-variant-select ${current?.id === record.id ? "is-selected" : ""}`}
+                            onClick={() => open(record)}
+                          >
+                            {editing ? <FileText size={15} /> : record.title}
+                            {record.id === primary?.id && (
+                              <span className="document-default-label">
+                                Main
+                              </span>
+                            )}
+                          </button>
+                          {editing && (
+                            <InlineTitle
+                              value={record.title}
+                              label="Variant name"
+                              onSave={async (title) => {
+                                await update(
+                                  record.id,
+                                  { title: title.trim() || "Untitled variant" },
+                                  record.version,
+                                );
+                              }}
+                            />
                           )}
-                        </button>
-                        {management(variant)}
-                      </div>
-                    ))}
-                    {editMode && (
-                      <Button
-                        variant="ghost"
-                        onClick={() =>
-                          edit(
-                            current
-                              ? { forkFrom: current }
-                              : { defaultType: family.type },
-                          )
-                        }
-                      >
-                        {current ? <GitFork size={16} /> : <Plus size={16} />}
-                        {current ? "New variant" : "Add document"}
-                      </Button>
+                          {historicalParent && (
+                            <small className="muted">
+                              Historical parent:{" "}
+                              {field(
+                                record,
+                                "forkedFromTitle",
+                                "removed variant",
+                              )}
+                            </small>
+                          )}
+                          {Array.isArray(record.data.applicationIds) &&
+                            record.data.applicationIds.length > 0 && (
+                              <small className="muted">
+                                Application variant
+                              </small>
+                            )}
+                          {deletion(record)}
+                        </div>
+                      ),
                     )}
                   </div>
-                  {current ? (
-                    <>
-                      <Suspense
-                        fallback={<p role="status">Loading document…</p>}
-                      >
-                        <LatexPanel
-                          key={current.id}
-                          record={current}
-                          primary={primary}
-                          onSourceReady={() =>
-                            setSourceReady((currentIds) =>
-                              currentIds.includes(current.id)
-                                ? currentIds
-                                : [...currentIds, current.id],
-                            )
-                          }
+                  {editing && current && !!current.data.latexProject && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setFork(current);
+                        setName("");
+                        setApplication("");
+                      }}
+                    >
+                      <GitFork size={16} />
+                      New variant
+                    </Button>
+                  )}
+                  {fork && variants.includes(fork) && (
+                    <form
+                      className="document-fork-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void createNative(family.type, fork);
+                      }}
+                    >
+                      <Field label="Variant name">
+                        <Input
+                          autoFocus
+                          value={name}
+                          maxLength={240}
+                          placeholder="Security, Master, Google…"
+                          onChange={(event) => setName(event.target.value)}
                         />
-                      </Suspense>
-                      {!current.data.latexProject &&
-                        !sourceReady.includes(current.id) && (
-                          <DocumentViewer
-                            inline
-                            record={current}
-                            title={current.title}
-                            onBack={() => collapse(family.type)}
-                            onEdit={() => edit({ record: current })}
-                          />
-                        )}
-                      {primary &&
-                        current.id !== primary.id &&
-                        !current.data.latexProject &&
-                        !sourceReady.includes(current.id) && (
-                          <Button
-                            variant="ghost"
-                            onClick={() =>
-                              setComparison({ before: primary, after: current })
-                            }
-                          >
-                            Compare uploaded versions
-                          </Button>
-                        )}
-                    </>
-                  ) : (
-                    <div className="document-inline-empty">
-                      {editMode ? (
-                        <Button
-                          onClick={() =>
-                            edit({
-                              defaultType: family.type,
-                            })
+                      </Field>
+                      <Field label="Application">
+                        <Select
+                          value={application}
+                          onChange={(event) =>
+                            setApplication(event.target.value)
                           }
                         >
-                          Create {family.title.toLowerCase()}
+                          <option value="">General variant</option>
+                          {applications.map((record) => (
+                            <option key={record.id} value={record.id}>
+                              {field(record, "company")} · {record.title} ·{" "}
+                              {field(record, "status")}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <div className="inline-actions">
+                        <Button type="submit" disabled={busy}>
+                          Create variant
                         </Button>
-                      ) : (
-                        <span className="muted">No document yet.</span>
-                      )}
-                    </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => setFork(undefined)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  )}
+                  {current ? (
+                    <Suspense fallback={<p role="status">Loading document…</p>}>
+                      <LatexPanel
+                        key={current.id}
+                        record={current}
+                        primary={primary}
+                      />
+                    </Suspense>
+                  ) : editing ? (
+                    <Button
+                      disabled={busy}
+                      onClick={() => void createNative(family.type)}
+                    >
+                      <Plus size={16} />
+                      Write in LaTeX
+                    </Button>
+                  ) : (
+                    <p className="muted">No document yet.</p>
                   )}
                 </div>
               )}
@@ -246,115 +326,70 @@ export function AssetsPage() {
           );
         })}
       </div>
-      {documents.some(
-        (item) => !["resume", "letter"].includes(familyOf(item)),
-      ) && (
-        <section>
-          <div className="document-section-heading">
-            <h2>More documents</h2>
-          </div>
-          <div className="document-more-grid">
-            {documents
-              .filter((item) => !["resume", "letter"].includes(familyOf(item)))
-              .map((record) => (
-                <Card
-                  className={`document-card document-named ${selected?.id === record.id ? "document-more-expanded" : ""}`}
-                  key={record.id}
-                >
-                  <button
-                    id={`document-card-${record.id}`}
-                    className="document-family-open"
-                    aria-expanded={selected?.id === record.id}
-                    onClick={() =>
-                      selected?.id === record.id ? collapse() : open(record)
-                    }
-                  >
-                    {selected?.id !== record.id && (
-                      <DocumentPreview record={record} />
-                    )}
-                    <span className="document-family-title">
-                      {record.title}
-                      {selected?.id === record.id && <ChevronUp size={18} />}
-                    </span>
-                  </button>
-                  {management(record)}
-                  {selected?.id === record.id && (
-                    <DocumentViewer
-                      inline
-                      record={record}
-                      title={record.title}
-                      onBack={() => collapse()}
-                      onEdit={() => edit({ record })}
-                    />
-                  )}
-                </Card>
-              ))}
-          </div>
-        </section>
-      )}
-      {params.has("record") && !selected && (
-        <p role="status">
-          Document unavailable.{" "}
-          <Button variant="ghost" onClick={() => setParams({})}>
-            Close
-          </Button>
-        </p>
-      )}
-      <ProfileLinks />
-      {error && !editing && !deleting && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      <Modal
-        open={!!editing}
-        title={
-          editing?.record
-            ? "Edit document"
-            : editing?.forkFrom
-              ? "Fork document"
-              : "Add document"
-        }
-        onClose={() => setEditing(undefined)}
-      >
-        {editing && (
-          <DocumentEditor
-            key={
-              editing.record?.id ||
-              editing.forkFrom?.id ||
-              editing.defaultType ||
-              "new"
-            }
-            {...editing}
-            onClose={() => setEditing(undefined)}
-            onSaved={(record) => {
-              setEditing(undefined);
-              open(record);
-            }}
-          />
+      <section>
+        <div className="document-section-heading">
+          <h2>Other documents</h2>
+          {editing && (
+            <Button variant="secondary" onClick={() => setAdding(true)}>
+              <Plus size={16} />
+              Add document
+            </Button>
+          )}
+        </div>
+        {adding && (
+          <Card>
+            <DocumentEditor
+              onClose={() => setAdding(false)}
+              onSaved={(record) => {
+                setAdding(false);
+                open(record);
+              }}
+            />
+          </Card>
         )}
-      </Modal>
-      <Modal
-        open={!!comparison}
-        size="large"
-        title="Compare document versions"
-        onClose={() => setComparison(undefined)}
-      >
-        {comparison && <DocumentComparison {...comparison} />}
-      </Modal>
+        <div className="document-more-grid">
+          {documents
+            .filter((record) => !native(record))
+            .map((record) => (
+              <Card
+                className={`document-card document-named ${selected?.id === record.id ? "document-more-expanded" : ""}`}
+                key={record.id}
+              >
+                <button
+                  className="document-family-open"
+                  aria-expanded={selected?.id === record.id}
+                  onClick={() =>
+                    selected?.id === record.id ? setParams({}) : open(record)
+                  }
+                >
+                  {selected?.id !== record.id && (
+                    <DocumentPreview record={record} />
+                  )}
+                  <span className="document-family-title">
+                    {record.title}
+                    {selected?.id === record.id && <ChevronUp size={18} />}
+                  </span>
+                </button>
+                {deletion(record)}
+                {selected?.id === record.id && (
+                  <DocumentViewer
+                    inline
+                    record={record}
+                    title={record.title}
+                    onBack={() => setParams({})}
+                  />
+                )}
+              </Card>
+            ))}
+        </div>
+      </section>
+      <ProfileLinks />
       <Modal
         open={!!deleting}
         title={`Delete ${deleting?.title || "document"}?`}
-        onClose={() => {
-          if (!pending) setDeleting(undefined);
-        }}
+        onClose={() => setDeleting(undefined)}
       >
-        <p>Independent variants remain available.</p>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
+        <p>Independent variants and submitted versions remain available.</p>
         <div className="inline-actions">
           <Button
             variant="danger"

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Download, Expand, FileText, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, Download, FileText } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import {
   documentPreviewKind,
@@ -9,22 +9,18 @@ import { Button, Card } from "../../components/ui";
 import { errorMessage } from "../search/domain";
 import { documentBlob, downloadDocumentFile } from "./files";
 import { useDocumentFiles } from "./useDocumentFiles";
-import { useEditMode } from "../../lib/edit-mode";
 
 export function DocumentViewer({
   record,
   title,
   onBack,
-  onEdit,
   inline = false,
 }: {
   record?: WorkRecord;
   title: string;
   onBack: () => void;
-  onEdit: () => void;
   inline?: boolean;
 }) {
-  const { editing } = useEditMode();
   const {
     files,
     loading,
@@ -37,7 +33,6 @@ export function DocumentViewer({
   const [error, setError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
   const [retry, setRetry] = useState(0);
-  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let active = true;
     let objectUrl = "";
@@ -80,7 +75,6 @@ export function DocumentViewer({
   return (
     <div
       className={`document-viewer ${inline ? "document-viewer-inline" : ""}`}
-      ref={root}
     >
       <div className="document-viewer-toolbar">
         {!inline && (
@@ -105,26 +99,6 @@ export function DocumentViewer({
               }
             >
               <Download size={16} /> Download
-            </Button>
-          )}
-          {editing && (
-            <Button variant="ghost" onClick={onEdit}>
-              Edit document
-            </Button>
-          )}
-          {blobUrl && (
-            <Button
-              variant="ghost"
-              aria-label="Expand document viewer"
-              onClick={() => {
-                if (document.fullscreenElement) void document.exitFullscreen();
-                else
-                  void root.current
-                    ?.requestFullscreen()
-                    .catch((failure) => setError(errorMessage(failure)));
-              }}
-            >
-              <Expand size={18} />
             </Button>
           )}
         </div>
@@ -205,10 +179,10 @@ export function DocumentViewer({
             </h2>
             <p className="muted">
               {missing
-                ? "Your document details are saved. Upload a new copy or select a previous upload in Edit document."
+                ? "This uploaded copy is unavailable. You can recover it from a backup or add a new document."
                 : file
                   ? "This format opens in its own app. Download the file to read or edit it."
-                  : "Upload a PDF or image to open it here, or create native LaTeX source for your résumé or cover letter."}
+                  : "No uploaded file is associated with this document."}
             </p>
             <div className="inline-actions">
               {file ? (
@@ -220,10 +194,6 @@ export function DocumentViewer({
                   }
                 >
                   <Download size={17} /> Download file
-                </Button>
-              ) : editing ? (
-                <Button onClick={onEdit}>
-                  <Upload size={17} /> Upload PDF or file
                 </Button>
               ) : null}
             </div>

@@ -22,6 +22,8 @@ export interface Env {
   ASSETS?: Fetcher;
   LATEX_COMPILER_URL?: string;
   LATEX_COMPILER_TOKEN?: string;
+  LATEX_ACCESS_CLIENT_ID?: string;
+  LATEX_ACCESS_CLIENT_SECRET?: string;
 }
 
 export interface Variables {

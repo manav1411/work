@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { BrandArrow } from "../components/BrandArrow";
 import {
   Link,
   Navigate,
@@ -37,6 +38,7 @@ import { field } from "../../shared/model";
 import { Button, EmptyState } from "../components/ui";
 import { jsonRequest, request } from "../lib/api";
 import { useWorkspace } from "../lib/workspace";
+import { displayName } from "../lib/display-name";
 import { EditModeProvider, useEditMode } from "../lib/edit-mode";
 import { EditNavigation } from "./EditNavigation";
 import { TodayPage } from "../features/home/TodayPage";
@@ -113,7 +115,7 @@ function Loading() {
   return (
     <div className="loading-state" role="status">
       <div className="work-symbol">
-        w<span>↗</span>
+        w<BrandArrow />
       </div>
       <p>Loading…</p>
     </div>
@@ -149,7 +151,8 @@ function Login() {
     <main className="work-signin-page">
       <Link to="/" className="brand signin-brand" aria-label="Work">
         <span className="brand-word">
-          work<span>↗</span>
+          work
+          <BrandArrow />
         </span>
       </Link>
       <section className="signin-card">
@@ -157,7 +160,7 @@ function Login() {
           <i />
           <i />
           <i />
-          <span>↗</span>
+          <BrandArrow />
         </div>
         <h1>Sign in</h1>
         <Button disabled={!configured || busy} onClick={() => void login()}>
@@ -190,7 +193,7 @@ function Login() {
 }
 
 function AccountMenu({ className = "" }: { className?: string }) {
-  const { user, mode, signOut, notify } = useWorkspace();
+  const { user, mode, preferences, signOut, notify } = useWorkspace();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const firstFocus = useRef<"first" | "last">("first");
@@ -217,8 +220,7 @@ function AccountMenu({ className = "" }: { className?: string }) {
     setOpen(false);
     trigger.current?.focus();
   };
-  const name =
-    mode === "demo" ? "Demo" : user?.name || user?.email || "Account";
+  const name = mode === "demo" ? "Demo" : displayName(preferences, user);
   return (
     <div
       ref={root}
@@ -417,7 +419,8 @@ function Shell() {
         <div className="sidebar-brand-row">
           <Link to="/home" className="brand" aria-label="Work home">
             <span className="brand-word">
-              work<span>↗</span>
+              work
+              <BrandArrow />
             </span>
           </Link>
           <button
@@ -437,9 +440,7 @@ function Shell() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <p className="edit-mode-hint">
-            Hold a section to edit.
-          </p>
+          <p className="edit-mode-hint">Hold a section to edit.</p>
           <AccountMenu />
         </div>
       </aside>
@@ -459,7 +460,8 @@ function Shell() {
             <Menu size={22} />
           </button>
           <Link to="/home" className="mobile-work-brand" aria-label="Work home">
-            work<span>↗</span>
+            work
+            <BrandArrow />
           </Link>
           <AccountMenu className="mobile-account" />
         </header>

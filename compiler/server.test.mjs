@@ -70,5 +70,5 @@ test("preserves useful source positions and warnings without unbounded diagnosti
       { severity: "warning", message: "LaTeX Warning: Missing citation." },
     ],
   );
-  assert.equal(diagnostics("main.tex:1: bad\n".repeat(1000)).length, 200);
+  assert.equal(diagnostics("main.tex:1: bad\n".repeat(1000)).length, 100);
 });

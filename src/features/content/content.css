@@ -113,3 +113,209 @@
     padding: 16px;
   }
 }
+.inline-title {
+  width: 100%;
+  min-width: 4rem;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  outline-offset: 5px;
+}
+.sortable-item {
+  min-width: 0;
+}
+.sort-handle {
+  display: inline-flex;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 5px;
+  cursor: grab;
+  touch-action: none;
+  opacity: 0.3;
+}
+.sortable-item:hover .sort-handle,
+.sort-handle:focus-visible {
+  opacity: 1;
+}
+.sortable-item:has(.sort-handle[aria-pressed="true"]) {
+  outline: 2px dashed var(--ink);
+}
+.rich-document {
+  position: relative;
+  min-width: 0;
+}
+.rich-document-canvas {
+  position: relative;
+}
+.rich-document-prose {
+  outline: 0;
+  min-height: 3rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.is-editing .rich-document-prose {
+  padding-left: 28px;
+  min-height: 140px;
+}
+.rich-document-prose > * {
+  margin: 0.6rem 0;
+}
+.rich-document-prose a {
+  color: var(--blue);
+  text-decoration: underline;
+}
+.rich-document-prose h1,
+.rich-document-prose h2,
+.rich-document-prose h3 {
+  line-height: 1.25;
+  margin-top: 1.1rem;
+}
+.rich-document-prose ul,
+.rich-document-prose ol {
+  padding-left: 1.7rem;
+}
+.rich-document-prose ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+.rich-document-prose li[data-type="taskItem"] {
+  display: flex;
+  gap: 0.6rem;
+}
+.rich-document-prose li[data-type="taskItem"] > div {
+  flex: 1;
+}
+.rich-document-prose blockquote {
+  border-left: 3px solid var(--ink);
+  padding-left: 1rem;
+}
+.rich-document-prose pre {
+  background: var(--canvas);
+  padding: 0.9rem;
+  border-radius: 8px;
+  overflow: auto;
+}
+.rich-document-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+}
+.rich-document-prose td,
+.rich-document-prose th {
+  border: 1px solid var(--ink);
+  padding: 0.45rem;
+  vertical-align: top;
+}
+.rich-document-prose th {
+  background: var(--canvas);
+}
+.rich-document-prose .selectedCell {
+  background: color-mix(in srgb, var(--pink) 22%, transparent);
+}
+.rich-document-prose .column-resize-handle {
+  width: 3px;
+  background: var(--ink);
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+}
+.rich-document-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted);
+  pointer-events: none;
+  height: 0;
+}
+.rich-selection-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+  width: fit-content;
+  margin-bottom: 0.5rem;
+}
+.rich-selection-toolbar button,
+.rich-slash-menu button {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  padding: 0.35rem 0.45rem;
+  cursor: pointer;
+}
+.rich-selection-toolbar button:hover,
+.rich-selection-toolbar button[aria-pressed="true"],
+.rich-slash-menu button:hover {
+  background: var(--canvas);
+}
+.rich-selection-toolbar select {
+  max-width: 125px;
+}
+.rich-block-handle {
+  position: absolute;
+  left: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  opacity: 0.3;
+  padding: 3px;
+  touch-action: none;
+  cursor: grab;
+  z-index: 2;
+}
+.rich-document-canvas:hover .rich-block-handle,
+.rich-block-handle:focus-visible,
+.rich-block-handle.picked {
+  opacity: 1;
+}
+.rich-block-handle.picked {
+  background: var(--pink);
+  outline: 1px dashed var(--ink);
+}
+.rich-slash-menu {
+  position: absolute;
+  z-index: 8;
+  display: grid;
+  min-width: 160px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  padding: 0.4rem;
+}
+.rich-slash-menu button {
+  text-align: left;
+}
+.rich-link-editor {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.6rem;
+}
+.rich-link-editor input {
+  flex: 1;
+  min-width: 150px;
+}
+.rich-save-state {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 0.7rem;
+}
+.rich-save-state > span {
+  color: var(--ink);
+}
+.rich-save-state pre {
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow: auto;
+  color: var(--ink);
+}

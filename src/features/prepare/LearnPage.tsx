@@ -1,26 +1,10 @@
-import { useRef, useState } from "react";
-import {
-  ArrowDown,
-  ArrowUp,
-  ExternalLink,
-  Pencil,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
-import { learningUsername } from "../../../shared/learning";
-import {
-  Button,
-  Card,
-  Field,
-  Input,
-  Modal,
-  PageHeader,
-  SectionTabs,
-  Textarea,
-} from "../../components/ui";
+import { useState } from "react";
+import { Plus, RefreshCw } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Button, Card, PageHeader } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
+import { CompanyGlyph } from "../../components/CompanyGlyph";
 import { Pomodoro } from "../learn/Pomodoro";
 import { useLearningData } from "../learn/useLearningData";
 import Roadmap from "../learn/foundations/Roadmap";
@@ -34,28 +18,28 @@ import {
 } from "../learn/topics";
 import { ContentPanel } from "../content/ContentPanel";
 import { DeleteControl } from "../content/DeleteControl";
+import { InlineTitle } from "../content/InlineTitle";
+import { SortableList } from "../content/SortableList";
+import { reorderRecords } from "../content/reorderRecords";
 import "../learn/learn.css";
 
 export function LearnPage() {
-  const { editing } = useEditMode();
-  const { records, preferences, mode, create, update, remove } = useWorkspace();
-  const learning = useLearningData();
+  const { editing, continueCreation } = useEditMode();
+  const workspace = useWorkspace();
+  const { records, create, update, remove } = workspace;
+  const learning = useLearningData({ revalidateOnEntry: true });
   const [params, setParams] = useSearchParams();
-  const tabRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState("");
+  const [newId, setNewId] = useState("");
   const subjects = learningSubjects(records);
   const track = subjects.some((item) => item.id === params.get("track"))
     ? params.get("track")!
     : "dsa";
   const subject = subjects.find((item) => item.id === track)!;
-  const [editor, setEditor] = useState<{
-    type: "track" | "topic";
-    item?: LearningSubject | EditableLearningTopic;
-  } | null>(null);
-  const [error, setError] = useState("");
+  const topics = learningTopics(records, track);
   const problemTopic = roadmapTopics.find((topic) =>
     topic.problems.some((problem) => problem.slug === params.get("problem")),
   )?.id;
-  const topics = learningTopics(records, track);
   const selectTrack = (id: string) =>
     setParams(id === "dsa" ? {} : { track: id });
   const perform = async (action: () => Promise<unknown>) => {
@@ -74,6 +58,7 @@ export function LearnPage() {
     type: "track" | "topic",
     item: LearningSubject | EditableLearningTopic,
     patch: Record<string, unknown>,
+    title = item.title,
   ) => {
     const data = {
       ...item.record?.data,
@@ -83,23 +68,42 @@ export function LearnPage() {
       ...patch,
     };
     return item.record
-      ? update(item.record.id, { data })
+      ? update(item.record.id, { title, data })
       : create({
           kind: "topic",
-          title: item.title,
+          title,
           body: "description" in item ? item.description : item.summary,
           data,
         });
   };
-  const reorder = async (
-    type: "track" | "topic",
-    index: number,
-    offset: number,
-  ) => {
-    const next = [...(type === "track" ? subjects : topics)];
-    [next[index], next[index + offset]] = [next[index + offset], next[index]];
-    for (const [order, item] of next.entries())
-      await saveItem(type, item, { order });
+  const reorder = async (type: "track" | "topic", ids: string[]) => {
+    const ordered = [];
+    for (const [order, id] of ids.entries()) {
+      const item = (type === "track" ? subjects : topics).find(
+        (item) => item.id === id,
+      )!;
+      ordered.push(
+        item.record ??
+          (await saveItem(type, item, { order: item.order ?? order })),
+      );
+    }
+    await reorderRecords(ordered, workspace);
+  };
+  const add = async (type: "track" | "topic") => {
+    const record = await create({
+      kind: "topic",
+      title: "Untitled",
+      data: {
+        category: type === "track" ? "learn-track" : "learn-topic",
+        ...(type === "topic" ? { track } : {}),
+        order: type === "track" ? subjects.length : topics.length,
+      },
+    });
+    setNewId(record.id);
+    if (type === "track") {
+      continueCreation();
+      selectTrack(record.id);
+    }
   };
   return (
     <div className="page learn-page">
@@ -107,389 +111,195 @@ export function LearnPage() {
         title="Learn"
         action={
           editing && (
-            <Button onClick={() => setEditor({ type: "track" })}>
+            <Button onClick={() => void perform(() => add("track"))}>
               <Plus size={16} />
               Add topic
             </Button>
           )
         }
       />
-      <SectionTabs
-        className="learn-track-tabs"
-        ref={tabRef}
-        role="tablist"
-        aria-label="Learning topics"
+      <SortableList
+        className="section-tabs learn-track-tabs editable-tabs"
+        horizontal
+        label="Learning topics"
+        items={subjects}
+        onReorder={(ids) => reorder("track", ids)}
       >
-        {subjects.map((item, index) => (
-          <button
-            key={item.id}
+        {(item, handle) => (
+          <div
+            className={`editable-tab ${track === item.id ? "active" : ""}`}
             role="tab"
-            aria-selected={track === item.id}
-            aria-controls="learn-track-content"
             id={`learn-track-${item.id}`}
+            aria-label={item.title}
+            aria-selected={track === item.id}
             tabIndex={track === item.id ? 0 : -1}
-            className={track === item.id ? "active" : ""}
             onClick={() => selectTrack(item.id)}
-            onFocus={(event) =>
-              event.currentTarget.scrollIntoView({
-                block: "nearest",
-                inline: "nearest",
-              })
-            }
             onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                selectTrack(item.id);
+              }
               if (
-                !["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)
-              )
-                return;
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? subjects.length - 1
-                    : (index +
-                        (event.key === "ArrowRight" ? 1 : -1) +
-                        subjects.length) %
-                      subjects.length;
-              selectTrack(subjects[next].id);
-              (tabRef.current?.children[next] as HTMLElement)?.focus();
+                ["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)
+              ) {
+                event.preventDefault();
+                const index = subjects.findIndex(
+                  (value) => value.id === item.id,
+                );
+                const next =
+                  subjects[
+                    event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? subjects.length - 1
+                        : (index +
+                            (event.key === "ArrowRight" ? 1 : -1) +
+                            subjects.length) %
+                          subjects.length
+                  ];
+                selectTrack(next.id);
+                document.getElementById(`learn-track-${next.id}`)?.focus();
+              }
             }}
           >
-            {item.title}
-          </button>
-        ))}
-      </SectionTabs>
+            {handle}
+            <CompanyGlyph name={item.title} />
+            <InlineTitle
+              value={item.title}
+              label="Topic name"
+              autoFocus={newId === item.id}
+              onSave={(title) => saveItem("track", item, {}, title)}
+            />
+          </div>
+        )}
+      </SortableList>
       {error && (
         <p role="alert" className="content-save-error">
           {error}
         </p>
       )}
-      <div
-        id="learn-track-content"
-        role="tabpanel"
-        aria-labelledby={`learn-track-${track}`}
+      {editing && track !== "dsa" && (
+        <div className="content-item-actions">
+          <DeleteControl
+            label="Delete topic"
+            onDelete={async () => {
+              if (subject.seedId)
+                await saveItem("track", subject, { hidden: true });
+              else if (subject.record) await remove(subject.record.id);
+              selectTrack("dsa");
+            }}
+          />
+        </div>
+      )}
+      {track === "dsa" && (
+        <>
+          <div className="learn-context-bar">
+            <Pomodoro />
+          </div>
+          {learning.error && (
+            <div className="learn-source-error" role="alert">
+              <span>{learning.error}</span>
+              <Button
+                variant="ghost"
+                disabled={learning.loading}
+                onClick={() => void learning.reload()}
+              >
+                <RefreshCw size={15} />
+                Retry
+              </Button>
+            </div>
+          )}
+          <LeetCodeCalendar />
+          <Roadmap
+            solved={learning.solvedSlugs}
+            personalised={learning.configured && Boolean(learning.stats)}
+            initialTopic={problemTopic}
+          />
+          <ContentPanel
+            context={{ scope: "learn", track: "dsa", seedId: "dsa-resources" }}
+            seeds={[
+              {
+                id: "leetcode",
+                title: "LeetCode problems",
+                url: "https://leetcode.com/problemset/",
+              },
+              {
+                id: "python-tutorial",
+                title: "Python tutorial",
+                url: "https://docs.python.org/3/tutorial/",
+              },
+              {
+                id: "python-library",
+                title: "Python standard library",
+                url: "https://docs.python.org/3/library/",
+              },
+            ]}
+          />
+        </>
+      )}
+      {editing && track !== "dsa" && (
+        <Button
+          variant="secondary"
+          onClick={() => void perform(() => add("topic"))}
+        >
+          <Plus size={15} />
+          Add section
+        </Button>
+      )}
+      <SortableList
+        className="learn-editable-topics"
+        items={topics}
+        onReorder={(ids) => reorder("topic", ids)}
       >
-        <div className="learn-subject-heading">
-          {editing && (
-            <div className="content-item-actions">
-              <Button
-                variant="ghost"
-                onClick={() => setEditor({ type: "track", item: subject })}
-              >
-                <Pencil size={15} />
-                Edit topic
-              </Button>
-              <Button
-                variant="ghost"
-                aria-label="Move topic left"
-                disabled={subjects.indexOf(subject) === 0}
-                onClick={() =>
-                  void perform(() =>
-                    reorder("track", subjects.indexOf(subject), -1),
-                  )
-                }
-              >
-                <ArrowUp size={15} />
-              </Button>
-              <Button
-                variant="ghost"
-                aria-label="Move topic right"
-                disabled={subjects.indexOf(subject) === subjects.length - 1}
-                onClick={() =>
-                  void perform(() =>
-                    reorder("track", subjects.indexOf(subject), 1),
-                  )
-                }
-              >
-                <ArrowDown size={15} />
-              </Button>
-              {track !== "dsa" && (
+        {(topic, handle) => (
+          <Card className="learn-reading-card">
+            <header className="content-section-heading">
+              <h2>
+                {handle}
+                <CompanyGlyph name={topic.title} />
+                <InlineTitle
+                  value={topic.title}
+                  autoFocus={newId === topic.id}
+                  label="Section name"
+                  onSave={(title) => saveItem("topic", topic, {}, title)}
+                />
+              </h2>
+              {editing && (
                 <DeleteControl
-                  label="Delete topic"
+                  label="Delete section"
                   onDelete={async () => {
-                    if (subject.seedId)
-                      await saveItem("track", subject, { hidden: true });
-                    else if (subject.record) await remove(subject.record.id);
-                    selectTrack("dsa");
+                    if (topic.seedId)
+                      await saveItem("topic", topic, { hidden: true });
+                    else if (topic.record) await remove(topic.record.id);
                   }}
                 />
               )}
-            </div>
-          )}
-        </div>
-        {track === "dsa" && (
-          <>
-            <div className="learn-context-bar">
-              <h2>DSA & Python roadmap</h2>
-              <Pomodoro />
-            </div>
-            {learning.error && (
-              <div className="learn-source-error" role="alert">
-                <span>{learning.error}</span>
-                <Button
-                  variant="ghost"
-                  disabled={learning.loading}
-                  onClick={() => void learning.reload()}
-                >
-                  <RefreshCw size={15} />
-                  Retry
-                </Button>
-              </div>
-            )}
-            {learning.loading && !learning.stats && (
-              <p className="muted" role="status">
-                Loading confirmed solves…
-              </p>
-            )}
-            <LeetCodeCalendar />
-            <Roadmap
-              solved={learning.solvedSlugs}
-              personalised={learning.configured && Boolean(learning.stats)}
-              initialTopic={problemTopic}
-            />
-            <footer className="learn-source-footer">
-              {!learning.configured && !learning.loading && (
-                <Link to="/settings">Set LeetCode username</Link>
-              )}
-              {mode !== "demo" && learning.configured && (
-                <details>
-                  <summary>
-                    {learning.username ||
-                      learningUsername(preferences.leetcode)}
-                    {learning.source.stats.stale ? " · Cached data" : ""}
-                  </summary>
-                  <div className="learn-source-details">
-                    <a
-                      href={`https://leetcode.com/u/${encodeURIComponent(learning.username)}/`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      LeetCode profile
-                      <ExternalLink size={13} />
-                    </a>
-                    {learning.source.stats.fetchedAt && (
-                      <span>
-                        Progress fetched{" "}
-                        {new Date(
-                          learning.source.stats.fetchedAt,
-                        ).toLocaleString(undefined, {
-                          timeZone: preferences.timezone,
-                        })}
-                      </span>
-                    )}
-                    <p>
-                      Confirmed solves use accumulated history from the learning
-                      source. Earlier solves may be missing; an empty circle
-                      means a solve has not been observed.
-                    </p>
-                    <Button
-                      variant="ghost"
-                      disabled={learning.loading}
-                      onClick={() => void learning.reload()}
-                    >
-                      <RefreshCw size={14} />
-                      Refresh
-                    </Button>
-                  </div>
-                </details>
-              )}
-            </footer>
+            </header>
             <ContentPanel
               context={{
                 scope: "learn",
-                track: "dsa",
-                seedId: "dsa-resources",
+                track,
+                ...(topic.seedId
+                  ? { seedId: topic.seedId }
+                  : { topicId: topic.id }),
               }}
-              seeds={[
-                {
-                  id: "leetcode",
-                  title: "LeetCode problems",
-                  url: "https://leetcode.com/problemset/",
-                  body: "Practise a pattern from the roadmap.",
-                },
-                {
-                  id: "python-tutorial",
-                  title: "Python tutorial",
-                  url: "https://docs.python.org/3/tutorial/",
-                  body: "Language fundamentals with runnable examples.",
-                },
-                {
-                  id: "python-library",
-                  title: "Python standard library",
-                  url: "https://docs.python.org/3/library/",
-                  body: "Collections, heaps, iteration and useful building blocks.",
-                },
-              ]}
+              initialBody={topic.record?.body ?? ""}
+              seeds={
+                topic.url
+                  ? [
+                      {
+                        id: `${topic.id}-reading`,
+                        title: topic.resource,
+                        url: topic.url,
+                      },
+                    ]
+                  : []
+              }
             />
-          </>
+          </Card>
         )}
-        {editing && track !== "dsa" && (
-          <Button
-            variant="secondary"
-            onClick={() => setEditor({ type: "topic" })}
-          >
-            <Plus size={15} />
-            Add section
-          </Button>
-        )}
-        <div className="learn-editable-topics">
-          {topics.map((topic, index) => (
-            <Card key={topic.id} className="learn-reading-card">
-              <header className="content-section-heading">
-                <h2>{topic.title}</h2>
-                {editing && (
-                  <div className="content-item-actions">
-                    <Button
-                      variant="ghost"
-                      onClick={() => setEditor({ type: "topic", item: topic })}
-                      aria-label={`Edit ${topic.title}`}
-                    >
-                      <Pencil size={15} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={index === 0}
-                      aria-label={`Move ${topic.title} up`}
-                      onClick={() =>
-                        void perform(() => reorder("topic", index, -1))
-                      }
-                    >
-                      <ArrowUp size={15} />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      disabled={index === topics.length - 1}
-                      aria-label={`Move ${topic.title} down`}
-                      onClick={() =>
-                        void perform(() => reorder("topic", index, 1))
-                      }
-                    >
-                      <ArrowDown size={15} />
-                    </Button>
-                    <DeleteControl
-                      label="Delete section"
-                      onDelete={async () => {
-                        if (topic.seedId)
-                          await saveItem("topic", topic, { hidden: true });
-                        else if (topic.record) await remove(topic.record.id);
-                      }}
-                    />
-                  </div>
-                )}
-              </header>
-              <ContentPanel
-                context={{
-                  scope: "learn",
-                  track,
-                  ...(topic.seedId
-                    ? { seedId: topic.seedId }
-                    : { topicId: topic.id }),
-                }}
-                seeds={
-                  topic.url
-                    ? [
-                        {
-                          id: `${topic.id}-reading`,
-                          title: topic.resource,
-                          url: topic.url,
-                        },
-                      ]
-                    : []
-                }
-              />
-            </Card>
-          ))}
-        </div>
-      </div>
-      {editor && (
-        <TopicEditor
-          key={editor.item?.id ?? editor.type}
-          type={editor.type}
-          item={editor.item}
-          track={track}
-          order={editor.type === "track" ? subjects.length : topics.length}
-          onClose={() => setEditor(null)}
-        />
-      )}
+      </SortableList>
     </div>
-  );
-}
-function TopicEditor({
-  type,
-  item,
-  track,
-  order,
-  onClose,
-}: {
-  type: "track" | "topic";
-  item?: LearningSubject | EditableLearningTopic;
-  track: string;
-  order: number;
-  onClose: () => void;
-}) {
-  const { create, update } = useWorkspace();
-  const [title, setTitle] = useState(item?.title ?? "");
-  const [body, setBody] = useState(
-    item ? ("description" in item ? item.description : item.summary) : "",
-  );
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`${item ? "Edit" : "Add"} ${type === "track" ? "topic" : "section"}`}
-    >
-      <form
-        className="form-stack"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          if (!title.trim()) return;
-          setBusy(true);
-          setError("");
-          const data = {
-            ...item?.record?.data,
-            category: type === "track" ? "learn-track" : "learn-topic",
-            ...(type === "topic" ? { track } : {}),
-            ...(item?.seedId ? { seedId: item.seedId } : {}),
-            order: item?.record?.data.order ?? item?.order ?? order,
-          };
-          try {
-            if (item?.record)
-              await update(item.record.id, { title: title.trim(), body, data });
-            else
-              await create({ kind: "topic", title: title.trim(), body, data });
-            onClose();
-          } catch (failure) {
-            setError(
-              failure instanceof Error
-                ? failure.message
-                : "Topic could not be saved.",
-            );
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <Field label="Name">
-          <Input
-            autoFocus
-            required
-            maxLength={200}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </Field>
-        <Field label="Description (optional)">
-          <Textarea
-            rows={4}
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-          />
-        </Field>
-        {error && <p role="alert">{error}</p>}
-        <Button disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
-      </form>
-    </Modal>
   );
 }
