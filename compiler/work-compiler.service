@@ -4,7 +4,6 @@ After=network.target
 
 [Service]
 Type=simple
-DynamicUser=yes
 User=work-compiler
 StateDirectory=work-compiler
 EnvironmentFile=/etc/work-compiler.env
@@ -13,10 +12,10 @@ ExecStart=/opt/work-compiler/node /opt/work-compiler/server.mjs
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=yes
-ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
+ProtectSystem=full
 MemoryMax=1536M
 TasksMax=128
 UMask=0077

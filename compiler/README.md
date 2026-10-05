@@ -2,7 +2,7 @@
 
 LaTeX is compiled natively with TeX Live and latexmk on the Raspberry Pi. The source checkout is `/home/manav/base/work_project`; installed service code is `/opt/work-compiler`, managed by `work-compiler.service`. A separate Node 22 runtime keeps the Pi's global Node installation unchanged. Cloudflare Tunnel routes `work-compiler.manavdodia.com` to the controller on `127.0.0.1:8788`, preserving the Pi's other routes.
 
-The controller runs with a systemd dynamic unprivileged account. Each job runs in a separate bubblewrap filesystem/PID/network namespace with only TeX tools/fonts/configuration, its own project directory and a private temporary filesystem. It cannot read other home directories, service secrets, or the host filesystem generally. Shell escape and project `latexmkrc` are disabled; CPU, address-space, file-size, process-count and wall-clock limits apply. No containers or local virtual machines are used.
+The controller runs as a dedicated static unprivileged `work-compiler` account. A static account is required because systemd's `DynamicUser` automatically applies a strict host filesystem namespace that prevents Bubblewrap from creating its own nested mounts. Each job runs in a separate bubblewrap filesystem/PID/network namespace with only TeX tools/fonts/configuration, its own project directory and a private temporary filesystem. It cannot read other home directories, service secrets, or the host filesystem generally. Shell escape and project `latexmkrc` are disabled; CPU, address-space, file-size, process-count and wall-clock limits apply. No containers or local virtual machines are used.
 
 ## Installation
 
@@ -13,7 +13,7 @@ sudo apt-get update
 sudo apt-get install --no-install-recommends texlive-latex-base texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-luatex latexmk poppler-utils bubblewrap
 ```
 
-Copy the compiler files into the project folder. `node install-runtime.mjs` downloads the official Node 22 ARM64 release, checks its published SHA-256 digest and installs it in the project's runtime folder. `sudo sh install-pi.sh` installs and starts the service, generating its private bearer token once in `/etc/work-compiler.env`. `sudo runtime/bin/node configure-tunnel.mjs` adds the dedicated hostname to the existing tunnel and saves a recoverable configuration backup first.
+Copy the compiler files into the project folder. `node install-runtime.mjs` downloads the official Node 22 ARM64 release, checks its published SHA-256 digest and installs it in the project's runtime folder. `sudo sh install-pi.sh` creates the dedicated service account, installs and restarts the service, and generates its private bearer token once in `/etc/work-compiler.env`. `sudo runtime/bin/node configure-tunnel.mjs` adds the dedicated hostname to the existing tunnel and saves a recoverable configuration backup first.
 
 Cloudflare Access uses a dedicated Service Auth policy and service token. Work's Worker secrets are `LATEX_COMPILER_URL`, `LATEX_COMPILER_TOKEN`, `LATEX_ACCESS_CLIENT_ID`, and `LATEX_ACCESS_CLIENT_SECRET`. Credentials belong only in private service/Worker configuration. Local setup can use an SSH port forward to the controller and the same bearer token, without exposing credentials to the browser.
 
