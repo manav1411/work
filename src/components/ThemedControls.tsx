@@ -51,6 +51,7 @@ export function ThemedSelect({
   defaultValue,
   onChange,
   className = "",
+  contentClassName = "",
   id,
   name,
   required,
@@ -58,7 +59,7 @@ export function ThemedSelect({
   "aria-label": label,
   "aria-describedby": described,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+}: SelectHTMLAttributes<HTMLSelectElement> & { contentClassName?: string }) {
   const choices = options(children);
   const trigger = useRef<HTMLButtonElement>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
@@ -104,7 +105,7 @@ export function ThemedSelect({
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal container={portalContainer ?? undefined}>
         <SelectPrimitive.Content
-          className="themed-select-content"
+          className={`themed-select-content ${contentClassName}`.trim()}
           position="popper"
           sideOffset={5}
           collisionPadding={12}

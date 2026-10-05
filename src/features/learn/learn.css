@@ -968,7 +968,7 @@
 .learn-calendar-day.is-today {
   background: #ffd84a;
   border-color: #202128;
-  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px #ffd84a;
+  box-shadow: none;
 }
 .learn-calendar-day:focus-visible,
 .learn-calendar-day:hover {

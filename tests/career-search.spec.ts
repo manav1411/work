@@ -7,6 +7,10 @@ async function demoRecords(page: Page): Promise<WorkRecord[]> {
     () => JSON.parse(sessionStorage.getItem("work-demo-v1")!).records,
   );
 }
+async function chooseOption(page: Page, label: string, option: string) {
+  await page.getByRole("combobox", { name: label, exact: true }).click();
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
 async function createApplication(
   page: Page,
   role = "Backend engineer",
@@ -22,7 +26,8 @@ async function createApplication(
   });
   await form.getByLabel("Company", { exact: true }).fill("Example Company");
   await form.getByLabel("Role", { exact: true }).fill(role);
-  await form.getByLabel("Status", { exact: true }).selectOption(status);
+  await form.getByRole("combobox", { name: "Status", exact: true }).click();
+  await page.getByRole("option", { name: status, exact: true }).click();
   await form
     .getByLabel("Listing link", { exact: true })
     .fill("https://example.com/vacancy");
@@ -85,30 +90,31 @@ test("tracker replaces spreadsheet fields, supports search/filter, and preserves
     sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
   }, applicationId);
   await page.reload();
-  const detail = page.getByRole("dialog", {
-    name: "E2E backend engineer",
-    exact: true,
-  });
+  const detail = page.getByRole("dialog");
   await expect(
     detail.getByRole("heading", { name: "Documents", exact: true }),
   ).toHaveCount(0);
-  await detail
-    .getByRole("button", { name: "Edit application", exact: true })
-    .click();
-  const edit = page.getByRole("dialog", {
-    name: "Edit application",
-    exact: true,
-  });
-  await edit.getByLabel("Application date", { exact: true }).fill("2026-10-02");
-  await edit.getByLabel("Deadline", { exact: true }).fill("2030-12-20");
-  await edit.getByLabel("Follow-up", { exact: true }).fill("2030-12-21");
-  await edit
-    .getByLabel("Contact", { exact: true })
-    .fill("Recruiter · recruiter@example.com");
-  await edit
-    .getByRole("button", { name: "Save application", exact: true })
-    .click();
-  await expect(edit).not.toBeVisible();
+  await detail.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await enterEditMode(page, "Applications");
+  await page.getByRole("link", { name: "E2E backend engineer" }).click();
+  const role = detail.getByLabel("Role", { exact: true });
+  await role.fill("Network engineer");
+  await role.blur();
+  await expect
+    .poll(async () =>
+      (await demoRecords(page)).find((item) => item.id === applicationId)
+        ?.title,
+    )
+    .toBe("Network engineer");
+  const applicationDate = detail.getByLabel("Application date", { exact: true });
+  await applicationDate.fill("2026-10-02");
+  await applicationDate.blur();
+  const deadline = detail.getByLabel("Deadline", { exact: true });
+  await deadline.fill("2030-12-20");
+  await deadline.blur();
+  const followUp = detail.getByLabel("Follow-up", { exact: true });
+  await followUp.fill("2030-12-21");
+  await followUp.blur();
   const saved = (await demoRecords(page)).find(
     (item) => item.id === applicationId,
   )!;
@@ -135,14 +141,15 @@ test("tracker replaces spreadsheet fields, supports search/filter, and preserves
     "Location",
     "Notes",
   ]);
-  await page.getByLabel("Search applications", { exact: true }).fill("backend");
+  await page.getByLabel("Search applications", { exact: true }).fill("engineer");
   await expect(page.locator(".application-table tbody tr")).toHaveCount(1);
-  await page.getByLabel("Filter application status").selectOption("Rejected");
+  await page.getByLabel("Search applications", { exact: true }).fill("missing");
   await expect(
     page.getByText("No matching applications", { exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Filter application status").selectOption("Applied");
-  await page.getByLabel("Sort applications").selectOption("company");
+  await page.getByLabel("Search applications", { exact: true }).fill("engineer");
+  await chooseOption(page, "Filter application status", "Applied");
+  await chooseOption(page, "Sort applications", "Company A–Z");
   await expect(page.locator(".application-table tbody tr")).toContainText(
     "Melbourne · hybrid",
   );
@@ -159,22 +166,26 @@ test("radar company can create multiple applications and deletion retains compan
   page,
 }) => {
   await page.getByRole("tab", { name: /On your radar/ }).click();
+  await enterEditMode(page, "Applications");
   await page
     .getByRole("button", { name: "Add company", exact: true })
     .first()
     .click();
-  const form = page.getByRole("dialog", {
-    name: "Add radar company",
-    exact: true,
-  });
-  await form.getByLabel("Company name", { exact: true }).fill("Radar Labs");
-  await form
-    .getByLabel("Careers link", { exact: true })
+  const companyCard = page.locator(".radar-card").last();
+  await companyCard.getByLabel("Company", { exact: true }).fill("Radar Labs");
+  await companyCard
+    .getByLabel("Careers page", { exact: true })
     .fill("https://example.com/careers");
-  await form
-    .getByLabel("Why it interests you", { exact: true })
+  await companyCard
+    .getByLabel("Company notes", { exact: true })
     .fill("Useful developer infrastructure.");
-  await form.getByRole("button", { name: "Save company", exact: true }).click();
+  await expect
+    .poll(async () =>
+      (await demoRecords(page)).some(
+        (item) => item.kind === "company" && item.title === "Radar Labs",
+      ),
+    )
+    .toBe(true);
   const company = (await demoRecords(page)).find(
     (item) => item.kind === "company",
   )!;
@@ -198,7 +209,17 @@ test("radar company can create multiple applications and deletion retains compan
       .getByRole("button", { name: "Close dialog", exact: true })
       .click();
     await page.getByRole("tab", { name: /On your radar/ }).click();
+    await enterEditMode(page, "Applications");
   }
+  await page.getByRole("button", { name: "Done editing", exact: true }).click();
+  const radarCard = page.locator(".radar-card").last();
+  await expect(
+    radarCard.locator(".radar-title-row h3 a"),
+  ).toHaveAttribute("href", "https://example.com/careers");
+  await expect(
+    radarCard.getByRole("link", { name: "Careers", exact: true }),
+  ).toHaveAttribute("href", "https://example.com/careers");
+  await enterEditMode(page, "Applications");
   await page
     .getByRole("button", { name: "Delete Radar Labs", exact: true })
     .click();

@@ -17,11 +17,11 @@ export function BrandArrow() {
     >
       <svg viewBox="0 0 24 24" fill="none">
         <path
-          d="M5 19 19 5M6 5h13v13"
+          d="M7 17 17 7M8 7h9v9"
           stroke="currentColor"
-          strokeWidth="3.2"
-          strokeLinecap="square"
-          strokeLinejoin="miter"
+          strokeWidth="2.25"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       </svg>
     </span>

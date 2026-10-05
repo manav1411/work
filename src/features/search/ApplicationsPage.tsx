@@ -281,33 +281,42 @@ export function ApplicationsPage() {
           ) : (
             <div className="radar-grid">
               {filteredCompanies.map((company) => (
-                <Card className="radar-card action-card" key={company.id}>
+                <Card className="radar-card" key={company.id}>
                   {editMode ? (
                     <InlineRadarFields record={company} />
                   ) : (
                     <>
-                      <h3>
-                        <CompanyGlyph
-                          name={company.title}
+                      <div className="radar-title-row">
+                        <h3>
+                          {webDestination(field(company, "careersUrl")) ? (
+                            <a
+                              className="radar-title-link"
+                              href={webDestination(field(company, "careersUrl"))}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <CompanyGlyph
+                                name={company.title}
+                                url={field(company, "careersUrl")}
+                              />
+                              {company.title}
+                            </a>
+                          ) : (
+                            <>
+                              <CompanyGlyph
+                                name={company.title}
+                                url={field(company, "careersUrl")}
+                              />
+                              {company.title}
+                            </>
+                          )}
+                        </h3>
+                        <Destination
                           url={field(company, "careersUrl")}
+                          label="Careers"
+                          className="radar-careers-button"
                         />
-                        {webDestination(field(company, "careersUrl")) ? (
-                          <a
-                            className="card-hit-target"
-                            href={webDestination(field(company, "careersUrl"))}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {company.title}
-                          </a>
-                        ) : (
-                          company.title
-                        )}
-                      </h3>
-                      <Destination
-                        url={field(company, "careersUrl")}
-                        label="Careers"
-                      />
+                      </div>
                       {field(company, "location") && (
                         <p className="radar-location">
                           {field(company, "location")}
@@ -741,11 +750,19 @@ function Status({ record }: { record: WorkRecord }) {
     </Badge>
   );
 }
-function Destination({ url, label }: { url: string; label: string }) {
+function Destination({
+  url,
+  label,
+  className = "",
+}: {
+  url: string;
+  label: string;
+  className?: string;
+}) {
   const href = webDestination(url);
   return href ? (
     <a
-      className="external-link application-destination"
+      className={`external-link application-destination ${className}`.trim()}
       href={href}
       target="_blank"
       rel="noopener noreferrer"

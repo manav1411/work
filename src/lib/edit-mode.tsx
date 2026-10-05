@@ -29,7 +29,10 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   const search = new URLSearchParams(location.search);
   const tab =
     search.get(location.pathname === "/learn" ? "track" : "tab") || "";
-  const scope = `${location.pathname}:${tab}`;
+  const scope =
+    location.pathname === "/learn"
+      ? location.pathname
+      : `${location.pathname}:${tab}`;
   const previous = useRef(scope);
   const requestedDestination = useRef<string | null>(null);
   const [sections, setSections] = useState<Set<string>>(new Set());

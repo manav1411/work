@@ -210,7 +210,7 @@ export const Textarea = forwardRef<
 export function Select({
   className = "",
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+}: SelectHTMLAttributes<HTMLSelectElement> & { contentClassName?: string }) {
   return <ThemedSelect className={className} {...props}/>;
 }
 export function EmptyState({

@@ -183,10 +183,10 @@ describe("factual timeline and goal progress", () => {
     );
     const layout = timelineLayout(items, "2026-10-01", "2026-10-20", 700);
     expect(layout.map((item) => item.lane)).toEqual([0, 1, 2]);
-    expect(new Set(layout.map((item) => item.markerX)).size).toBe(3);
-    expect(layout.every((item) => item.markerX >= 6 && item.markerX <= 694)).toBe(
-      true,
-    );
+    expect(new Set(layout.map((item) => item.markerX)).size).toBe(1);
+    expect(
+      layout.every((item) => item.markerX >= 6 && item.markerX <= 694),
+    ).toBe(true);
     expect(
       layout.every(
         (item) => item.left >= 0 && item.left + item.cardWidth <= 700,

@@ -1,6 +1,6 @@
 .direction-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 .direction-page h2 {
@@ -29,7 +29,23 @@
   font-weight: 750;
 }
 .direction-card .rich-document {
-  min-height: 100px;
+  min-height: 0;
+}
+.direction-card .rich-document-canvas {
+  min-height: 0;
+  padding: 12px 14px;
+}
+.direction-card .rich-document-canvas > .rich-document-prose {
+  min-height: 0;
+}
+.direction-link-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.direction-link-fields {
+  gap: 8px;
 }
 .direction-links .input {
   min-width: 0;
@@ -116,6 +132,9 @@
   border: 1px dashed var(--line);
 }
 @media (max-width: 600px) {
+  .direction-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .direction-overview > .section-heading {
     align-items: flex-start;
     flex-direction: column;

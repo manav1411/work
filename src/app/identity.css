@@ -269,12 +269,6 @@
 .direction-timeline > section:nth-child(3n + 2) h3 {
   background: var(--lime);
 }
-.radar-card:nth-child(3n + 2) {
-  border-top-color: var(--pink);
-}
-.radar-card:nth-child(3n) {
-  border-top-color: var(--lime);
-}
 @media (prefers-reduced-motion: reduce) {
   .edit-navigation.nav-holding::before {
     animation: none;
@@ -330,10 +324,7 @@
   color: var(--blue);
   animation: brand-arrow-colours 12s ease-in-out infinite;
   vertical-align: baseline;
-  filter: drop-shadow(
-      1px 0 3px color-mix(in srgb, var(--pink) 40%, transparent)
-    )
-    drop-shadow(-1px 1px 3px color-mix(in srgb, var(--aqua) 35%, transparent));
+  filter: none;
 }
 .brand-arrow svg {
   width: 100%;

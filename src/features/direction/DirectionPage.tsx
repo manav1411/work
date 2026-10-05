@@ -189,6 +189,7 @@ export function DirectionPage() {
                       startDate: "",
                       endDate: "",
                       researchLinks: [],
+                      researchLinkTitles: [],
                     },
                   });
                   setParams({ record: record.id });
@@ -315,6 +316,11 @@ function DirectionCard({
           (link): link is string => typeof link === "string",
         )
       : [],
+    linkTitles: Array.isArray(record.data.researchLinkTitles)
+      ? record.data.researchLinkTitles.filter(
+          (title): title is string => typeof title === "string",
+        )
+      : [],
   };
   const {
     value: form,
@@ -329,13 +335,20 @@ function DirectionCard({
     initial,
     `work:direction-draft:${workspace.user?.id ?? ""}:${record.id}`,
     async (value) => {
+      const links = value.links
+        .map((url, index) => ({
+          url: normalizeWebUrl(url),
+          title: value.linkTitles?.[index] ?? "",
+        }))
+        .filter((link) => Boolean(link.url));
       const data = directionDataSchema.parse({
         ...current.current.data,
         category: "direction",
         status: value.status,
         startDate: value.startDate,
         endDate: value.endDate,
-        researchLinks: value.links.map(normalizeWebUrl).filter(Boolean),
+        researchLinks: links.map((link) => link.url),
+        researchLinkTitles: links.map((link) => link.title),
         legacyDirection: current.current.data.legacyDirection ?? record.data,
       });
       await persist({
@@ -455,29 +468,52 @@ function DirectionCard({
         <div className="stack direction-links">
           {form.links.map((url, index) =>
             editing ? (
-              <div className="inline-actions" key={index}>
-                <Input
-                  aria-label={`Research link ${index + 1}`}
-                  value={url}
-                  placeholder="example.com"
-                  onChange={(event) =>
-                    set({
-                      links: form.links.map((item, i) =>
-                        i === index ? event.target.value : item,
-                      ),
-                    })
-                  }
-                  onBlur={() => {
-                    set({ links: form.links.map(normalizeWebUrl) });
-                    flush();
-                  }}
-                />
+              <div className="direction-link-editor" key={index}>
+                <div className="stack direction-link-fields">
+                  <Input
+                    aria-label={`Research link title ${index + 1}`}
+                    value={form.linkTitles?.[index] ?? ""}
+                    placeholder={researchLinkTitle(url)}
+                    onChange={(event) =>
+                      set({
+                        linkTitles: form.links.map((_, i) =>
+                          i === index
+                            ? event.target.value
+                            : form.linkTitles?.[i] ?? "",
+                        ),
+                      })
+                    }
+                    onBlur={flush}
+                  />
+                  <Input
+                    aria-label={`Research link ${index + 1}`}
+                    value={url}
+                    placeholder="example.com"
+                    onChange={(event) =>
+                      set({
+                        links: form.links.map((item, i) =>
+                          i === index ? event.target.value : item,
+                        ),
+                      })
+                    }
+                    onBlur={() => {
+                      set({ links: form.links.map(normalizeWebUrl) });
+                      flush();
+                    }}
+                  />
+                </div>
                 <Button
                   variant="ghost"
                   aria-label="Delete research link"
-                  onClick={() =>
-                    set({ links: form.links.filter((_, i) => i !== index) })
-                  }
+                  onClick={() => {
+                    set({
+                      links: form.links.filter((_, i) => i !== index),
+                      linkTitles: (form.linkTitles ?? []).filter(
+                        (_, i) => i !== index,
+                      ),
+                    });
+                    flush();
+                  }}
                 >
                   <Trash2 size={14} />
                 </Button>
@@ -490,7 +526,7 @@ function DirectionCard({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                {url}
+                {researchLinkTitle(url, form.linkTitles?.[index])}
                 <ArrowUpRight size={14} />
               </a>
             ),
@@ -498,7 +534,12 @@ function DirectionCard({
           {editing && (
             <Button
               variant="ghost"
-              onClick={() => set({ links: [...form.links, ""] })}
+              onClick={() =>
+                set({
+                  links: [...form.links, ""],
+                  linkTitles: [...(form.linkTitles ?? []), ""],
+                })
+              }
             >
               <Plus size={14} />
               Add research link
@@ -517,4 +558,25 @@ function DirectionCard({
       )}
     </Card>
   );
+}
+
+function researchLinkTitle(url: string, title?: string) {
+  if (title?.trim()) return title.trim();
+  try {
+    const parsed = new URL(normalizeWebUrl(url));
+    const hostname = parsed.hostname.replace(/^www\./, "");
+    if (
+      hostname === "thundergolfer.com" &&
+      parsed.pathname.replace(/\/$/, "") === "/blog/get-to-the-states"
+    )
+      return "Aussie engineers, get to the states!";
+    const leaf = decodeURIComponent(
+      parsed.pathname.split("/").filter(Boolean).at(-1) ?? "",
+    );
+    return leaf
+      ? leaf.replace(/\.[a-z0-9]{1,5}$/i, "").replace(/[-_]+/g, " ")
+      : hostname;
+  } catch {
+    return "Open resource";
+  }
 }

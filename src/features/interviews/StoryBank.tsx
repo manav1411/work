@@ -118,7 +118,7 @@ function StoryField({
     [],
   );
   return (
-    <section className="inline-star-field">
+    <section className="inline-star-field" data-field={name}>
       <h4>{name[0].toUpperCase() + name.slice(1)}</h4>
       {editing ? (
         <textarea
@@ -344,6 +344,8 @@ export function StoryBank({
           onChange={(event) => setQuery(event.target.value)}
         />
         <Select
+          className="story-competency-filter"
+          contentClassName="story-competency-options"
           aria-label="Filter story competency"
           value={tag}
           onChange={(event) => setTag(event.target.value)}

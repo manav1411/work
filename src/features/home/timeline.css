@@ -148,10 +148,6 @@
 .timeline-milestone {
   --event-colour: var(--pink);
 }
-.timeline-milestone .timeline-event-point {
-  border-radius: 2px;
-  transform: rotate(45deg);
-}
 .timeline-progress {
   --event-colour: var(--lime);
 }
@@ -474,28 +470,6 @@
 }
 .timeline-interview .timeline-event-point {
   background: var(--orange);
-  border-radius: 2px;
-  transform: rotate(45deg);
-}
-.timeline-followup .timeline-event-point {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  clip-path: none;
-}
-.timeline-followup .timeline-event-point::before,
-.timeline-followup .timeline-event-point::after {
-  content: "";
-  position: absolute;
-  clip-path: polygon(50% 0, 100% 100%, 0 100%);
-}
-.timeline-followup .timeline-event-point::before {
-  inset: -1px;
-  background: var(--ink);
-}
-.timeline-followup .timeline-event-point::after {
-  inset: 2px;
-  background: var(--aqua);
 }
 .timeline-goal-span {
   --goal-colour: var(--pink);

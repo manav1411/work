@@ -102,7 +102,7 @@ test("keyboard hold preserves the selected content and edit mode is scoped to it
   await page.keyboard.press("Enter");
   await expect(
     page.getByRole("status").filter({ hasText: "Editing Learn" }),
-  ).toHaveCount(0);
+  ).toBeVisible();
 });
 
 test("mobile section holds enable editing without opening the navigation drawer", async ({

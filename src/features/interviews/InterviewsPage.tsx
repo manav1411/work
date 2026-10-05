@@ -253,6 +253,11 @@ export function InterviewsPage() {
                       ? applicationCompany(application, records)
                       : field(item, "company", "Appointment")}
                   </strong>
+                  {application && (
+                    <span className="interview-upcoming-role">
+                      {application.title}
+                    </span>
+                  )}
                   <span>{item.title}</span>
                   <span>
                     {interviewTime(

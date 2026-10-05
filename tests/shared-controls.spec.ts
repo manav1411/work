@@ -13,7 +13,9 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
     data: {
       category: "direction",
       status: "Future",
-      researchLinks: [],
+      researchLinks: [
+        "https://thundergolfer.com/blog/get-to-the-states#fnref:1",
+      ],
       startDate: "",
       endDate: "",
     },
@@ -71,6 +73,12 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
     .locator(".sidebar")
     .getByRole("link", { name: "Your Direction", exact: true })
     .click();
+  await expect(
+    page.getByRole("link", { name: "Aussie engineers, get to the states!" }),
+  ).toHaveAttribute(
+    "href",
+    "https://thundergolfer.com/blog/get-to-the-states#fnref:1",
+  );
   await enterEditMode(page, "Your Direction");
   const status = page.getByRole("combobox", { name: "Direction status" });
   await status.focus();

@@ -138,7 +138,7 @@ test("upcoming interview reminders are static and use local time without a zone 
         ...base,
         id: "upcoming-company",
         kind: "application",
-        title: "Example Company",
+        title: "Network engineer",
         data: { company: "Example Company", applicationStatus: "Applied" },
       },
       {
@@ -159,6 +159,7 @@ test("upcoming interview reminders are static and use local time without a zone 
   });
   await page.reload();
   const reminder = page.locator(".interview-upcoming-card");
+  await expect(reminder).toContainText("Network engineer");
   await expect(reminder).toContainText("Technical round");
   await expect(page.locator("a.interview-upcoming-card")).toHaveCount(0);
   await expect(reminder).not.toContainText("UTC");

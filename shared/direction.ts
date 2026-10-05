@@ -41,6 +41,7 @@ export const directionDataSchema = z
     startDate: directionDate.default(""),
     endDate: directionDate.default(""),
     researchLinks: z.array(researchUrl).max(40).default([]),
+    researchLinkTitles: z.array(z.string().max(240)).max(40).default([]),
   })
   .passthrough()
   .refine(

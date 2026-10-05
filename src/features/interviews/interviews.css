@@ -214,6 +214,31 @@
   font-size: 11px;
   color: var(--blue);
 }
+.inline-star-field[data-field="lessons"] h4 {
+  color: var(--ink);
+}
+.story-competency-filter {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0 !important;
+  box-shadow: none !important;
+  background: var(--surface-tint);
+}
+.story-competency-filter:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.story-competency-options {
+  padding: 8px;
+  border-color: var(--line);
+  box-shadow: 2px 3px 0 var(--shadow-colour);
+}
+.story-competency-options .themed-select-item {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 10px 38px 10px 14px;
+}
 .inline-star-text {
   width: 100%;
   padding: 3px 0;
