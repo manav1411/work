@@ -114,7 +114,7 @@
   align-items: start;
 }
 .board-column {
-  border: 2px solid var(--ink, #171629);
+  border: 2px solid var(--outline, #171629);
   border-radius: 0.9rem;
   padding: 0.75rem;
   background: color-mix(
@@ -136,7 +136,7 @@
   padding: 1rem !important;
   display: grid;
   gap: 0.7rem;
-  box-shadow: 3px 3px 0 var(--ink, #171629) !important;
+  box-shadow: 3px 3px 0 var(--shadow-colour, #171629) !important;
 }
 .application-card .record-title-button {
   font-size: 1rem;

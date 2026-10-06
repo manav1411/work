@@ -15,7 +15,7 @@
   font-size: 0.76rem;
   font-weight: 750;
   color: var(--muted);
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--outline);
 }
 .application-list-row + .application-list-row {
   border-top: 1px solid var(--line);
@@ -196,7 +196,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   border-radius: 9px;
   padding: 0.75rem 1rem;
   background: var(--paper);
@@ -206,9 +206,9 @@
   cursor: pointer;
 }
 .application-tabs button.active {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: white;
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
 }
 .application-tabs span {
   font-size: 0.75rem;
@@ -216,11 +216,29 @@
 }
 .application-filters {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(130px, 190px) minmax(
-      140px,
-      190px
-    );
-  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr) repeat(2, minmax(10rem, 12rem));
+  gap: 1rem;
+  align-items: center;
+}
+.application-filters > * {
+  min-width: 0;
+}
+.application-filters > .input {
+  height: 42px;
+  min-height: 42px;
+}
+.application-filters > .themed-select-trigger {
+  gap: 0.5rem;
+}
+.application-filters > .themed-select-trigger > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.application-filters > .themed-select-trigger > span:last-child {
+  flex: 0 0 auto;
 }
 .application-notice {
   display: flex;
@@ -229,7 +247,7 @@
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   border-radius: 8px;
   background: var(--surface);
 }
@@ -247,7 +265,7 @@
   text-align: left;
   font-size: 0.75rem;
   background: var(--paper);
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--outline);
   padding: 1rem 0.8rem;
   white-space: nowrap;
 }
@@ -391,9 +409,6 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-.radar-card {
-  border-top-color: var(--ink);
-}
 .radar-title-row {
   position: relative;
   display: flex;
@@ -416,7 +431,7 @@
   border-radius: 7px;
 }
 .radar-title-link:focus-visible::after {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }
 .radar-card .radar-careers-button {
@@ -428,14 +443,14 @@
   justify-content: center;
   gap: 5px;
   padding: 7px 10px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 7px;
   background: var(--lime);
   color: #202128;
   font-size: 0.78rem;
   font-weight: 750;
   text-decoration: none;
-  box-shadow: 2px 2px 0 var(--ink);
+  box-shadow: 2px 2px 0 var(--shadow-colour);
   transition:
     transform 120ms ease,
     box-shadow 120ms ease;
@@ -443,10 +458,10 @@
 .radar-card .radar-careers-button:hover {
   color: #202128;
   transform: translate(-1px, -1px);
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
 }
 .radar-card .radar-careers-button:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }
 .radar-actions {
@@ -473,13 +488,13 @@
   align-items: flex-start;
   gap: 0.55rem;
   padding: 1rem;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   border-radius: 9px;
   background: var(--paper);
   min-height: 175px;
 }
 .recruitment-current {
-  box-shadow: 4px 4px 0 var(--blue);
+  box-shadow: 4px 4px 0 var(--blue-shadow);
   border-color: var(--blue);
 }
 .recruitment-completed {
@@ -501,7 +516,7 @@
   font-weight: 800;
 }
 .recruitment-current .recruitment-step-number {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: white;
 }
 .recruitment-step strong {
@@ -519,7 +534,7 @@
 .application-intermediate-status {
   background: #ffd75d;
   color: #161719;
-  border-color: var(--ink);
+  border-color: var(--outline);
 }
 .application-inline-title {
   border: 0 !important;
@@ -650,7 +665,8 @@
 }
 @media (max-width: 650px) {
   .application-filters {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
   }
   .application-filters > input {
     grid-column: 1 / -1;

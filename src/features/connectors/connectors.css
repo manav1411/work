@@ -1,5 +1,5 @@
 .connectors-page {
-  --connector-ink: var(--ink, #202128);
+  --connector-ink: var(--outline, #202128);
 }
 .connector-layout {
   display: grid;
@@ -81,20 +81,20 @@
 }
 .connector-nav-state.is-connected,
 .connector-nav-state.is-linked {
-  background: #52a77c;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #52a77c 18%, transparent);
+  background: var(--success, #52a77c);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success, #52a77c) 18%, transparent);
 }
 .connector-nav-state.is-attention {
-  background: #c04c43;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #c04c43 18%, transparent);
+  background: var(--danger, #c04c43);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger, #c04c43) 18%, transparent);
 }
 .connector-nav-state.is-paused {
-  background: #d88735;
-  box-shadow: 0 0 0 3px color-mix(in srgb, #d88735 18%, transparent);
+  background: var(--warning, #d88735);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning, #d88735) 18%, transparent);
 }
 .connector-nav-state.is-updating,
 .connector-nav-state.is-setting_up {
-  background: var(--blue);
+  background: var(--blue-fill);
 }
 .connector-note {
   padding: 1rem;
@@ -228,7 +228,7 @@
   gap: 1rem;
   padding: 1rem;
   border-radius: 10px;
-  background: color-mix(in srgb, var(--blue) 7%, var(--paper));
+  background: color-mix(in srgb, var(--blue-fill) 7%, var(--paper));
 }
 .connector-auth-callout strong {
   font-size: 14px;
@@ -388,13 +388,13 @@
   background: var(--muted);
 }
 .connector-run-indicator.success {
-  background: #52a77c;
+  background: var(--success, #52a77c);
 }
 .connector-run-indicator.failed {
-  background: #c04c43;
+  background: var(--danger, #c04c43);
 }
 .connector-run-indicator.running {
-  background: var(--blue);
+  background: var(--blue-fill);
   animation: connector-pulse 1.2s infinite ease-in-out;
 }
 .connector-run-list li > div {
@@ -437,14 +437,15 @@
   }
 }
 [data-theme="dark"] .connector-auth-callout {
-  background: color-mix(in srgb, var(--blue) 13%, var(--paper));
+  background: color-mix(in srgb, var(--blue-fill) 13%, var(--paper));
 }
 [data-theme="dark"] .connector-alert {
-  color: #ffc3bd;
-  background: color-mix(in srgb, #852c26 25%, var(--paper));
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  background: color-mix(in srgb, var(--danger) 12%, var(--paper));
 }
 [data-theme="dark"] .connector-inline-error {
-  color: #ffc3bd;
+  color: var(--danger);
 }
 [data-theme="dark"] .connector-mark-github {
   background: #283455;

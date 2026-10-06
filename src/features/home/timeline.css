@@ -5,11 +5,11 @@
   margin-bottom: 0;
 }
 .timeline-board {
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   background: var(--paper);
   border-radius: 16px;
   padding: 28px;
-  box-shadow: 5px 5px 0 var(--ink);
+  box-shadow: 5px 5px 0 var(--shadow-colour);
   overflow: hidden;
 }
 .timeline-heading {
@@ -50,7 +50,7 @@
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--ink);
+  background: var(--outline);
 }
 .timeline-gridline {
   position: absolute;
@@ -85,7 +85,7 @@
   padding: 3px 6px;
   font-size: 10px;
   color: #fff;
-  background: var(--blue);
+  background: var(--blue-fill);
   font-weight: 750;
 }
 .timeline-event {
@@ -104,7 +104,7 @@
   top: -36px;
   width: 12px;
   height: 12px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   background: var(--event-colour);
   border-radius: 50%;
   z-index: 4;
@@ -113,7 +113,7 @@
   position: relative;
   z-index: 3;
   width: 100%;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   text-align: left;
   background: var(--paper);
   color: var(--ink);
@@ -193,7 +193,7 @@
 .goal-card {
   background: var(--paper);
   color: var(--ink);
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   border-radius: 10px;
   padding: 18px;
   text-align: left;
@@ -225,7 +225,7 @@
 .goal-progress {
   height: 9px;
   background: var(--canvas);
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   border-radius: 5px;
   overflow: hidden;
 }
@@ -328,7 +328,7 @@
 @media (max-width: 700px) {
   .timeline-board {
     padding: 20px 16px;
-    box-shadow: 3px 3px 0 var(--ink);
+    box-shadow: 3px 3px 0 var(--shadow-colour);
   }
   .timeline-heading {
     flex-wrap: wrap;
@@ -383,7 +383,7 @@
     position: relative;
     width: 14px;
     height: 14px;
-    border: 2px solid var(--ink);
+    border: 2px solid var(--outline);
     border-radius: 50%;
     background: var(--event-colour);
     flex-shrink: 0;
@@ -443,7 +443,7 @@
   position: absolute;
   height: 30px;
   min-width: 26px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   border-radius: 5px;
   background: var(--paper);
   color: var(--ink);

@@ -6,7 +6,7 @@
   padding-bottom: 0.5rem;
 }
 .career-timeline article {
-  border: 2px solid var(--ink, #171629);
+  border: 2px solid var(--outline, #171629);
   border-radius: 0.75rem;
   padding: 1rem;
   background: var(--orange, #ff8a3d);
@@ -76,7 +76,7 @@
   margin: 0;
 }
 .evidence-kind-actions {
-  border: 2px solid var(--ink, #171629);
+  border: 2px solid var(--outline, #171629);
   border-radius: 0.7rem;
   background: var(--lime, #d7ff3f);
   color: #171629;

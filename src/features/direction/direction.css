@@ -9,7 +9,7 @@
 }
 .direction-card {
   position: relative;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   box-shadow: 4px 4px 0 var(--shadow-colour);
 }
 .direction-card h3,
@@ -51,7 +51,7 @@
   min-width: 0;
 }
 .direction-page [data-selected="true"] > .card {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 4px;
 }
 .goal-inline-card {
@@ -71,7 +71,7 @@
   gap: 8px;
 }
 .direction-overview {
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   box-shadow: 4px 4px 0 var(--shadow-colour);
 }
 .direction-timeline {
@@ -86,7 +86,7 @@
   padding: 9px 12px;
   background: var(--aqua);
   color: #202128;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 6px;
 }
 .direction-timeline-item {

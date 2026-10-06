@@ -305,3 +305,37 @@ test("upcoming interview reminders are static and use local time without a zone 
   await expect(page.locator("a.interview-upcoming-card")).toHaveCount(0);
   await expect(reminder).not.toContainText("UTC");
 });
+
+test("behavioural story bank precedes compact notes without shrinking other tabs", async ({
+  page,
+}) => {
+  const storyBank = page.locator(".interview-story-bank");
+  const notesCanvas = page.locator(".interview-intro .rich-document-canvas");
+  await expect(storyBank).toBeVisible();
+  const order = await storyBank.evaluate(
+    (story) =>
+      story.compareDocumentPosition(
+        document.querySelector(".interview-intro")!,
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+  );
+  expect(order).toBeTruthy();
+  await expect(notesCanvas).toHaveCSS("min-height", "0px");
+  await expect(
+    page.locator(".interview-intro .rich-document-canvas .rich-document-prose"),
+  ).toHaveCSS("min-height", "0px");
+
+  const technicalTab = page.getByRole("tab", {
+    name: "Technical",
+    exact: true,
+  });
+  await technicalTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(technicalTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".interview-intro")).not.toHaveClass(
+    /interview-intro-behavioural/,
+  );
+  const technicalMinHeight = await page
+    .locator(".interview-intro .rich-document-canvas")
+    .evaluate((canvas) => getComputedStyle(canvas).minHeight);
+  expect(technicalMinHeight).not.toBe("0px");
+});

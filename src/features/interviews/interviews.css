@@ -14,14 +14,14 @@
   padding: 11px 17px;
   color: var(--ink);
   background: var(--paper);
-  border: 1.5px solid var(--ink);
-  box-shadow: 2px 2px 0 var(--ink);
+  border: 1.5px solid var(--outline);
+  box-shadow: 2px 2px 0 var(--shadow-colour);
   border-radius: 8px;
   font-weight: 750;
   font-size: 13px;
 }
 .interview-tabs button[aria-selected="true"] {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: white;
 }
 .interview-workspace {
@@ -34,6 +34,12 @@
   min-width: 0;
   padding: 0;
   margin-bottom: 30px;
+}
+.interview-intro-behavioural .rich-document-canvas {
+  min-height: 0;
+}
+.interview-intro-behavioural .rich-document-canvas .rich-document-prose {
+  min-height: 0;
 }
 .interview-tab-actions {
   margin-bottom: 14px;
@@ -56,11 +62,11 @@
   text-decoration: none;
   color: var(--ink);
   background: var(--paper);
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 8px;
   padding: 10px 12px;
   margin: 8px 0;
-  box-shadow: 2px 2px 0 var(--ink);
+  box-shadow: 2px 2px 0 var(--shadow-colour);
   cursor: default;
 }
 .interview-upcoming-card strong {
@@ -68,7 +74,7 @@
 }
 .interview-upcoming-card.active {
   border-color: var(--blue);
-  box-shadow: 2px 2px 0 var(--blue);
+  box-shadow: 2px 2px 0 var(--blue-shadow);
 }
 .interview-upcoming-card span {
   font-size: 11.5px;
@@ -113,8 +119,8 @@
 .interview-story-card {
   --content-tone: var(--blue);
   padding: 22px;
-  border: 1.5px solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
+  border: 1.5px solid var(--outline);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
 }
 .interview-story-content h3 {
   font-size: 19px;
@@ -233,7 +239,7 @@
   background: var(--surface-tint);
 }
 .story-competency-filter:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 2px;
 }
 .story-competency-options {

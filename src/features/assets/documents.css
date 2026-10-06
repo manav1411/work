@@ -29,7 +29,7 @@
   background: var(--surface-tint);
 }
 .document-family-open:focus-visible {
-  outline: 3px solid var(--ink);
+  outline: 3px solid var(--focus-colour);
   outline-offset: 3px;
 }
 .document-family-open .document-art {
@@ -333,7 +333,7 @@
 }
 .latex-start label:focus-within,
 .latex-settings label:focus-within {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 2px;
 }
 .latex-build-log pre {
@@ -397,7 +397,7 @@
   place-items: center;
   height: 135px;
   overflow: hidden;
-  border: 2px solid var(--shadow-colour, #202128);
+  border: 2px solid var(--shadow-colour, var(--outline));
   border-radius: 12px;
   background: var(--lime);
   color: #202128;
@@ -562,9 +562,9 @@
 .document-paper {
   width: 112px;
   height: 145px;
-  border: 2px solid #202128;
+  border: 2px solid var(--outline);
   background: #fff;
-  box-shadow: 5px 5px 0 #202128;
+  box-shadow: 5px 5px 0 var(--shadow-colour);
   transform: rotate(-8deg);
   padding: 17px;
 }
@@ -607,7 +607,7 @@
 }
 .document-default-label {
   padding: 0.3rem 0.55rem;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   border-radius: 5px;
   font-size: 0.7rem;
   font-weight: 750;
@@ -648,7 +648,14 @@
   padding: 1.1rem;
   color: #202128;
   background: var(--aqua);
-  border-color: var(--shadow-colour, #202128);
+  border-color: var(--shadow-colour, var(--outline));
+}
+[data-theme="dark"] .document-link-card .company-glyph {
+  background: #202128;
+}
+[data-theme="dark"] .document-link-card .company-glyph-profile,
+[data-theme="dark"] .document-link-card > a > svg {
+  color: #202128;
 }
 .document-link-1 {
   background: var(--lime);
@@ -744,7 +751,7 @@
   gap: 0.55rem;
 }
 .document-viewer-close.button-ghost {
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 8px;
   background: var(--paper);
   color: var(--ink);

@@ -77,11 +77,11 @@
   right: 0;
   z-index: 80;
   padding: 7px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   background: var(--paper);
   color: var(--ink);
   border-radius: 9px;
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
 }
 .account-menu > a,
 .account-menu > button {
@@ -146,11 +146,11 @@
 }
 .signin-card {
   background: var(--paper);
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 16px;
   width: min(100%, 380px);
   padding: 30px;
-  box-shadow: 6px 6px 0 var(--ink);
+  box-shadow: 6px 6px 0 var(--shadow-colour);
   display: grid;
   gap: 13px;
   overflow: hidden;
@@ -180,7 +180,7 @@
   position: absolute;
   width: 176px;
   height: 2px;
-  background: var(--ink);
+  background: var(--outline);
   left: calc(50% - 97.5px);
   top: calc(50% - 1px);
 }
@@ -190,7 +190,7 @@
   width: 20px;
   height: 20px;
   background: var(--pink);
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   border-radius: 50%;
 }
 .signin-mark i:nth-child(2) {

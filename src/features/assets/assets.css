@@ -14,7 +14,7 @@
 }
 .asset-profile-strip {
   background: var(--pink, #ff4db8);
-  border: 2px solid var(--ink, #171629);
+  border: 2px solid var(--outline, #171629);
   color: #171629;
   box-shadow: 4px 4px 0 #171629;
   border-radius: 0.8rem;

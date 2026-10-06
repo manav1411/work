@@ -24,6 +24,13 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   await expect(page.locator(".learn-roadmap")).toContainText("/150");
   const roadmapNotes = page.locator(".learn-roadmap + .rich-document");
   await expect(roadmapNotes).toHaveCount(1);
+  await expect(roadmapNotes.locator(".rich-document-canvas")).toHaveCSS(
+    "min-height",
+    "0px",
+  );
+  await expect(
+    roadmapNotes.locator(".rich-document-canvas .rich-document-prose"),
+  ).toHaveCSS("min-height", "0px");
   await expect
     .poll(() =>
       roadmapNotes.evaluate((element) =>
@@ -75,6 +82,14 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   await databasesTab.focus();
   await page.keyboard.press("Enter");
   await expect(databasesTab).toHaveAttribute("aria-selected", "true");
+  const databasesCanvas = page.locator(
+    ".learn-page .rich-document-canvas",
+  );
+  await expect
+    .poll(() =>
+      databasesCanvas.evaluate((canvas) => getComputedStyle(canvas).minHeight),
+    )
+    .not.toBe("0px");
   await expect(page.locator(".learn-page .rich-block-handle")).toHaveCount(0);
   const deleteTab = page.getByRole("button", {
     name: "Delete tab",

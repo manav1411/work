@@ -151,7 +151,7 @@
   margin: 0;
   padding: 0.65rem 0.75rem;
   border-left: 3px solid var(--blue, #315bff);
-  background: color-mix(in srgb, var(--blue, #315bff) 8%, transparent);
+  background: color-mix(in srgb, var(--blue-fill, #315bff) 8%, transparent);
   overflow-wrap: anywhere;
 }
 .project-source-facts span {

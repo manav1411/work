@@ -6,19 +6,27 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   --ink: #202128;
+  --outline: var(--ink);
+  --control-outline: color-mix(in srgb, var(--ink) 25%, var(--paper));
   --paper: #fff;
   --canvas: #faf9f6;
   --muted: #70716f;
   --line: #e2e2dc;
   --blue: #315bff;
+  --blue-fill: var(--blue);
+  --blue-shadow: var(--blue);
   --pink: #ff57ac;
   --lime: #b9ed32;
   --orange: #ff9850;
   --aqua: #36d6bd;
+  --difficulty-easy: #63cf78;
+  --difficulty-medium: #f2c343;
+  --difficulty-hard: #ed6265;
   --font-heading: "Space Grotesk Variable", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-  --shadow: 4px 4px 0 var(--ink);
   --shadow-colour: #202128;
+  --shadow: 4px 4px 0 var(--shadow-colour);
+  --focus-colour: var(--ink);
   --surface-tint: #f1efe8;
   --link-colour: #2444b8;
 }
@@ -120,7 +128,7 @@ kbd {
   align-items: center;
   justify-content: center;
   gap: 9px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 8px;
   padding: 12px 17px;
   min-height: 43px;
@@ -137,12 +145,12 @@ kbd {
 .button-primary {
   background: var(--ink);
   color: var(--paper);
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--ink) 25%, transparent);
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--shadow-colour) 25%, transparent);
 }
 .button-secondary {
   background: var(--paper);
   color: var(--ink);
-  box-shadow: 2px 2px 0 var(--ink);
+  box-shadow: 2px 2px 0 var(--shadow-colour);
 }
 .button-ghost {
   background: transparent;
@@ -157,7 +165,7 @@ kbd {
 }
 .button:not(:disabled):hover {
   transform: translate(-1px, -2px);
-  box-shadow: 4px 5px 0 color-mix(in srgb, var(--ink) 35%, transparent);
+  box-shadow: 4px 5px 0 color-mix(in srgb, var(--shadow-colour) 35%, transparent);
 }
 .button-ghost:not(:disabled):hover {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
@@ -354,7 +362,7 @@ kbd {
   width: 100%;
   background: var(--paper);
   color: var(--ink);
-  border: 1px solid color-mix(in srgb, var(--ink) 25%, var(--paper));
+  border: 1px solid var(--control-outline);
   border-radius: 7px;
   padding: 11px 12px;
   font-size: 13px;
@@ -542,7 +550,7 @@ kbd {
 }
 .modal {
   padding: 0;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   border-radius: 14px;
   color: var(--ink);
   background: var(--paper);
@@ -609,7 +617,7 @@ kbd {
 }
 .capture-types button.active {
   background: var(--lime);
-  border-color: var(--ink);
+  border-color: var(--outline);
 }
 .search-results {
   display: grid;
@@ -942,7 +950,7 @@ kbd {
   place-items: center;
   background: var(--lime);
   color: #202128;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   border-radius: 6px;
   display: none;
 }
@@ -1005,10 +1013,10 @@ kbd {
   display: flex;
   align-items: center;
   gap: 11px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   border-radius: 9px;
   background: var(--paper);
-  box-shadow: 3px 3px 0 #20212828;
+  box-shadow: 3px 3px 0 color-mix(in srgb, var(--shadow-colour) 16%, transparent);
   padding: 12px 14px;
   animation: toast-enter 0.2s ease-out;
 }
@@ -1073,10 +1081,10 @@ kbd {
   overflow: hidden;
   background: var(--lime);
   color: #202128;
-  border: 1.5px solid #202128;
+  border: 1.5px solid var(--outline);
   border-radius: 13px;
   padding: 25px 28px 28px;
-  box-shadow: 4px 4px 0 #202128;
+  box-shadow: 4px 4px 0 var(--shadow-colour);
   min-height: 330px;
   isolation: isolate;
 }
@@ -1103,7 +1111,7 @@ kbd {
   flex-wrap: wrap;
 }
 .time-options button {
-  border: 1px solid #20212835;
+  border: 1px solid color-mix(in srgb, var(--outline) 21%, transparent);
   background: transparent;
   color: inherit;
   padding: 6px 12px;
@@ -1118,7 +1126,7 @@ kbd {
 .time-options button.selected {
   background: #202128;
   color: #fff;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 .next-move-card h2 {
   font-size: clamp(26px, 2.8vw, 38px);
@@ -1156,7 +1164,7 @@ kbd {
 .hero-bottom .button {
   background: #202128;
   color: #fff;
-  border-color: #202128;
+  border-color: var(--outline);
   box-shadow: 2px 2px 0 #718222;
   padding: 12px 16px;
   min-width: 175px;
@@ -1227,7 +1235,7 @@ kbd {
   top: 64px;
   transform: rotate(12deg);
   background: var(--pink);
-  border: 1.5px solid #202128;
+  border: 1.5px solid var(--outline);
   color: #202128;
   border-radius: 50%;
   width: 69px;
@@ -1239,7 +1247,7 @@ kbd {
   font-size: 10px;
   font-weight: 800;
   line-height: 1.1;
-  box-shadow: 2px 2px 0 #202128;
+  box-shadow: 2px 2px 0 var(--shadow-colour);
 }
 .chapter-deadline {
   margin-top: auto;
@@ -1397,7 +1405,7 @@ kbd {
   display: grid;
   place-items: center;
   background: var(--paper);
-  border: 1px solid color-mix(in srgb, var(--ink) 28%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--outline) 28%, var(--paper));
   border-radius: 5px;
   flex-shrink: 0;
   color: transparent;
@@ -1409,7 +1417,7 @@ kbd {
 .action-check:hover {
   background: var(--lime);
   color: #202128;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 .action-row-content {
   text-align: left;
@@ -1562,7 +1570,7 @@ kbd {
   gap: 20px;
   background: var(--lime);
   color: #202128;
-  border: 1.5px solid #202128;
+  border: 1.5px solid var(--outline);
   box-shadow: var(--shadow);
   padding: 40px;
 }
@@ -1590,8 +1598,8 @@ kbd {
 }
 .focus-timer-card {
   background: var(--lime);
-  border: 1.5px solid #202128;
-  box-shadow: 4px 4px 0 #202128;
+  border: 1.5px solid var(--outline);
+  box-shadow: 4px 4px 0 var(--shadow-colour);
   color: #202128;
   display: flex;
   flex-direction: column;
@@ -1629,12 +1637,12 @@ kbd {
 .focus-controls .button-primary {
   background: #202128;
   color: #fff;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 .focus-controls .button-secondary {
   background: #ffffff65;
   color: #202128;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 .focus-elapsed {
   display: flex;
@@ -1685,7 +1693,7 @@ kbd {
 }
 .login-page > header > .badge {
   font-size: 8px;
-  border: 1px solid #202128;
+  border: 1px solid var(--outline);
   letter-spacing: 0.09em;
   padding: 8px 10px;
 }
@@ -1711,8 +1719,8 @@ kbd {
   padding: 0 10px;
   display: inline-block;
   transform: rotate(-3deg);
-  border: 2px solid #202128;
-  box-shadow: 4px 4px 0 #202128;
+  border: 2px solid var(--outline);
+  box-shadow: 4px 4px 0 var(--shadow-colour);
 }
 .login-intro > h1 > i {
   font-style: normal;
@@ -1737,12 +1745,12 @@ kbd {
 .login-actions .button-primary {
   background: #202128;
   color: #fff;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 .login-actions .button-secondary {
   background: #fff;
   color: #202128;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 .login-promise {
   display: flex;
@@ -1772,8 +1780,8 @@ kbd {
   width: 300px;
   height: 330px;
   background: var(--aqua);
-  border: 2px solid #202128;
-  box-shadow: 7px 7px 0 #202128;
+  border: 2px solid var(--outline);
+  box-shadow: 7px 7px 0 var(--shadow-colour);
   border-radius: 11px;
   transform: rotate(-7deg);
   padding: 30px;
@@ -1802,7 +1810,7 @@ kbd {
 .art-note i {
   width: 13px;
   height: 13px;
-  border: 1px solid #202128;
+  border: 1px solid var(--outline);
   border-radius: 3px;
 }
 .art-note > b {
@@ -1825,9 +1833,9 @@ kbd {
   width: 140px;
   height: 140px;
   background: var(--pink);
-  border: 2px solid #202128;
+  border: 2px solid var(--outline);
   border-radius: 50%;
-  box-shadow: 4px 4px 0 #202128;
+  box-shadow: 4px 4px 0 var(--shadow-colour);
   font-family: var(--font-heading);
   font-size: 30px;
   font-weight: 800;
@@ -1845,8 +1853,8 @@ kbd {
   right: 5%;
   bottom: 5%;
   background: var(--orange);
-  border: 2px solid #202128;
-  box-shadow: 5px 5px 0 #202128;
+  border: 2px solid var(--outline);
+  box-shadow: 5px 5px 0 var(--shadow-colour);
   transform: rotate(5deg);
   padding: 21px 28px;
   font-family: var(--font-heading);
@@ -1904,10 +1912,10 @@ kbd {
 .settings-tabs a.active {
   background: var(--lime);
   color: #202128;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 .dropzone {
-  border: 2px dashed var(--ink);
+  border: 2px dashed var(--outline);
   border-radius: 10px;
   padding: 25px;
   background: color-mix(in srgb, var(--aqua) 8%, var(--paper));
@@ -2023,51 +2031,204 @@ kbd {
 }
 [data-theme="dark"] {
   color-scheme: dark;
-  --ink: #eeeee5;
-  --paper: #191b20;
-  --canvas: #101114;
-  --muted: #afb2ad;
-  --line: #3d4145;
-  --shadow-colour: #090b0e;
-  --surface-tint: #23262d;
-  --link-colour: #b2c2ff;
+  --ink: #e6e3dc;
+  --outline: #5c5e6b;
+  --control-outline: #70727e;
+  --paper: #272830;
+  --canvas: #1d1e24;
+  --muted: #b2b0ad;
+  --line: #3c3e48;
+  --shadow-colour: #121318;
+  --surface-tint: #30313b;
+  --blue: #7a96ff;
+  --blue-fill: #3e61dc;
+  --blue-shadow: #334795;
+  --pink: #f26aaa;
+  --lime: #c5eb48;
+  --orange: #f3984a;
+  --aqua: #40d9c1;
+  --green: #62dc8e;
+  --success: #62dc8e;
+  --warning: #f2bf4d;
+  --danger: #ff858b;
+  --red: #ff858b;
+  --focus-colour: #7a96ff;
+  --link-colour: #7a96ff;
   background: var(--canvas);
   color: var(--ink);
 }
 [data-theme="dark"] .button-primary {
   background: var(--lime);
   color: #202128;
-  border-color: #202128;
+  border-color: var(--outline);
 }
 [data-theme="dark"] .button-secondary {
-  box-shadow: 2px 2px 0 #090b0e;
+  box-shadow: 2px 2px 0 var(--shadow-colour);
 }
 [data-theme="dark"] .chapter-sticker {
-  border-color: #202128;
+  border-color: var(--outline);
 }
 [data-theme="dark"] .energy-card {
-  background: #2d2c26;
-  border-color: #484337;
+  background: #2b2b2d;
+  border-color: #454448;
 }
 [data-theme="dark"] .energy-card strong {
   color: #e4dfca;
 }
 [data-theme="dark"] .demo-banner {
-  background: #2e3723;
-  color: #c5dbaa;
-  border-color: #404c30;
+  background: color-mix(in srgb, var(--success) 10%, var(--paper));
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 30%, var(--line));
 }
 [data-theme="dark"] .weekly-prompt {
-  background: #282d4d;
-  border-color: #3d4571;
-  color: #c4ccff;
+  background: color-mix(in srgb, var(--blue-fill) 13%, var(--paper));
+  border-color: color-mix(in srgb, var(--blue) 28%, var(--line));
+  color: var(--blue);
 }
 [data-theme="dark"] .notice-warning {
   background: #3c311c;
-  color: #e6c37c;
+  color: var(--warning);
+  border-left-color: var(--warning);
+}
+[data-theme="dark"] .login-page {
+  background: var(--canvas);
+  color: var(--ink);
+}
+[data-theme="dark"] .brand-light {
+  color: var(--ink);
+}
+[data-theme="dark"] .brand-light .brand-tag,
+[data-theme="dark"] .login-intro > .eyebrow,
+[data-theme="dark"] .login-intro > p:not(.eyebrow),
+[data-theme="dark"] .login-promise {
+  color: var(--muted);
+}
+[data-theme="dark"] .brand-light .brand-word > span,
+[data-theme="dark"] .login-intro > h1 > i {
+  color: var(--blue);
+}
+[data-theme="dark"] .login-intro > h1 > span,
+[data-theme="dark"] .art-sticker,
+[data-theme="dark"] .art-label {
+  color: #202128;
+}
+[data-theme="dark"] .login-actions .button-secondary {
+  background: var(--surface-tint);
+  color: var(--ink);
+  border-color: var(--outline);
+}
+[data-theme="dark"] .focus-controls .button-secondary {
+  background: #383941;
+  color: var(--ink);
+  border-color: var(--outline);
 }
 [data-theme="dark"] .badge-muted {
   color: #c1c3bb;
+}
+[data-theme="dark"] .save-state-error {
+  color: var(--danger);
+}
+[data-theme="dark"] .save-state-draft {
+  color: var(--warning);
+}
+[data-theme="dark"] .badge-ink {
+  background: #3b3c44;
+  color: #d7d4cc;
+}
+[data-theme="dark"] .badge-blue {
+  background: var(--blue);
+  color: #202128;
+}
+[data-theme="dark"] .badge-pink {
+  background: var(--pink);
+  color: #202128;
+}
+[data-theme="dark"] .badge-orange {
+  background: var(--orange);
+  color: #202128;
+}
+[data-theme="dark"] .badge-lime,
+[data-theme="dark"] .badge-green {
+  background: var(--lime);
+  color: #202128;
+}
+[data-theme="dark"] .badge-aqua {
+  background: var(--aqua);
+  color: #202128;
+}
+[data-theme="dark"] .badge-red,
+[data-theme="dark"] .button-danger {
+  background: var(--danger);
+  color: #202128;
+}
+[data-theme="dark"] .button-danger {
+  border-color: var(--danger);
+}
+[data-theme="dark"] .toast-error > span {
+  background: var(--danger);
+  color: #202128;
+}
+[data-theme="dark"] .momentum-blue > svg {
+  background: var(--blue);
+  color: #202128;
+}
+[data-theme="dark"] .momentum-pink > svg {
+  background: var(--pink);
+  color: #202128;
+}
+[data-theme="dark"] .momentum-orange > svg {
+  background: var(--orange);
+  color: #202128;
+}
+[data-theme="dark"] .energy-card > svg {
+  color: var(--orange);
+}
+[data-theme="dark"] .energy-card p {
+  color: #b0aaa0;
+}
+[data-theme="dark"] .energy-card .segmented-control {
+  background: #222327;
+}
+[data-theme="dark"] .energy-card .segmented-control button.active {
+  background: #45454a;
+  color: var(--ink);
+}
+[data-theme="dark"] .capture-types button.active {
+  color: #202128;
+}
+[data-theme="dark"] .practice-timer {
+  background: #25262e;
+  color: var(--lime);
+}
+[data-theme="dark"] .recruitment-step-number {
+  background: var(--surface-tint);
+  color: var(--ink);
+}
+[data-theme="dark"] .recruitment-current .recruitment-step-number {
+  background: var(--blue-fill);
+  color: #fff;
+}
+[data-theme="dark"] .direction-timeline > section:nth-child(3n + 1) h3,
+[data-theme="dark"] .direction-timeline > section:nth-child(3n + 2) h3 {
+  color: #202128;
+}
+[data-theme="dark"] .application-intermediate-status {
+  background: var(--warning);
+  color: #202128;
+  border-color: var(--outline);
+}
+[data-theme="dark"] .learn-calendar-day.is-today {
+  background: var(--warning);
+  color: #202128;
+}
+[data-theme="dark"] .learn-calendar-day.is-solved {
+  color: #202128;
+}
+[data-theme="dark"] .settings-danger {
+  border-color: #74484c;
+}
+[data-theme="dark"] .settings-danger h2 {
+  color: var(--danger);
 }
 [data-theme="dark"] .topic-row,
 [data-theme="dark"] .interview-row,
@@ -2080,8 +2241,8 @@ kbd {
 [data-theme="dark"] .learning-banner,
 [data-theme="dark"] .next-interview,
 [data-theme="dark"] .career-timeline article {
-  border-color: #202128;
-  box-shadow: 4px 4px 0 #090b0e;
+  border-color: var(--outline);
+  box-shadow: 4px 4px 0 var(--shadow-colour);
 }
 @keyframes toast-enter {
   from {

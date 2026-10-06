@@ -24,9 +24,9 @@
 }
 .content-resource-card {
   --content-tone: var(--blue);
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-top: 6px solid var(--content-tone);
-  box-shadow: 3px 3px 0 var(--ink);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
   padding: 18px;
 }
 .content-tone-1 {
@@ -74,7 +74,7 @@
 .content-section-card {
   margin: 18px 0;
   padding: 22px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
 }
 .content-note-toolbar {
   display: flex;
@@ -143,7 +143,7 @@
   opacity: 1;
 }
 .sortable-item:has(.sort-handle[aria-pressed="true"]) {
-  outline: 2px dashed var(--ink);
+  outline: 2px dashed var(--focus-colour);
 }
 .editable-tabs > .sortable-item:has(.sort-handle[aria-pressed="true"]) {
   outline: none;
@@ -216,7 +216,7 @@
   flex: 1;
 }
 .rich-document-prose blockquote {
-  border-left: 3px solid var(--ink);
+  border-left: 3px solid var(--outline);
   padding-left: 1rem;
 }
 .rich-document-prose pre {
@@ -232,7 +232,7 @@
 }
 .rich-document-prose td,
 .rich-document-prose th {
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   padding: 0.45rem;
   vertical-align: top;
 }
@@ -244,7 +244,7 @@
 }
 .rich-document-prose .column-resize-handle {
   width: 3px;
-  background: var(--ink);
+  background: var(--outline);
   position: absolute;
   right: -2px;
   top: 0;
@@ -301,7 +301,10 @@
 }
 .rich-block-handle.picked {
   background: var(--pink);
-  outline: 1px dashed var(--ink);
+  outline: 1px dashed var(--focus-colour);
+}
+[data-theme="dark"] .rich-block-handle.picked {
+  color: #202128;
 }
 .rich-slash-menu {
   position: absolute;
@@ -309,8 +312,8 @@
   display: grid;
   min-width: 160px;
   background: var(--paper);
-  border: 1px solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
+  border: 1px solid var(--outline);
+  box-shadow: 3px 3px 0 var(--shadow-colour);
   padding: 0.4rem;
 }
 .rich-slash-menu button {

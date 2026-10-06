@@ -26,7 +26,7 @@
   height: 38px;
   width: 38px;
   flex-shrink: 0;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   border-radius: 8px;
   background: var(--pink);
   font-family: var(--font-heading);
@@ -71,7 +71,7 @@
   font-family: var(--font-heading);
   padding: 3px 8px;
   margin-left: 5px;
-  border: 1px solid var(--ink);
+  border: 1px solid var(--outline);
   border-radius: 5px;
   background: var(--orange);
   color: #202128;
@@ -83,7 +83,7 @@
   color: var(--muted);
 }
 .legacy-recovery-note {
-  border-color: var(--ink);
+  border-color: var(--outline);
   background: color-mix(in srgb, var(--aqua) 14%, var(--paper));
 }
 .legacy-recovery-note p {

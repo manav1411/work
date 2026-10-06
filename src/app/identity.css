@@ -1,16 +1,16 @@
 :root .button-primary {
   background: var(--pink);
   color: #202128;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--outline);
   box-shadow: 3px 3px 0 var(--shadow-colour);
 }
 .card {
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
 }
 .simple-shell .sidebar {
   background: var(--canvas);
   color: var(--ink);
-  border-right: 2px solid var(--ink);
+  border-right: 2px solid var(--outline);
 }
 .simple-shell .sidebar .brand {
   color: var(--ink);
@@ -32,7 +32,7 @@
 .simple-shell .nav-link-active:hover {
   color: #202128;
   background: var(--pink);
-  border-color: var(--ink);
+  border-color: var(--outline);
   box-shadow: 3px 3px 0 var(--shadow-colour);
 }
 .simple-shell .sidebar-bottom {
@@ -49,7 +49,7 @@
 }
 .simple-shell .mobile-nav {
   background: var(--paper);
-  border-top: 2px solid var(--ink);
+  border-top: 2px solid var(--outline);
 }
 .simple-shell .mobile-nav > a,
 .simple-shell .mobile-nav > button {
@@ -91,7 +91,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 7px;
   background: var(--paper);
   color: var(--ink);
@@ -111,11 +111,11 @@
 }
 .section-tabs.section-tabs
   > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) {
-  background: var(--blue);
+  background: var(--blue-fill);
   color: #fff;
 }
 .section-tabs.section-tabs > button:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }
 .editable-tabs.editable-tabs {
@@ -140,7 +140,7 @@
   box-shadow: 4px 5px 0 var(--shadow-colour);
 }
 .editable-tabs.editable-tabs .editable-tab:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }
 .direction-scale.section-tabs {
@@ -186,7 +186,7 @@
   border-radius: inherit;
 }
 .action-card .card-hit-target:focus-visible::after {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 4px;
 }
 .document-link-card {
@@ -260,7 +260,7 @@
   width: 7px;
   height: 7px;
   background: var(--lime);
-  border: 1px solid #202128;
+  border: 1px solid var(--outline);
   border-radius: 50%;
 }
 .edit-mode-hint {
@@ -276,7 +276,7 @@
   gap: 12px;
   padding: 10px 14px;
   margin-bottom: 20px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 8px;
   background: var(--lime);
   color: #202128;
@@ -328,23 +328,6 @@
 .goal-card:hover {
   box-shadow: 3px 3px 0 var(--shadow-colour);
 }
-[data-theme="dark"] .badge-blue {
-  background: #334172;
-  color: #dbe4ff;
-}
-[data-theme="dark"] .badge-pink {
-  background: #613b50;
-  color: #ffe1ef;
-}
-[data-theme="dark"] .badge-orange {
-  background: #66482e;
-  color: #ffe4c8;
-}
-[data-theme="dark"] .button-danger {
-  background: #582e31;
-  color: #ffdcde;
-  border-color: #eea6ac;
-}
 @media (max-width: 760px) {
   .simple-shell .mobile-nav > button {
     flex: 1;
@@ -353,7 +336,7 @@
     padding: 6px 5px;
   }
   .simple-shell .sidebar {
-    border-right: 2px solid var(--ink);
+    border-right: 2px solid var(--outline);
   }
 }
 .brand .brand-arrow,
@@ -394,7 +377,7 @@
 }
 .theme-switch {
   display: inline-flex;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--outline);
   border-radius: 7px;
   overflow: hidden;
   box-shadow: 2px 2px 0 var(--shadow-colour);
@@ -412,20 +395,20 @@
   color: #202128;
 }
 .input:focus {
-  border-color: var(--ink);
+  border-color: var(--outline);
   box-shadow: none;
   outline: none;
 }
 .input:focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }
 :focus-visible {
-  outline: 2px solid var(--ink);
+  outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }
 .card-hit-target:focus-visible::after {
-  border-color: var(--ink) !important;
+  border-color: var(--outline) !important;
 }
 .modal,
 .modal-body,

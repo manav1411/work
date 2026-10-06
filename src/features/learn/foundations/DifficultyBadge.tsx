@@ -9,13 +9,7 @@ export default function DifficultyBadge({
 }) {
   return (
     <Badge
-      tone={
-        difficulty === "Easy"
-          ? "lime"
-          : difficulty === "Medium"
-            ? "orange"
-            : "pink"
-      }
+      className={`difficulty-badge difficulty-badge-${difficulty.toLowerCase()}`}
     >
       {difficulty}
     </Badge>

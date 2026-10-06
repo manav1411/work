@@ -199,7 +199,10 @@ export function InterviewsPage() {
           )}
           {tab && (
             <>
-              <section className="interview-intro">
+              {tab.key === "behavioural" && <StoryBank />}
+              <section
+                className={`interview-intro ${tab.key === "behavioural" ? "interview-intro-behavioural" : ""}`}
+              >
                 {tab.legacyPreparationId ? (
                   <RichDocumentEditor
                     key={tab.id}
@@ -237,7 +240,6 @@ export function InterviewsPage() {
                   />
                 )}
               </section>
-              {tab.key === "behavioural" && <StoryBank />}
             </>
           )}
         </div>
