@@ -7,6 +7,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type Modifier,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -40,6 +41,11 @@ import { useSavingWorkspace as useWorkspace } from "./useSaving";
 import { interviewTime } from "./applicationRecords";
 import { errorMessage } from "./domain";
 import { InlineTitle } from "../content/InlineTitle";
+
+const horizontalOnly: Modifier = ({ transform }) => ({
+  ...transform,
+  y: 0,
+});
 
 export function InlineProcess({
   record,
@@ -137,6 +143,7 @@ export function InlineProcess({
       {!steps.length && <p className="muted">No process outlined yet.</p>}
       <DndContext
         sensors={sensors}
+        modifiers={[horizontalOnly]}
         collisionDetection={closestCenter}
         onDragEnd={reorder}
       >
