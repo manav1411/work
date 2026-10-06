@@ -10,11 +10,12 @@ import {
 } from "../../../shared/applications";
 import { Button, Field, Input, Select, Textarea } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
-import { useInlineAutosave } from "../direction/useInlineAutosave";
+import { useAutosave } from "../../lib/autosave";
 import { applicationCompany } from "./applicationRecords";
 
 export function InlineApplicationFields({ record }: { record: WorkRecord }) {
-  const { records, preferences, user, update } = useWorkspace();
+  const { records, preferences, user, update, isPending, refresh } =
+    useWorkspace();
   const current = useRef(record);
   current.current = record;
   const [statusError, setStatusError] = useState("");
@@ -28,10 +29,12 @@ export function InlineApplicationFields({ record }: { record: WorkRecord }) {
     followUp: field(record, "followUp"),
     body: record.body,
   };
-  const draft = useInlineAutosave(
+  const draft = useAutosave({
     initial,
-    `work:application-draft:${user?.id || "local"}:${record.id}`,
-    async (value) => {
+    version: record.version,
+    storageKey: `work:application-draft:${user?.id || "local"}:${record.id}`,
+    refresh,
+    persist: async (value, expectedVersion) => {
       const { title, body, ...fields } = value;
       const data = ApplicationDataSchema.parse({
         ...current.current.data,
@@ -40,11 +43,26 @@ export function InlineApplicationFields({ record }: { record: WorkRecord }) {
       const saved = await update(
         record.id,
         { title: title.trim() || "Untitled", body, data },
-        current.current.version,
+        expectedVersion,
       );
       current.current = saved;
+      return {
+        version: saved.version,
+        value: {
+          title: saved.title,
+          company: applicationCompany(saved, records),
+          url: field(saved, "url"),
+          location: field(saved, "location"),
+          applicationDate: applicationDate(saved),
+          deadline: field(saved, "deadline"),
+          followUp: field(saved, "followUp"),
+          body: saved.body,
+        },
+        offline: isPending(record.id),
+      };
     },
-  );
+    pending: isPending(record.id),
+  });
   const selection = applicationStatusSelection(record);
   const options = applicationStatusOptions(record);
   async function setStatus(value: string) {
@@ -70,14 +88,14 @@ export function InlineApplicationFields({ record }: { record: WorkRecord }) {
   }
   return (
     <div className="stack application-inline-fields">
-      {draft.recovered && (
-        <div className="application-notice">
-          <p>An unsaved application draft is available on this device.</p>
-          <Button variant="secondary" onClick={draft.acceptDraft}>
-            Recover draft
+      {draft.conflict && (
+        <div className="application-notice" role="alert">
+          <span>{draft.error || "This application changed elsewhere."}</span>
+          <Button variant="secondary" onClick={() => void draft.keepLocal()}>
+            Keep my changes
           </Button>
-          <Button variant="ghost" onClick={draft.discardDraft}>
-            Use saved fields
+          <Button variant="ghost" onClick={draft.useSaved}>
+            Use saved version
           </Button>
         </div>
       )}

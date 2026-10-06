@@ -69,15 +69,16 @@ export function InlineProcess({
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
-  async function persist(next: RecordData) {
+  async function persist(next: RecordData, propagate = false) {
     try {
       setError("");
       const validated = ApplicationDataSchema.parse(next);
       setOptimistic(validated);
-      await update(record.id, { data: validated }, record.version);
+      return await update(record.id, { data: validated }, record.version);
     } catch (failure) {
       setOptimistic(undefined);
       setError(errorMessage(failure));
+      if (propagate) throw failure;
     }
   }
   function reorder(event: DragEndEvent) {
@@ -150,6 +151,7 @@ export function InlineProcess({
               <ProcessStep
                 key={step.id}
                 step={step}
+                applicationId={record.id}
                 index={index}
                 active={active?.id === step.id}
                 editing={editing && modern}
@@ -159,14 +161,17 @@ export function InlineProcess({
                 )}
                 timezone={preferences.timezone}
                 rename={(title) =>
-                  void persist({
-                    ...data,
-                    recruitmentSteps: allSteps.map((item) =>
-                      item.id === step.id
-                        ? { ...item, title: title.trim() || "Untitled" }
-                        : item,
-                    ),
-                  })
+                  persist(
+                    {
+                      ...data,
+                      recruitmentSteps: allSteps.map((item) =>
+                        item.id === step.id
+                          ? { ...item, title: title.trim() || "Untitled" }
+                          : item,
+                      ),
+                    },
+                    true,
+                  )
                 }
                 change={(state) => {
                   try {
@@ -247,6 +252,7 @@ export function InlineProcess({
 
 function ProcessStep({
   step,
+  applicationId,
   index,
   active,
   editing,
@@ -258,13 +264,14 @@ function ProcessStep({
   remove,
 }: {
   step: RecruitmentStep;
+  applicationId: string;
   index: number;
   active: boolean;
   editing: boolean;
   pending: boolean;
   appointments: WorkRecord[];
   timezone: string;
-  rename: (title: string) => void;
+  rename: (title: string) => Promise<unknown>;
   change: (state: RecruitmentStep["state"]) => void;
   remove: () => void;
 }) {
@@ -299,10 +306,11 @@ function ProcessStep({
       </div>
       {editing && intermediate ? (
         <InlineTitle
+          draftKey={`process-step-title:${applicationId}:${step.id}`}
           label="Step name"
           autoFocus={step.title === "Untitled"}
           value={step.title}
-          onSave={async (title) => rename(title)}
+          onSave={rename}
         />
       ) : (
         <strong>{step.title}</strong>

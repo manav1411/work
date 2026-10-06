@@ -15,6 +15,7 @@ import {
   Select,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
+import { useAutosave } from "../../lib/autosave";
 import { useEditMode } from "../../lib/edit-mode";
 import { DeleteControl } from "../content/DeleteControl";
 import { InlineTitle } from "../content/InlineTitle";
@@ -35,7 +36,7 @@ function StoryField({
   expanded: boolean;
 }) {
   const { editing } = useEditMode();
-  const { user } = useWorkspace();
+  const { user, isPending, refresh } = useWorkspace();
   const initial =
     name === "lessons"
       ? [
@@ -46,79 +47,34 @@ function StoryField({
           .join("\n\n")
       : field(story, name);
   const draftKey = `work-content-draft:${user?.id ?? "anonymous"}:story:${story.id}:${name}`;
-  const [text, setText] = useState(() => {
-    try {
-      return localStorage.getItem(draftKey) ?? initial;
-    } catch {
-      return initial;
-    }
-  });
-  const [error, setError] = useState("");
-  const [review, setReview] = useState(text !== initial);
-  const blocked = useRef(text !== initial);
-  const saving = useRef(false);
-  const saved = useRef(initial),
-    latest = useRef(text),
-    base = useRef(story),
-    timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  base.current = story;
-  latest.current = text;
-  const save = async () => {
-    clearTimeout(timer.current);
-    const value = latest.current;
-    if (value === saved.current || blocked.current || saving.current) return;
-    saving.current = true;
-    try {
-      await write({
+  const draft = useAutosave({
+    initial,
+    version: story.version,
+    storageKey: draftKey,
+    pending: isPending(story.id),
+    refresh,
+    decodeLegacy: (raw) =>
+      typeof raw === "string" ? { value: raw } : undefined,
+    persist: async (text) => {
+      // The writer serializes the five STAR fields on one record and rebases
+      // each partial field patch on the latest captured record version.
+      const saved = await write({
         data: {
-          [name]: value,
+          [name]: text,
           ...(name === "lessons" ? { otherNotesMigrated: true } : {}),
         },
       });
-      saved.current = value;
-      if (latest.current === value) {
-        try {
-          localStorage.removeItem(draftKey);
-        } catch {
-          /* Optional storage. */
-        }
-      }
-      setError("");
-    } catch (failure) {
-      blocked.current = true;
-      setReview(true);
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Draft could not be saved.",
-      );
-    } finally {
-      saving.current = false;
-      if (!blocked.current && latest.current !== saved.current)
-        timer.current = setTimeout(() => void saveRef.current(), 800);
-    }
-  };
-  const saveRef = useRef(save);
-  saveRef.current = save;
-  useEffect(() => {
-    if (saving.current || initial === saved.current) return;
-    if (latest.current !== saved.current) {
-      blocked.current = true;
-      setReview(true);
-      setError("Saved story changed. Review your local text before saving.");
-    } else {
-      saved.current = initial;
-      latest.current = initial;
-      setText(initial);
-    }
-  }, [initial]);
-  useEffect(
-    () => () => {
-      clearTimeout(timer.current);
-      void saveRef.current();
+      return {
+        version: saved.version,
+        value:
+          name === "lessons"
+            ? field(saved, "lessons") || field(saved, "reflection")
+            : field(saved, name),
+        offline: isPending(saved.id),
+      };
     },
-    [],
-  );
+  });
+  const text = draft.value;
   return (
     <section className="inline-star-field" data-field={name}>
       <h4>{name[0].toUpperCase() + name.slice(1)}</h4>
@@ -132,17 +88,9 @@ function StoryField({
             placeholder={
               name === "lessons" ? "What you learned…" : `Write the ${name}…`
             }
-            onBlur={() => void save()}
+            onBlur={() => void draft.flush()}
             onChange={(event) => {
-              latest.current = event.target.value;
-              setText(event.target.value);
-              try {
-                localStorage.setItem(draftKey, event.target.value);
-              } catch {
-                /* Optional storage. */
-              }
-              clearTimeout(timer.current);
-              timer.current = setTimeout(() => void saveRef.current(), 800);
+              draft.setValue(event.target.value);
             }}
           />
         ) : text ? (
@@ -151,23 +99,31 @@ function StoryField({
           <p className="muted">—</p>
         )}
       </div>
-      {(error || review) && (
-        <p role="alert">
-          {error || "Recovered draft — review before saving."}
+      {draft.state !== "Saved" && !draft.conflict && (
+        <small className="muted" role="status">
+          {draft.state}
+        </small>
+      )}
+      {draft.conflict && (
+        <div className="form-error" role="alert">
+          <p>{draft.error || "This story changed elsewhere."}</p>
           <details>
             <summary>Compare saved text</summary>
             <Markdown content={initial} />
           </details>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              blocked.current = false;
-              setReview(false);
-              setError("");
-              void save();
-            }}
-          >
-            Keep reviewed draft
+          <Button variant="ghost" onClick={() => void draft.keepLocal()}>
+            Keep my changes
+          </Button>
+          <Button variant="ghost" onClick={draft.useSaved}>
+            Use saved version
+          </Button>
+        </div>
+      )}
+      {draft.error && !draft.conflict && (
+        <p className="form-error" role="alert">
+          {draft.error}
+          <Button variant="ghost" onClick={() => void draft.flush()}>
+            Retry
           </Button>
         </p>
       )}
@@ -212,8 +168,10 @@ function InlineStoryCard({
           <InlineTitle
             label="Story title"
             value={story.title}
+            version={story.version}
+            draftKey={`story-title:${story.id}`}
             autoFocus={autoFocus}
-            onSave={(title) => write({ title })}
+            onSave={(title, version) => write({ title }, version)}
           />
         </h3>
         <div className="interview-story-header-actions">

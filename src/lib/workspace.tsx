@@ -1,4 +1,6 @@
-import { editorDraftsFor } from "./device-drafts";
+import { resumePendingSources, resumePendingSettings } from "./pending-source";
+import { editorDraftsFor, remapEditorDrafts } from "./device-drafts";
+import { flushAutosaves, mergeAutosaveValues } from "./autosave";
 import {
   createContext,
   useCallback,
@@ -36,7 +38,17 @@ interface OutboxItem {
   input?: RecordInput;
   patch?: RecordPatch;
   version?: number;
+  base?: WorkRecord;
+  sent?: { input?: RecordInput; patch?: RecordPatch; version?: number };
+  issue?: string;
 }
+
+const temporarySaveFailure = (failure: unknown) =>
+  failure instanceof ApiError &&
+  (failure.status === 0 ||
+    failure.status === 408 ||
+    failure.status === 429 ||
+    failure.status >= 500);
 
 interface WorkspaceValue {
   records: WorkRecord[];
@@ -45,6 +57,8 @@ interface WorkspaceValue {
   mode: WorkspaceMode;
   loading: boolean;
   pending: number;
+  isPending: (recordId: string) => boolean;
+  syncIssues: { id: string; recordId: string; message: string }[];
   error: string;
   configured: boolean;
   toasts: Toast[];
@@ -59,7 +73,9 @@ interface WorkspaceValue {
   refresh: () => Promise<void>;
   notify: (message: string, tone?: Toast["tone"]) => void;
   dismissToast: (id: string) => void;
-  savePreferences: (patch: Partial<UserPreferences>) => Promise<void>;
+  savePreferences: (
+    patch: Partial<UserPreferences>,
+  ) => Promise<UserPreferences>;
   openDemo: () => void;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
@@ -80,6 +96,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
   const [pending, setPending] = useState(0);
+  const [outboxRevision, setOutboxRevision] = useState(0);
   const [error, setError] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const recordsRef = useRef(records);
@@ -90,7 +107,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   preferencesRef.current = preferences;
   const outboxRef = useRef<OutboxItem[]>([]);
   const syncRef = useRef(false);
+  const sourceSyncRef = useRef(false);
   const syncingItemRef = useRef<string | null>(null);
+  const signingOutRef = useRef(false);
+  const retryDelayRef = useRef(1000);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const aliasesRef = useRef(new Map<string, string>());
   const updateQueues = useRef(new Map<string, Promise<unknown>>());
   const notify = useCallback(
@@ -112,6 +135,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
   const persistOutbox = useCallback(() => {
     setPending(outboxRef.current.length);
+    setOutboxRevision((revision) => revision + 1);
     if (userRef.current)
       try {
         localStorage.setItem(
@@ -125,6 +149,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
       }
   }, [notify]);
+  const isPending = useCallback(
+    (recordId: string) =>
+      outboxRef.current.some(
+        (entry) =>
+          entry.recordId === (aliasesRef.current.get(recordId) ?? recordId),
+      ),
+    // Changing queue contents also changes the status of mounted editors.
+    [outboxRevision],
+  );
+  const syncIssues = useMemo(
+    () =>
+      outboxRef.current
+        .filter((entry) => entry.issue)
+        .map((entry) => ({
+          id: entry.id,
+          recordId: entry.recordId,
+          message: entry.issue!,
+        })),
+    [outboxRevision],
+  );
   const put = useCallback((record: WorkRecord) => {
     const next = recordsRef.current.some((item) => item.id === record.id)
       ? recordsRef.current.map((item) =>
@@ -135,8 +179,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRecords(recordsRef.current);
   }, []);
   const refresh = useCallback(async () => {
-    if (!userRef.current) return;
+    const owner = userRef.current?.id;
+    if (!owner || signingOutRef.current) return;
     const response = await request<{ records: WorkRecord[] }>("/api/records");
+    if (userRef.current?.id !== owner || signingOutRef.current) return;
     const queued = outboxRef.current;
     const base = response.records.filter((item) => !item.deletedAt);
     for (const item of queued) {
@@ -159,6 +205,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRecords(base);
   }, []);
   const openDemo = useCallback(() => {
+    signingOutRef.current = false;
+    sessionStorage.removeItem("work:signout-save-notice");
     const demo = createDemoStore();
     setApiAdapter(demo.adapter, demo.fileUrl);
     sessionStorage.setItem("work-demo-active", "true");
@@ -175,6 +223,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setError("");
     outboxRef.current = [];
     setPending(0);
+    setOutboxRevision((revision) => revision + 1);
   }, []);
 
   useEffect(() => {
@@ -189,10 +238,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const session = await request<SessionResponse>("/api/session");
         if (!active) return;
         userRef.current = session.user;
+        signingOutRef.current = false;
         setUser(session.user);
         setConfigured(session.configured);
         setMode(session.local ? "local" : "cloud");
         if (session.user) {
+          sessionStorage.removeItem("work:signout-save-notice");
           try {
             outboxRef.current = JSON.parse(
               localStorage.getItem(`work-outbox:${session.user.id}`) ?? "[]",
@@ -201,6 +252,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             outboxRef.current = [];
           }
           setPending(outboxRef.current.length);
+          setOutboxRevision((revision) => revision + 1);
           const [rows, prefs] = await Promise.all([
             request<{ records: WorkRecord[] }>("/api/records"),
             request<{ preferences: UserPreferences }>("/api/preferences"),
@@ -239,28 +291,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } catch {
       /* Theme still applies to this session. */
     }
-    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const updateMotion = () => { document.documentElement.dataset.reduceMotion = String(query.matches); };
-    updateMotion(); query.addEventListener('change', updateMotion);
-    return () => query.removeEventListener('change', updateMotion);
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updateMotion = () => {
+      document.documentElement.dataset.reduceMotion = String(query.matches);
+    };
+    updateMotion();
+    query.addEventListener("change", updateMotion);
+    return () => query.removeEventListener("change", updateMotion);
   }, [preferences.theme, loading]);
 
   const create = useCallback(
     async (input: RecordInput): Promise<WorkRecord> => {
+      const owner = userRef.current?.id;
+      if (!owner || signingOutRef.current)
+        throw new ApiError("Sign in to finish saving your changes.", 401);
       const key = crypto.randomUUID();
       try {
         const response = await request<{ record: WorkRecord }>("/api/records", {
           ...jsonRequest("POST", input),
           headers: { "Idempotency-Key": key },
         });
-        put(response.record);
+        if (userRef.current?.id === owner) put(response.record);
         return response.record;
       } catch (failure) {
-        if (
-          failure instanceof ApiError &&
-          failure.status === 0 &&
-          userRef.current
-        ) {
+        if (temporarySaveFailure(failure) && userRef.current?.id === owner) {
           const optimistic = makeRecord(input);
           optimistic.id = `offline-${key}`;
           put(optimistic);
@@ -269,18 +323,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             method: "create",
             recordId: optimistic.id,
             input,
+            sent: { input: structuredClone(input) },
           });
           persistOutbox();
-          notify(
-            "Captured on this device. It will sync when you reconnect.",
-            "info",
-          );
           return optimistic;
         }
         throw failure;
       }
     },
-    [notify, persistOutbox, put],
+    [persistOutbox, put],
   );
 
   const update = useCallback(
@@ -289,7 +340,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       patch: RecordPatch,
       expectedVersion?: number,
     ): Promise<WorkRecord> => {
+      const owner = userRef.current?.id;
       const save = async (): Promise<WorkRecord> => {
+        if (!owner || userRef.current?.id !== owner || signingOutRef.current)
+          throw new ApiError("Sign in to finish saving your changes.", 401);
         id = aliasesRef.current.get(id) ?? id;
         const previous = recordsRef.current.find((record) => record.id === id);
         if (!previous) throw new ApiError("Record no longer exists.", 404);
@@ -298,7 +352,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           previous.version !== expectedVersion
         )
           throw new ApiError(
-            "This record changed while you were editing. Review the latest saved text before saving your draft.",
+            "This content changed elsewhere. Review both copies.",
             409,
             { record: previous },
           );
@@ -321,6 +375,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         );
         if (queuedUpdate) {
           queuedUpdate.patch = { ...queuedUpdate.patch, ...patch };
+          // Editing an invalid value allows this item to be retried. Genuine
+          // overlaps will be checked against the server again during sync.
+          if (queuedUpdate.issue) {
+            queuedUpdate.id = crypto.randomUUID();
+            delete queuedUpdate.sent;
+            delete queuedUpdate.issue;
+          }
           const next = {
             ...previous,
             ...patch,
@@ -330,33 +391,46 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           persistOutbox();
           return next;
         }
+        const requestId = crypto.randomUUID();
         try {
           const response = await request<{ record: WorkRecord }>(
             `/api/records/${encodeURIComponent(id)}`,
             {
               ...jsonRequest("PATCH", { ...patch, version: previous.version }),
-              headers: { "Idempotency-Key": crypto.randomUUID() },
+              headers: { "Idempotency-Key": requestId },
             },
           );
-          put(response.record);
+          if (userRef.current?.id === owner) put(response.record);
           return response.record;
         } catch (failure) {
-          if (
-            failure instanceof ApiError &&
-            failure.status === 0 &&
-            userRef.current
-          ) {
+          if (failure instanceof ApiError && failure.status === 409) {
+            const latest = await request<{ record: WorkRecord }>(
+              `/api/records/${encodeURIComponent(id)}`,
+            ).catch(() => undefined);
+            if (
+              latest &&
+              userRef.current?.id === owner &&
+              !signingOutRef.current
+            )
+              put(latest.record);
+          }
+          if (temporarySaveFailure(failure) && userRef.current?.id === owner) {
             const existing = outboxRef.current.find(
               (item) => item.method === "update" && item.recordId === id,
             );
             if (existing) existing.patch = { ...existing.patch, ...patch };
             else
               outboxRef.current.push({
-                id: crypto.randomUUID(),
+                id: requestId,
                 method: "update",
                 recordId: id,
                 patch,
                 version: previous.version,
+                base: structuredClone(previous),
+                sent: {
+                  patch: structuredClone(patch),
+                  version: previous.version,
+                },
               });
             const next = {
               ...previous,
@@ -421,11 +495,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
   const savePreferences = useCallback(
     async (patch: Partial<UserPreferences>) => {
+      const owner = userRef.current?.id;
+      if (!owner || signingOutRef.current)
+        throw new ApiError("Sign in to finish saving your changes.", 401);
+      const base = preferencesRef.current;
+      const desired = { ...base, ...patch };
+      const { preferences: fetched } = await request<{
+        preferences: UserPreferences;
+      }>("/api/preferences");
+      if (userRef.current?.id !== owner || signingOutRef.current)
+        throw new ApiError("Sign in to finish saving your changes.", 401);
+      const remote = { ...DEFAULT_PREFERENCES, ...fetched };
+      const merged = mergeAutosaveValues(base, desired, remote);
+      if (merged.conflict) {
+        preferencesRef.current = remote;
+        setPreferences(remote);
+        throw new ApiError(
+          "These settings also changed in another session. Review both copies.",
+          409,
+        );
+      }
       const response = await request<{ preferences: UserPreferences }>(
         "/api/preferences",
-        jsonRequest("PUT", { ...preferencesRef.current, ...patch }),
+        jsonRequest("PUT", merged.value),
       );
-      setPreferences({ ...DEFAULT_PREFERENCES, ...response.preferences });
+      const saved = { ...DEFAULT_PREFERENCES, ...response.preferences };
+      if (userRef.current?.id === owner && !signingOutRef.current) {
+        preferencesRef.current = saved;
+        setPreferences(saved);
+      }
+      return saved;
     },
     [],
   );
@@ -443,145 +542,257 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     notify("Your workspace is ready. Pick one small next move.");
   }, [notify, put, refresh]);
   const syncOutbox = useCallback(async () => {
-    if (syncRef.current || !outboxRef.current.length || !userRef.current)
-      return;
+    const owner = userRef.current?.id;
+    if (syncRef.current || signingOutRef.current || !owner) return;
     syncRef.current = true;
     try {
-      while (outboxRef.current.length) {
-        const item = structuredClone(outboxRef.current[0]);
-        syncingItemRef.current = item.id;
-        if (item.method === "create" && item.input) {
-          const response = await request<{ record: WorkRecord }>(
-            "/api/records",
-            {
-              ...jsonRequest("POST", item.input),
-              headers: { "Idempotency-Key": item.id },
-            },
-          );
-          const latest = outboxRef.current.find(
-            (queued) => queued.id === item.id,
-          );
-          const edited =
-            latest?.input &&
-            JSON.stringify(latest.input) !== JSON.stringify(item.input);
-          recordsRef.current = recordsRef.current.filter(
-            (record) => record.id !== item.recordId,
-          );
-          put(response.record);
-          const previousId = item.recordId;
-          aliasesRef.current.set(previousId, response.record.id);
-          outboxRef.current = outboxRef.current.map((queued) =>
-            remapReference(queued, previousId, response.record.id),
-          );
-          recordsRef.current = recordsRef.current.map((record) =>
-            remapReference(record, previousId, response.record.id),
-          );
-          setRecords(recordsRef.current);
-          if (edited && latest?.input) {
-            const input = remapReference(
-              latest.input,
-              previousId,
-              response.record.id,
-            );
-            const patch = {
-              title: input.title,
-              body: input.body,
-              tags: input.tags,
-              links: input.links,
-              data: input.data,
-            };
-            outboxRef.current.push({
-              id: crypto.randomUUID(),
-              method: "update",
-              recordId: response.record.id,
-              version: response.record.version,
-              patch,
-            });
-            put({ ...response.record, ...patch } as WorkRecord);
-          }
-          for (const scope of ["local", "cloud", "demo"]) {
-            const oldKey = `work:note-draft:${scope}:${userRef.current.id}:${previousId}`;
-            const draft = localStorage.getItem(oldKey);
-            if (draft) {
-              localStorage.setItem(
-                `work:note-draft:${scope}:${userRef.current.id}:${response.record.id}`,
-                draft,
-              );
-              localStorage.removeItem(oldKey);
-            }
-          }
-          const current = new URL(location.href);
-          let moved = false;
-          for (const key of ["record", "action"])
-            if (current.searchParams.get(key) === previousId) {
-              current.searchParams.set(key, response.record.id);
-              moved = true;
-            }
-          if (moved) {
-            history.replaceState(
-              history.state,
-              "",
-              current.pathname + current.search,
-            );
-            window.dispatchEvent(new PopStateEvent("popstate"));
-          }
-        } else if (item.method === "update") {
-          const response = await request<{ record: WorkRecord }>(
-            `/api/records/${encodeURIComponent(item.recordId)}`,
-            {
-              ...jsonRequest("PATCH", { ...item.patch, version: item.version }),
-              headers: { "Idempotency-Key": item.id },
-            },
-          );
-          put(response.record);
-          const latest = outboxRef.current.find(
-            (queued) => queued.id === item.id,
-          );
-          if (
-            latest?.patch &&
-            JSON.stringify(latest.patch) !== JSON.stringify(item.patch)
-          ) {
-            outboxRef.current.push({
-              id: crypto.randomUUID(),
-              method: "update",
-              recordId: item.recordId,
-              version: response.record.version,
-              patch: latest.patch,
-            });
-            put({ ...response.record, ...latest.patch });
-          }
-        } else
-          await request(`/api/records/${encodeURIComponent(item.recordId)}`, {
-            method: "DELETE",
-          });
-        outboxRef.current = outboxRef.current.filter(
-          (queued) => queued.id !== item.id,
-        );
-        syncingItemRef.current = null;
+      while (userRef.current?.id === owner && !signingOutRef.current) {
+        const queued = outboxRef.current.find((entry) => !entry.issue);
+        if (!queued) break;
+        // Retry the exact attempted payload with its original request key. New
+        // typing becomes a subsequent request after the acknowledgement.
+        queued.sent ??= structuredClone({
+          input: queued.input,
+          patch: queued.patch,
+          version: queued.version,
+        });
         persistOutbox();
+        const item = structuredClone(queued);
+        syncingItemRef.current = item.id;
+        try {
+          if (item.method === "create" && item.sent?.input) {
+            const response = await request<{ record: WorkRecord }>(
+              "/api/records",
+              {
+                ...jsonRequest("POST", item.sent.input),
+                headers: { "Idempotency-Key": item.id },
+              },
+            );
+            if (userRef.current?.id !== owner || signingOutRef.current) return;
+            const latest = outboxRef.current.find(
+              (entry) => entry.id === item.id,
+            );
+            const previousId = item.recordId;
+            const edited =
+              latest?.input &&
+              JSON.stringify(latest.input) !== JSON.stringify(item.sent.input);
+            recordsRef.current = recordsRef.current.filter(
+              (record) => record.id !== previousId,
+            );
+            put(response.record);
+            aliasesRef.current.set(previousId, response.record.id);
+            outboxRef.current = outboxRef.current.map((entry) =>
+              remapReference(entry, previousId, response.record.id),
+            );
+            recordsRef.current = recordsRef.current.map((record) =>
+              remapReference(record, previousId, response.record.id),
+            );
+            setRecords(recordsRef.current);
+            if (edited && latest?.input) {
+              const input = remapReference(
+                latest.input,
+                previousId,
+                response.record.id,
+              );
+              const patch = {
+                title: input.title,
+                body: input.body,
+                tags: input.tags,
+                links: input.links,
+                data: input.data,
+              };
+              outboxRef.current.push({
+                id: crypto.randomUUID(),
+                method: "update",
+                recordId: response.record.id,
+                version: response.record.version,
+                base: response.record,
+                patch,
+              });
+              put({ ...response.record, ...patch } as WorkRecord);
+            }
+            remapEditorDrafts(owner, previousId, response.record.id);
+            const current = new URL(location.href);
+            let moved = false;
+            for (const key of ["record", "action"])
+              if (current.searchParams.get(key) === previousId) {
+                current.searchParams.set(key, response.record.id);
+                moved = true;
+              }
+            if (moved) {
+              history.replaceState(
+                history.state,
+                "",
+                current.pathname + current.search,
+              );
+              window.dispatchEvent(new PopStateEvent("popstate"));
+            }
+          } else if (item.method === "update") {
+            let response: { record: WorkRecord };
+            try {
+              response = await request(
+                `/api/records/${encodeURIComponent(item.recordId)}`,
+                {
+                  ...jsonRequest("PATCH", {
+                    ...item.sent?.patch,
+                    version: item.sent?.version,
+                  }),
+                  headers: { "Idempotency-Key": item.id },
+                },
+              );
+            } catch (failure) {
+              if (!(failure instanceof ApiError) || failure.status !== 409)
+                throw failure;
+              const { record: remote } = await request<{ record: WorkRecord }>(
+                `/api/records/${encodeURIComponent(item.recordId)}`,
+              );
+              if (userRef.current?.id !== owner || signingOutRef.current)
+                return;
+              const latest = outboxRef.current.find(
+                (entry) => entry.id === item.id,
+              );
+              if (!latest) continue;
+              if (!item.base || remote.deletedAt) {
+                latest.issue =
+                  "This saved record also changed. Review your local changes before replacing it.";
+                persistOutbox();
+                continue;
+              }
+              const authored = (record: WorkRecord) => ({
+                title: record.title,
+                body: record.body,
+                tags: record.tags,
+                links: record.links,
+                data: record.data,
+              });
+              const local = { ...authored(item.base), ...latest.patch };
+              const merged = mergeAutosaveValues(
+                authored(item.base),
+                local,
+                authored(remote),
+              );
+              if (merged.conflict) {
+                latest.issue =
+                  "Another session edited the same content. Both copies are kept; review this change.";
+                persistOutbox();
+                continue;
+              }
+              const patch = Object.fromEntries(
+                Object.entries(merged.value).filter(
+                  ([key, value]) =>
+                    JSON.stringify(value) !==
+                    JSON.stringify(
+                      authored(remote)[
+                        key as keyof ReturnType<typeof authored>
+                      ],
+                    ),
+                ),
+              );
+              if (!Object.keys(patch).length) {
+                outboxRef.current = outboxRef.current.filter(
+                  (entry) => entry.id !== item.id,
+                );
+                put(remote);
+              } else {
+                latest.id = crypto.randomUUID();
+                latest.patch = patch;
+                latest.version = remote.version;
+                latest.base = remote;
+                delete latest.sent;
+                put({ ...remote, ...patch });
+              }
+              persistOutbox();
+              continue;
+            }
+            if (userRef.current?.id !== owner || signingOutRef.current) return;
+            put(response.record);
+            const latest = outboxRef.current.find(
+              (entry) => entry.id === item.id,
+            );
+            if (
+              latest?.patch &&
+              JSON.stringify(latest.patch) !== JSON.stringify(item.sent?.patch)
+            ) {
+              outboxRef.current.push({
+                id: crypto.randomUUID(),
+                method: "update",
+                recordId: item.recordId,
+                version: response.record.version,
+                base: response.record,
+                patch: latest.patch,
+              });
+              put({ ...response.record, ...latest.patch });
+            }
+          } else {
+            await request(`/api/records/${encodeURIComponent(item.recordId)}`, {
+              method: "DELETE",
+            });
+            if (userRef.current?.id !== owner || signingOutRef.current) return;
+          }
+          outboxRef.current = outboxRef.current.filter(
+            (entry) => entry.id !== item.id,
+          );
+          retryDelayRef.current = 1000;
+          persistOutbox();
+        } catch (failure) {
+          if (userRef.current?.id !== owner || signingOutRef.current) return;
+          if (temporarySaveFailure(failure)) {
+            retryDelayRef.current = Math.min(30000, retryDelayRef.current * 2);
+            break;
+          }
+          const latest = outboxRef.current.find(
+            (entry) => entry.id === item.id,
+          );
+          if (latest)
+            latest.issue =
+              failure instanceof Error
+                ? failure.message
+                : "This change could not be saved. Open it to correct the value.";
+          persistOutbox();
+        }
       }
-      setError("");
-      await refresh();
+      if (
+        userRef.current?.id === owner &&
+        !signingOutRef.current &&
+        !outboxRef.current.length
+      ) {
+        setError("");
+        await refresh();
+      }
     } catch (failure) {
-      if (failure instanceof ApiError && failure.status === 409) {
+      if (!temporarySaveFailure(failure) && userRef.current?.id === owner)
         setError(
-          "An offline draft conflicts with a newer edit. Export your drafts in Settings before replacing anything.",
+          failure instanceof Error
+            ? failure.message
+            : "Changes could not sync.",
         );
-        notify("An offline draft needs your attention in Settings.", "error");
-      } else if (failure instanceof ApiError && failure.status !== 0) {
-        setError(
-          `A device draft could not sync: ${failure.message} Export or recover it in Settings.`,
-        );
-        notify("A device draft needs your attention in Settings.", "error");
-      }
     } finally {
       syncRef.current = false;
       syncingItemRef.current = null;
+      setOutboxRevision((revision) => revision + 1);
     }
-  }, [notify, persistOutbox, put, refresh]);
+  }, [persistOutbox, put, refresh]);
+  const syncSources = useCallback(async () => {
+    const owner = userRef.current?.id;
+    if (!owner || signingOutRef.current || sourceSyncRef.current) return;
+    sourceSyncRef.current = true;
+    try {
+      const canSave = () =>
+        userRef.current?.id === owner && !signingOutRef.current;
+      const changed = await resumePendingSources(owner, canSave);
+      await resumePendingSettings(owner, canSave, (saved) => {
+        preferencesRef.current = { ...DEFAULT_PREFERENCES, ...saved };
+        setPreferences(preferencesRef.current);
+      });
+      if (changed && userRef.current?.id === owner) await refresh();
+    } finally {
+      sourceSyncRef.current = false;
+    }
+  }, [refresh]);
   useEffect(() => {
     const handle = () => {
       void syncOutbox();
+      void syncSources();
       if (document.visibilityState === "visible" && !outboxRef.current.length)
         void refresh().catch(() => undefined);
     };
@@ -589,30 +800,69 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     window.addEventListener("focus", handle);
     const interval = setInterval(handle, 60000);
     void syncOutbox();
+    void syncSources();
     return () => {
       window.removeEventListener("online", handle);
       window.removeEventListener("focus", handle);
       clearInterval(interval);
     };
-  }, [refresh, syncOutbox, user]);
-  const signOut = useCallback(async () => {
+  }, [refresh, syncOutbox, syncSources, user]);
+  useEffect(() => {
+    clearTimeout(retryTimerRef.current);
     if (
-      outboxRef.current.length ||
-      editorDraftsFor(userRef.current?.id ?? "").length
+      !user ||
+      signingOutRef.current ||
+      !outboxRef.current.some((entry) => !entry.issue)
     )
-      throw new ApiError(
-        "You have device drafts. Review or download and discard them in Settings before signing out.",
-        409,
-      );
+      return;
+    retryTimerRef.current = setTimeout(
+      () => void syncOutbox(),
+      retryDelayRef.current,
+    );
+    return () => clearTimeout(retryTimerRef.current);
+  }, [outboxRevision, syncOutbox, user]);
+  const signOut = useCallback(async () => {
+    await Promise.race([
+      flushAutosaves()
+        .then(() => syncOutbox())
+        .catch(() => undefined),
+      new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+    ]);
+    const owner = userRef.current?.id;
+    const retained =
+      outboxRef.current.length > 0 || editorDraftsFor(owner ?? "").length > 0;
     const localSignOut = mode === "local";
-    if (mode !== "demo" && !localSignOut)
-      await request("/api/auth/sign-out", jsonRequest("POST", {}));
+    signingOutRef.current = true;
+    clearTimeout(retryTimerRef.current);
+    try {
+      if (mode !== "demo" && !localSignOut)
+        await request("/api/auth/sign-out", jsonRequest("POST", {}));
+    } catch (failure) {
+      signingOutRef.current = false;
+      setOutboxRevision((revision) => revision + 1);
+      throw failure;
+    }
+    if (retained) {
+      try {
+        sessionStorage.setItem(
+          "work:signout-save-notice",
+          "Unfinished changes are kept on this device and will resume when you sign back in to the same account.",
+        );
+      } catch {
+        /* Optional notice; account-scoped changes remain stored. */
+      }
+    }
     sessionStorage.removeItem("work-demo-active");
     setApiAdapter(null);
     userRef.current = null;
     setUser(null);
     setRecords([]);
     recordsRef.current = [];
+    outboxRef.current = [];
+    aliasesRef.current.clear();
+    updateQueues.current.clear();
+    setPending(0);
+    setOutboxRevision((revision) => revision + 1);
     setMode("cloud");
     if (localSignOut) setConfigured(false);
     setPreferences({ ...DEFAULT_PREFERENCES });
@@ -620,7 +870,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // this page lets the user choose the demo instead of immediately being
     // signed back into the automatically provisioned local account.
     if (!localSignOut) location.assign("/");
-  }, [mode]);
+  }, [mode, syncOutbox]);
   const recoverDraft = useCallback(
     async (queueId: string) => {
       if (syncRef.current)
@@ -632,12 +882,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       );
       if (!draft && !item.input)
         throw new ApiError(
-          "Download the device drafts first; the original record is no longer available.",
+          "Download your local changes first; the original record is no longer available.",
           409,
         );
       const input: RecordInput = item.input ?? {
         kind: draft!.kind,
-        title: `${draft!.title} (recovered device draft)`,
+        title: `${draft!.title} (recovered changes)`,
         body: draft!.body,
         tags: draft!.tags,
         links: draft!.links,
@@ -654,9 +904,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       put(response.record);
       setError("");
       await refresh();
-      notify(
-        "Your draft is saved as a separate record. The newer original is unchanged.",
-      );
+      notify("Your changes are saved as a separate record.");
     },
     [notify, persistOutbox, put, refresh],
   );
@@ -686,6 +934,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       mode,
       loading,
       pending,
+      isPending,
+      syncIssues,
       error,
       configured,
       toasts,
@@ -711,6 +961,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       mode,
       loading,
       pending,
+      isPending,
+      syncIssues,
       error,
       configured,
       toasts,

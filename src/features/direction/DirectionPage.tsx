@@ -27,7 +27,7 @@ import { useGoals } from "../../lib/goals";
 import { useLearningData } from "../learn/useLearningData";
 import { observedProgress, useGoalMeasurements } from "./goalMetrics";
 import { GoalEditor } from "./GoalEditor";
-import { useInlineAutosave } from "./useInlineAutosave";
+import { useAutosave } from "../../lib/autosave";
 import { RichDocumentEditor } from "../content/RichDocumentEditor";
 import { markdownDocument } from "../content/markdownDocument";
 import { SortableList } from "../content/SortableList";
@@ -259,6 +259,7 @@ export function DirectionPage() {
                 owner={workspace.user?.id ?? ""}
                 directions={directions}
                 onSave={model.save}
+                onRefresh={model.refresh}
                 onDelete={async () => {
                   await model.remove(goal);
                 }}
@@ -281,10 +282,14 @@ function DirectionCard({
   const workspace = useWorkspace();
   const { editing } = useEditMode();
   const current = useRef(record);
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const persist = async (patch: RecordPatch) => {
+  if (record.version > current.current.version) current.current = record;
+  const queue = useRef<Promise<WorkRecord>>(Promise.resolve(record));
+  const persist = async (
+    patch: RecordPatch,
+    expectedVersion?: number,
+  ): Promise<WorkRecord> => {
     const task = queue.current
-      .catch(() => undefined)
+      .catch(() => current.current)
       .then(async () => {
         const next = await workspace.update(
           record.id,
@@ -294,7 +299,7 @@ function DirectionCard({
               ? { data: { ...current.current.data, ...patch.data } }
               : {}),
           },
-          current.current.version,
+          expectedVersion ?? current.current.version,
         );
         current.current = next;
         return next;
@@ -328,13 +333,16 @@ function DirectionCard({
     state,
     error,
     flush,
-    recovered,
-    acceptDraft,
-    discardDraft,
-  } = useInlineAutosave(
+    conflict,
+    keepLocal,
+    useSaved,
+  } = useAutosave({
     initial,
-    `work:direction-draft:${workspace.user?.id ?? ""}:${record.id}`,
-    async (value) => {
+    version: record.version,
+    storageKey: `work:direction-draft:${workspace.user?.id ?? ""}:${record.id}`,
+    pending: workspace.isPending(record.id),
+    refresh: workspace.refresh,
+    persist: async (value, expectedVersion) => {
       const links = value.links
         .map((url, index) => ({
           url: normalizeWebUrl(url),
@@ -351,12 +359,35 @@ function DirectionCard({
         researchLinkTitles: links.map((link) => link.title),
         legacyDirection: current.current.data.legacyDirection ?? record.data,
       });
-      await persist({
-        title: value.title.trim() || "Untitled direction",
-        data,
-      });
+      const saved = await persist(
+        {
+          title: value.title.trim() || "Untitled direction",
+          data,
+        },
+        expectedVersion,
+      );
+      return {
+        version: saved.version,
+        value: {
+          title: saved.title,
+          status: field(saved, "status"),
+          startDate: field(saved, "startDate"),
+          endDate: field(saved, "endDate"),
+          links: Array.isArray(saved.data.researchLinks)
+            ? saved.data.researchLinks.filter(
+                (link): link is string => typeof link === "string",
+              )
+            : [],
+          linkTitles: Array.isArray(saved.data.researchLinkTitles)
+            ? saved.data.researchLinkTitles.filter(
+                (title): title is string => typeof title === "string",
+              )
+            : [],
+        },
+        offline: workspace.isPending(record.id),
+      };
     },
-  );
+  });
   const set = (patch: Partial<typeof initial>) =>
     setValue((previous) => ({ ...previous, ...patch }));
   return (
@@ -399,15 +430,15 @@ function DirectionCard({
           )}
         </div>
       </div>
-      {recovered && (
-        <div className="notice notice-warning">
-          Recovered device draft. Review before saving.
+      {conflict && (
+        <div className="notice notice-warning" role="alert">
+          {error || "This direction changed elsewhere."}
           <div className="inline-actions">
-            <Button variant="secondary" onClick={acceptDraft}>
-              Save recovered draft
+            <Button variant="secondary" onClick={() => void keepLocal()}>
+              Keep my changes
             </Button>
-            <Button variant="ghost" onClick={discardDraft}>
-              Load saved direction
+            <Button variant="ghost" onClick={useSaved}>
+              Use saved version
             </Button>
           </div>
         </div>
@@ -479,7 +510,7 @@ function DirectionCard({
                         linkTitles: form.links.map((_, i) =>
                           i === index
                             ? event.target.value
-                            : form.linkTitles?.[i] ?? "",
+                            : (form.linkTitles?.[i] ?? ""),
                         ),
                       })
                     }
@@ -548,7 +579,7 @@ function DirectionCard({
         </div>
       )}
       {editing && <small role="status">{state}</small>}
-      {error && (
+      {error && !conflict && (
         <p className="form-error" role="alert">
           {error}
           <Button variant="ghost" onClick={flush}>

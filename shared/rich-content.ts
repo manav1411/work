@@ -221,6 +221,191 @@ export function validRichDocument(value: unknown): value is RichNode {
     JSON.stringify(value).length <= 70_000
   );
 }
+
+/** Explain rich document validation failures without exposing the rejected value. */
+export function richDocumentError(value: unknown): string | null {
+  if (validRichDocument(value)) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return "This note has an invalid document structure. Its text is still available in the editor.";
+
+  let count = 0;
+  const allowedNodeTypes = types;
+  const walk = (node: unknown, path: string, depth: number): string | null => {
+    if (!node || typeof node !== "object" || Array.isArray(node))
+      return `This note has invalid formatting at ${path}.`;
+    if (depth > 24) return "This note is nested too deeply to save.";
+    if (++count > 5000) return "This note contains too many blocks to save.";
+    const item = node as Record<string, unknown>;
+    const nodeType =
+      typeof item.type === "string" ? item.type : "unknown block";
+    const nodePath = `${path} › ${nodeType}`;
+    if (!allowedNodeTypes.has(nodeType))
+      return `The ${nodeType} block at ${path} is not supported. Paste it as plain text to keep its wording.`;
+    const extraKey = Object.keys(item).find(
+      (key) => !["type", "text", "attrs", "marks", "content"].includes(key),
+    );
+    if (extraKey)
+      return `The ${extraKey} formatting on ${nodePath} is not supported. Paste as plain text to keep the wording.`;
+    if (
+      item.text !== undefined &&
+      (typeof item.text !== "string" || item.text.length > 70_000)
+    )
+      return `Text in ${nodePath} is too large to save.`;
+    if (item.attrs !== undefined) {
+      if (
+        !item.attrs ||
+        typeof item.attrs !== "object" ||
+        Array.isArray(item.attrs)
+      )
+        return `The formatting on ${nodePath} is invalid.`;
+      const attrs = item.attrs as Record<string, unknown>;
+      const extraAttr = Object.keys(attrs).find(
+        (key) =>
+          ![
+            "level",
+            "start",
+            "checked",
+            "language",
+            "colspan",
+            "rowspan",
+            "colwidth",
+            "type",
+            "align",
+          ].includes(key),
+      );
+      if (extraAttr)
+        return `The ${extraAttr} formatting on ${nodePath} is not supported. Paste as plain text to keep the wording.`;
+      if (
+        attrs.level !== undefined &&
+        ![1, 2, 3, 4, 5, 6].includes(Number(attrs.level))
+      )
+        return `The heading level on ${nodePath} is invalid.`;
+      if (attrs.checked !== undefined && typeof attrs.checked !== "boolean")
+        return `The checklist state on ${nodePath} is invalid.`;
+      if (
+        attrs.language !== undefined &&
+        attrs.language !== null &&
+        (typeof attrs.language !== "string" ||
+          !/^[a-z0-9+#.-]{0,40}$/i.test(attrs.language))
+      )
+        return `The code language on ${nodePath} is invalid.`;
+      if (
+        attrs.type !== undefined &&
+        attrs.type !== null &&
+        !["1", "a", "A", "i", "I"].includes(String(attrs.type))
+      )
+        return `The list style on ${nodePath} is unsupported.`;
+      if (
+        attrs.align !== undefined &&
+        attrs.align !== null &&
+        !["left", "center", "right"].includes(String(attrs.align))
+      )
+        return `The table alignment on ${nodePath} is unsupported.`;
+      for (const key of ["start", "colspan", "rowspan"])
+        if (
+          attrs[key] !== undefined &&
+          (!Number.isInteger(attrs[key]) ||
+            Number(attrs[key]) < 1 ||
+            Number(attrs[key]) > 10000)
+        )
+          return `The ${key} formatting on ${nodePath} is invalid.`;
+      if (
+        attrs.colwidth !== undefined &&
+        attrs.colwidth !== null &&
+        (!Array.isArray(attrs.colwidth) ||
+          attrs.colwidth.length > 20 ||
+          attrs.colwidth.some(
+            (width) =>
+              !Number.isInteger(width) ||
+              Number(width) < 0 ||
+              Number(width) > 10000,
+          ))
+      )
+        return `The table column widths on ${nodePath} are invalid.`;
+    }
+    if (item.marks !== undefined && !Array.isArray(item.marks))
+      return `The text formatting on ${nodePath} is invalid.`;
+    if (Array.isArray(item.marks)) {
+      for (const mark of item.marks) {
+        if (!mark || typeof mark !== "object" || Array.isArray(mark))
+          return `The text formatting on ${nodePath} is invalid.`;
+        const typedMark = mark as { type?: unknown; attrs?: unknown };
+        const extraMarkKey = Object.keys(mark).find(
+          (key) => !["type", "attrs"].includes(key),
+        );
+        if (extraMarkKey)
+          return `The ${extraMarkKey} text formatting on ${nodePath} is not supported.`;
+        if (typeof typedMark.type !== "string" || !marks.has(typedMark.type))
+          return `The ${String(typedMark.type ?? "unknown")} text formatting on ${nodePath} is not supported.`;
+        if (
+          typedMark.attrs !== undefined &&
+          (!typedMark.attrs ||
+            typeof typedMark.attrs !== "object" ||
+            Array.isArray(typedMark.attrs))
+        )
+          return `The ${typedMark.type} text formatting on ${nodePath} is invalid.`;
+        if (typedMark.type === "link") {
+          const attrs =
+            typedMark.attrs && typeof typedMark.attrs === "object"
+              ? (typedMark.attrs as Record<string, unknown>)
+              : {};
+          try {
+            const href = String(attrs.href);
+            const url = new URL(href);
+            if (
+              !["http:", "https:"].includes(url.protocol) ||
+              !!url.username ||
+              !!url.password
+            )
+              return `A link in ${nodePath} must use HTTP or HTTPS and cannot contain sign-in details.`;
+            if (href.length > 2048)
+              return `A link in ${nodePath} is too long to save. Remove the tracking parameters or paste the address as text.`;
+            const extraLinkAttr = Object.keys(attrs).find(
+              (key) =>
+                !["href", "target", "rel", "class", "title"].includes(key),
+            );
+            if (extraLinkAttr)
+              return `The ${extraLinkAttr} link formatting on ${nodePath} is not supported.`;
+            if (
+              attrs.title !== undefined &&
+              attrs.title !== null &&
+              (typeof attrs.title !== "string" || attrs.title.length > 500)
+            )
+              return `The link description in ${nodePath} is too long to save.`;
+          } catch {
+            return `A link in ${nodePath} has an invalid address. Use an HTTP or HTTPS link.`;
+          }
+        }
+      }
+    }
+    if (item.content !== undefined && !Array.isArray(item.content))
+      return `The content structure inside ${nodePath} is invalid.`;
+    if (Array.isArray(item.content)) {
+      for (const [index, child] of item.content.entries()) {
+        const problem = walk(
+          child,
+          `${nodePath}, block ${index + 1}`,
+          depth + 1,
+        );
+        if (problem) return problem;
+      }
+    }
+    return null;
+  };
+
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized.length > 70_000)
+      return "This note is too large to save. Keep the text and split it across shorter notes.";
+    const problem = walk(value, "document", 0);
+    return (
+      problem ??
+      "This note has formatting the editor cannot save. Paste it as plain text to keep the wording."
+    );
+  } catch {
+    return "This note has an invalid document structure. Its text is still available in the editor.";
+  }
+}
 export const richContentSchema = z
   .object({
     version: z.literal(1),
@@ -230,12 +415,15 @@ export const richContentSchema = z
     ),
   })
   .strict();
-export function richPlainText(node: RichNode): string {
-  if (node.type === "text") return node.text ?? "";
-  if (node.type === "hardBreak") return "\n";
-  return (node.content ?? [])
-    .map(richPlainText)
-    .join(
+export function richPlainText(node: unknown): string {
+  const visit = (value: unknown): string => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+    const item = value as { type?: unknown; text?: unknown; content?: unknown };
+    if (item.type === "text")
+      return typeof item.text === "string" ? item.text : "";
+    if (item.type === "hardBreak") return "\n";
+    const children = Array.isArray(item.content) ? item.content.map(visit) : [];
+    return children.join(
       [
         "doc",
         "blockquote",
@@ -246,10 +434,12 @@ export function richPlainText(node: RichNode): string {
         "taskList",
         "table",
         "tableRow",
-      ].includes(node.type)
+      ].includes(String(item.type))
         ? "\n"
         : "",
     );
+  };
+  return visit(node);
 }
 export function storedRichDocument(
   data?: Record<string, unknown>,

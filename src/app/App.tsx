@@ -127,6 +127,13 @@ function Login() {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [failureMessage, setFailureMessage] = useState("");
+  const [saveNotice] = useState(() => {
+    try {
+      return sessionStorage.getItem("work:signout-save-notice") || "";
+    } catch {
+      return "";
+    }
+  });
   const login = async () => {
     setBusy(true);
     setFailureMessage("");
@@ -180,6 +187,11 @@ function Login() {
         {!configured && (
           <p className="field-hint">
             Sign-in is unavailable in this environment. You can open the demo.
+          </p>
+        )}
+        {saveNotice && (
+          <p className="field-hint" role="status">
+            {saveNotice}
           </p>
         )}
         {(failureMessage || error) && (
@@ -334,7 +346,7 @@ function AccountMenu({ className = "" }: { className?: string }) {
 
 function Shell() {
   const { editing, section, toggleSection } = useEditMode();
-  const { pending, error, toasts, dismissToast } = useWorkspace();
+  const { pending, syncIssues, error, toasts, dismissToast } = useWorkspace();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileViewport, setMobileViewport] = useState(
     () => window.matchMedia("(max-width: 760px)").matches,
@@ -476,12 +488,18 @@ function Shell() {
               </button>
             </div>
           )}
-          {pending > 0 && (
+          {syncIssues.length > 0 ? (
             <Link className="pending-changes" to="/settings#device-drafts">
-              {pending} unsynced change{pending === 1 ? "" : "s"}. Review in
-              Settings
+              {syncIssues.length} change
+              {syncIssues.length === 1 ? " needs" : "s need"} review
               <ArrowRight size={13} />
             </Link>
+          ) : (
+            pending > 0 && (
+              <span className="pending-changes" role="status">
+                Changes saved on this device · syncing automatically
+              </span>
+            )
           )}
           {error && (
             <div className="notice notice-warning" role="alert">

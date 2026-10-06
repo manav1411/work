@@ -43,7 +43,9 @@ export async function request<T>(
       credentials: "same-origin",
     });
   } catch {
-    throw new ApiError("Connection interrupted. Your draft is still here.");
+    throw new ApiError(
+      "Connection interrupted. Your changes are kept on this device.",
+    );
   }
   const data: unknown = response.headers
     .get("content-type")

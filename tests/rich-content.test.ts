@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { markdownDocument } from "../src/features/content/markdownDocument";
-import { richPlainText, validRichDocument } from "../shared/rich-content";
+import {
+  richDocumentError,
+  richPlainText,
+  validRichDocument,
+} from "../shared/rich-content";
 import { contentDataError } from "../shared/content";
 import { interviewTabs } from "../src/features/interviews/domain";
 import { topicSolveFraction } from "../src/features/learn/foundations/Roadmap";
@@ -19,6 +23,67 @@ describe("safe freeform migration and protected preparation", () => {
     );
     expect(JSON.stringify(document)).toContain('"taskList"');
     expect(JSON.stringify(document)).toContain('"bold"');
+  });
+  it("accepts the attributes emitted by the installed Tiptap extensions", () => {
+    expect(
+      validRichDocument({
+        type: "doc",
+        content: [
+          {
+            type: "orderedList",
+            attrs: { start: 2, type: "i" },
+            content: [
+              {
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [
+                      {
+                        type: "text",
+                        text: "HTTP guide",
+                        marks: [
+                          {
+                            type: "link",
+                            attrs: {
+                              href: "https://developer.mozilla.org/en-US/docs/Web/HTTP",
+                              target: "_blank",
+                              rel: "noopener noreferrer nofollow",
+                              class: null,
+                              title: null,
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            type: "table",
+            content: [
+              {
+                type: "tableRow",
+                content: [
+                  {
+                    type: "tableHeader",
+                    attrs: {
+                      colspan: 1,
+                      rowspan: 1,
+                      colwidth: null,
+                      align: "center",
+                    },
+                    content: [{ type: "paragraph" }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBe(true);
   });
   it("rejects dangerous links, arbitrary nodes/attributes, malformed marks and invalid nesting", () => {
     expect(
@@ -103,6 +168,40 @@ describe("safe freeform migration and protected preparation", () => {
         tabId: "wrong-parent",
       }),
     ).toMatch(/Learning content/);
+  });
+  it("explains rich content save failures while retaining text from unsupported formatting", () => {
+    const unsupported = {
+      type: "doc",
+      content: [
+        {
+          type: "image",
+          attrs: { src: "https://example.com/chart.png" },
+          content: [{ type: "text", text: "Chart notes" }],
+        },
+      ],
+    } as const;
+    expect(richDocumentError(unsupported)).toMatch(
+      /image block.*not supported/i,
+    );
+    expect(richPlainText(unsupported)).toContain("Chart notes");
+
+    const unsafeLink = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Keep this label",
+              marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }],
+            },
+          ],
+        },
+      ],
+    } as const;
+    expect(richDocumentError(unsafeLink)).toMatch(/HTTP or HTTPS/i);
+    expect(richPlainText(unsafeLink)).toContain("Keep this label");
   });
   it("revives a historically hidden or deleted Behavioural tab with original notes", () => {
     const override = {

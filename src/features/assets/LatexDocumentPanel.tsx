@@ -18,6 +18,8 @@ import {
 } from "../../../shared/latex";
 import { Button, Input, Select } from "../../components/ui";
 import { ApiError, jsonRequest, request } from "../../lib/api";
+import { useAutosave } from "../../lib/autosave";
+import { mergeLatexProjects } from "../../lib/latex-autosave";
 import { useEditMode } from "../../lib/edit-mode";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
@@ -41,14 +43,15 @@ export default function LatexDocumentPanel({
 }) {
   const { editing } = useEditMode();
   const { user, refresh, records, update } = useWorkspace();
-  const [project, setProject] = useState<Project>();
+  const [serverProject, setServerProject] = useState<Project | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState(false);
   const [split, setSplit] = useState(50);
   const [path, setPath] = useState("main.tex");
   const [line, setLine] = useState<number>();
   const [error, setError] = useState("");
-  const [state, setState] = useState("Saved");
+  const [compileError, setCompileError] = useState("");
   const [job, setJob] = useState<Job>();
   const [successful, setSuccessful] = useState<Job>();
   const [comparison, setComparison] = useState<Project>();
@@ -56,77 +59,151 @@ export default function LatexDocumentPanel({
   const [revisions, setRevisions] =
     useState<{ id: string; createdAt: string }[]>();
   const [text, setText] = useState<string>();
-  const [conflict, setConflict] = useState(false);
-  const [recover, setRecover] = useState<Project>();
-  const savedSignature = useRef("");
-  const liveProject = useRef(project);
-  liveProject.current = project;
-  const saving = useRef(false);
   const compileTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const alive = useRef(true);
   const compileSequence = useRef(0);
+  const sourceLoadSequence = useRef(0);
+  const latestSavedProject = useRef<Project | null>(null);
+  const compileRef = useRef<(revisionId: string) => Promise<void>>(
+    async () => {},
+  );
   const extractedUrl = useRef(successful?.textUrl);
   const readyCallback = useRef(onSourceReady);
   readyCallback.current = onSourceReady;
   extractedUrl.current = successful?.textUrl;
+  const draftKey = `work:latex-draft:${user?.id || "demo"}:${record.id}`;
+  const api = `/api/latex/${encodeURIComponent(record.id)}`;
+  const loadSource = useCallback(async () => {
+    const sequence = ++sourceLoadSequence.current;
+    setLoading(true);
+    setError("");
+    try {
+      const { project: next } = await request<{ project: Project | null }>(api);
+      if (!alive.current || sequence !== sourceLoadSequence.current) return;
+      setServerProject(next);
+      latestSavedProject.current = next;
+      setLoaded(true);
+      if (next) {
+        setPath(next.mainFile);
+        setSuccessful(next.latestSuccessfulJob);
+      }
+    } catch (failure) {
+      if (!alive.current || sequence !== sourceLoadSequence.current) return;
+      if (failure instanceof ApiError && failure.status === 404) {
+        setLoaded(true);
+      } else {
+        setError(errorMessage(failure));
+      }
+    } finally {
+      if (alive.current && sequence === sourceLoadSequence.current)
+        setLoading(false);
+    }
+  }, [api]);
+  const refreshSource = async () => {
+    const { project: latest } = await request<{ project: Project | null }>(api);
+    setServerProject(latest);
+    latestSavedProject.current = latest;
+    setLoaded(true);
+    if (latest?.latestSuccessfulJob) setSuccessful(latest.latestSuccessfulJob);
+    return latest;
+  };
+  const autosave = useAutosave<Project | null>({
+    initial: serverProject,
+    version: loaded ? (serverProject?.version ?? record.version) : undefined,
+    storageKey: draftKey,
+    enabled: loaded,
+    pending: !loaded,
+    decodeLegacy: (raw) => {
+      if (!raw || typeof raw !== "object") return undefined;
+      const candidate = raw as Project;
+      const parsed = latexSourceSchema.safeParse({
+        files: candidate.files,
+        mainFile: candidate.mainFile,
+        engine: candidate.engine,
+      });
+      if (
+        !parsed.success ||
+        typeof candidate.version !== "number" ||
+        typeof candidate.revisionId !== "string"
+      )
+        return undefined;
+      return { value: candidate, version: candidate.version };
+    },
+    validate: (value) => {
+      if (!value) return null;
+      const parsed = latexSourceSchema.safeParse({
+        files: value.files,
+        mainFile: value.mainFile,
+        engine: value.engine,
+      });
+      return parsed.success
+        ? null
+        : parsed.error.issues[0]?.message || "Check the LaTeX source project.";
+    },
+    merge: mergeLatexProjects,
+    refresh: async () => {
+      await refreshSource();
+    },
+    persist: async (value, expectedVersion) => {
+      if (!value) return;
+      if (alive.current) setCompileError("");
+      const { project: next } = await request<{ project: Project }>(
+        api,
+        jsonRequest("PUT", {
+          expectedVersion: expectedVersion ?? value.version ?? record.version,
+          files: value.files,
+          mainFile: value.mainFile,
+          engine: value.engine,
+        }),
+      );
+      const saved: Project = {
+        ...value,
+        version: next.version,
+        revisionId: next.revisionId,
+      };
+      latestSavedProject.current = saved;
+      if (alive.current) {
+        setServerProject(saved);
+        void refresh();
+        clearTimeout(compileTimer.current);
+        compileTimer.current = setTimeout(
+          () => void compileRef.current(next.revisionId),
+          1000,
+        );
+      }
+      return { version: next.version, value: saved };
+    },
+  });
+  const project = autosave.value || undefined;
+  const setProject = autosave.setValue;
+  const liveProject = useRef(project);
+  liveProject.current = project;
+  const flushRef = useRef(autosave.flush);
+  flushRef.current = autosave.flush;
   useEffect(() => {
     if (project) readyCallback.current?.();
   }, [!!project]);
-  const draftKey = `work:latex-draft:${user?.id || "demo"}:${record.id}`;
-  const api = `/api/latex/${encodeURIComponent(record.id)}`;
   useEffect(() => {
     alive.current = true;
+    void loadSource();
     return () => {
       alive.current = false;
       clearTimeout(compileTimer.current);
     };
-  }, []);
+  }, [loadSource]);
   useEffect(() => {
-    let active = true;
-    void request<{ project: Project | null }>(api)
-      .then(({ project: next }) => {
-        if (!active) return;
-        if (next) {
-          setProject(next);
-          setPath(next.mainFile);
-          savedSignature.current = signature(next);
-          setSuccessful(next.latestSuccessfulJob);
-        }
-        try {
-          const draft = localStorage.getItem(draftKey);
-          if (draft) {
-            const parsed = JSON.parse(draft) as Project;
-            if (
-              latexSourceSchema.safeParse({
-                files: parsed.files,
-                mainFile: parsed.mainFile,
-                engine: parsed.engine,
-              }).success &&
-              (!next || signature(parsed) !== signature(next))
-            )
-              setRecover(parsed);
-          }
-        } catch {
-          /* Device storage is optional. */
-        }
-      })
-      .catch((failure) => {
-        if (active && !(failure instanceof ApiError && failure.status === 404))
-          setError(errorMessage(failure));
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    const flushOnLeave = () => void flushRef.current();
+    window.addEventListener("pagehide", flushOnLeave);
     return () => {
-      active = false;
+      window.removeEventListener("pagehide", flushOnLeave);
+      if (editing) flushOnLeave();
     };
-  }, [api, draftKey]);
+  }, [editing, record.id]);
   useEffect(() => {
     if (
-      loading ||
+      !loaded ||
       !editing ||
       project ||
-      recover ||
       error ||
       record.data.nativeDocument !== true
     )
@@ -146,10 +223,9 @@ export default function LatexDocumentPanel({
     });
     setSource(true);
   }, [
-    loading,
+    loaded,
     editing,
     project,
-    recover,
     error,
     record.version,
     record.data.nativeDocument,
@@ -161,11 +237,15 @@ export default function LatexDocumentPanel({
   useEffect(() => {
     const metadata = record.data.latexProject as
       { revisionId?: string } | undefined;
-    setProject((current) =>
+    setServerProject((current) =>
       current &&
-      metadata?.revisionId === current.revisionId &&
+      (metadata?.revisionId || "") === current.revisionId &&
       record.version > current.version
-        ? { ...current, version: record.version }
+        ? (() => {
+            const next = { ...current, version: record.version };
+            latestSavedProject.current = next;
+            return next;
+          })()
         : current,
     );
   }, [record.version, record.data.latexProject]);
@@ -173,6 +253,7 @@ export default function LatexDocumentPanel({
   const compile = useCallback(
     async (revisionId: string) => {
       const sequence = ++compileSequence.current;
+      setCompileError("");
       try {
         const result = await request<{ job: Job }>(
           `${api}/compile`,
@@ -181,87 +262,20 @@ export default function LatexDocumentPanel({
         if (alive.current && sequence === compileSequence.current) {
           setJob(result.job);
           if (result.job.status === "succeeded") setSuccessful(result.job);
+          setCompileError(
+            result.job.status === "failed"
+              ? "PDF compilation failed. Your source remains saved."
+              : "",
+          );
         }
       } catch (failure) {
         if (alive.current && sequence === compileSequence.current)
-          setError(errorMessage(failure));
+          setCompileError(errorMessage(failure));
       }
     },
     [api],
   );
-  async function save(value = liveProject.current) {
-    if (!value || saving.current || conflict) return undefined;
-    saving.current = true;
-    setState("Saving…");
-    setError("");
-    try {
-      const { project: next } = await request<{ project: Project }>(
-        api,
-        jsonRequest("PUT", {
-          expectedVersion: value.version,
-          files: value.files,
-          mainFile: value.mainFile,
-          engine: value.engine,
-        }),
-      );
-      savedSignature.current = signature(value);
-      if (alive.current) {
-        setProject(
-          (current) =>
-            current && {
-              ...current,
-              version: next.version,
-              revisionId: next.revisionId,
-            },
-        );
-        setState(
-          signature(liveProject.current || value) === signature(value)
-            ? "Saved"
-            : "Unsaved changes",
-        );
-        try {
-          if (signature(liveProject.current || value) === signature(value))
-            localStorage.removeItem(draftKey);
-        } catch {
-          /* Optional. */
-        }
-        void refresh();
-        clearTimeout(compileTimer.current);
-        compileTimer.current = setTimeout(
-          () => void compile(next.revisionId),
-          1000,
-        );
-      }
-      return next;
-    } catch (failure) {
-      if (alive.current) {
-        setError(errorMessage(failure));
-        setState("Draft on this device");
-        if (failure instanceof ApiError && failure.status === 409)
-          setConflict(true);
-      }
-    } finally {
-      saving.current = false;
-    }
-  }
-  useEffect(() => {
-    if (
-      !project ||
-      signature(project) === savedSignature.current ||
-      !editing ||
-      conflict
-    )
-      return;
-    try {
-      localStorage.setItem(draftKey, JSON.stringify(project));
-    } catch {
-      /* Save still works without local storage. */
-    }
-    setState("Unsaved changes");
-    const timer = setTimeout(() => void save(project), 800);
-    return () => clearTimeout(timer);
-    // A successful save changes version and schedules another save if typing continued.
-  }, [project, editing, conflict, draftKey]);
+  compileRef.current = compile;
   useEffect(() => {
     if (!job || !["queued", "running"].includes(job.status)) return;
     let active = true;
@@ -272,10 +286,14 @@ export default function LatexDocumentPanel({
             if (active) {
               setJob(next);
               if (next.status === "succeeded") setSuccessful(next);
+              if (next.status === "failed")
+                setCompileError(
+                  "PDF compilation failed. Your source remains saved.",
+                );
             }
           })
           .catch((failure) => {
-            if (active) setError(errorMessage(failure));
+            if (active) setCompileError(errorMessage(failure));
           }),
       1200,
     );
@@ -401,9 +419,15 @@ export default function LatexDocumentPanel({
       ...(comparison?.files.map((file) => file.path) || []),
     ]),
   ];
-  const dirty = !!project && signature(project) !== savedSignature.current;
+  const savedProject = autosave.savedValue || undefined;
+  const dirty =
+    !!project &&
+    (!savedProject || signature(project) !== signature(savedProject));
   const matching =
-    !!project && !dirty && successful?.revisionId === project.revisionId;
+    !!project &&
+    !dirty &&
+    autosave.state === "Saved" &&
+    successful?.revisionId === project.revisionId;
   const applications = records.filter((item) => item.kind === "application");
   const linked = Array.isArray(record.data.applicationIds)
     ? (record.data.applicationIds as string[])
@@ -423,28 +447,37 @@ export default function LatexDocumentPanel({
               </Button>
             )}
             <span className="latex-state" role="status">
-              {state}
+              {autosave.state}
+            </span>
+            <span className="latex-preview-state" role="status">
               {job && ["queued", "running"].includes(job.status)
-                ? " · Compiling…"
-                : successful
-                  ? matching
-                    ? " · PDF up to date"
-                    : " · Previous PDF"
-                  : ""}
+                ? "Compiling PDF…"
+                : compileError
+                  ? "PDF compilation failed"
+                  : successful
+                    ? matching
+                      ? "PDF up to date"
+                      : "Previous PDF"
+                    : "No compiled PDF"}
             </span>
             <Button
               variant="secondary"
-              disabled={
-                saving.current ||
-                conflict ||
-                (!!job && ["queued", "running"].includes(job.status))
-              }
+              disabled={!!job && ["queued", "running"].includes(job.status)}
               onClick={() =>
                 void (async () => {
                   clearTimeout(compileTimer.current);
-                  const next = dirty ? await save() : project;
+                  if (dirty) await autosave.flush();
                   clearTimeout(compileTimer.current);
-                  if (next) await compile(next.revisionId);
+                  const current = liveProject.current;
+                  const saved =
+                    latestSavedProject.current ||
+                    (autosave.savedValue as Project | null);
+                  if (
+                    current &&
+                    saved &&
+                    signature(current) === signature(saved)
+                  )
+                    await compile(current.revisionId || saved.revisionId);
                 })()
               }
             >
@@ -462,63 +495,64 @@ export default function LatexDocumentPanel({
           </a>
         )}
       </div>
-      {recover && (
-        <div className="latex-draft-recovery" role="status">
-          Unsaved source is on this device.
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setProject({
-                ...recover,
-                version: project?.version || record.version,
-              });
-              setPath(recover.mainFile);
-              setSource(true);
-              setRecover(undefined);
-            }}
-          >
-            Recover draft
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              localStorage.removeItem(draftKey);
-              setRecover(undefined);
-            }}
-          >
-            Discard draft
-          </Button>
-        </div>
+      {autosave.error && !autosave.conflict && (
+        <p className="form-error" role="alert">
+          {autosave.error}
+        </p>
+      )}
+      {compileError && (
+        <p className="form-error" role="alert">
+          {compileError}
+        </p>
       )}
       {error && (
         <p className="form-error" role="alert">
           {error}
         </p>
       )}
-      {conflict && (
-        <Button
-          variant="secondary"
-          onClick={() =>
-            void request<{ project: Project }>(api).then(
-              ({ project: latest }) => {
-                setProject(
-                  (current) =>
-                    current && { ...current, version: latest.version },
-                );
-                setConflict(false);
-                setComparison(latest);
-                setSource(true);
-                setError(
-                  "Review the server changes before saving your recovered source.",
-                );
-              },
-            )
-          }
-        >
-          Review conflicting version
+      {!loaded && !loading && (
+        <Button variant="secondary" onClick={() => void loadSource()}>
+          Retry loading source
         </Button>
       )}
-      {!project && editing && (
+      {autosave.conflict && (
+        <div className="latex-conflict" role="alert">
+          <span>
+            {autosave.error ||
+              "This source changed in another session. Compare the saved copy and choose which to keep."}
+          </span>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              void refreshSource()
+                .then((latest) => {
+                  if (!latest) return;
+                  setComparison(latest);
+                  setComparisonLabel("Latest saved source");
+                  setSource(true);
+                })
+                .catch((failure) => setError(errorMessage(failure)))
+            }
+          >
+            Compare latest
+          </Button>
+          <Button variant="secondary" onClick={() => void autosave.keepLocal()}>
+            Keep my source
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              autosave.useSaved();
+              setComparison(undefined);
+              setComparisonLabel("");
+              if (serverProject) setPath(serverProject.mainFile);
+            }}
+          >
+            Use latest
+          </Button>
+        </div>
+      )}
+      {!project && loaded && editing && (
         <div className="latex-start">
           <Button
             onClick={() => {
@@ -805,7 +839,7 @@ export default function LatexDocumentPanel({
                 .catch((failure) => setError(errorMessage(failure)));
           }}
         >
-          <summary>Source history</summary>
+          <summary>Earlier source versions</summary>
           {revisions ? (
             revisions.map((revision) => (
               <div className="document-version" key={revision.id}>
@@ -826,8 +860,36 @@ export default function LatexDocumentPanel({
                       .catch((failure) => setError(errorMessage(failure)))
                   }
                 >
-                  Review changes
+                  Review
                 </Button>
+                {editing && revision.id !== project.revisionId && (
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      void request<{ project: Project }>(
+                        `${api}/revisions/${encodeURIComponent(revision.id)}`,
+                      )
+                        .then(({ project: earlier }) => {
+                          setProject((current) =>
+                            current
+                              ? {
+                                  ...earlier,
+                                  version: current.version,
+                                  revisionId: current.revisionId,
+                                }
+                              : earlier,
+                          );
+                          setPath(earlier.mainFile);
+                          setComparison(undefined);
+                          setComparisonLabel("");
+                          setSource(true);
+                        })
+                        .catch((failure) => setError(errorMessage(failure)))
+                    }
+                  >
+                    Restore
+                  </Button>
+                )}
               </div>
             ))
           ) : (

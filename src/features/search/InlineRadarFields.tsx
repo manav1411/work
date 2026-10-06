@@ -3,7 +3,7 @@ import { field, type WorkRecord } from "../../../shared/model";
 import { RadarCompanyDataSchema } from "../../../shared/applications";
 import { Button, Input, Textarea } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
-import { useInlineAutosave } from "../direction/useInlineAutosave";
+import { useAutosave } from "../../lib/autosave";
 import { normalizeWebUrl } from "../../../shared/urls";
 
 export function radarNotes(record: WorkRecord) {
@@ -16,7 +16,7 @@ export function radarNotes(record: WorkRecord) {
     .join("\n\n");
 }
 export function InlineRadarFields({ record }: { record: WorkRecord }) {
-  const { user, update } = useWorkspace();
+  const { user, update, isPending, refresh } = useWorkspace();
   const current = useRef(record);
   current.current = record;
   const initial = {
@@ -25,10 +25,12 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
     location: field(record, "location"),
     body: record.data.radarNotesMigrated ? record.body : radarNotes(record),
   };
-  const draft = useInlineAutosave(
+  const draft = useAutosave({
     initial,
-    `work:radar-draft:${user?.id || "local"}:${record.id}`,
-    async (value) => {
+    version: record.version,
+    storageKey: `work:radar-draft:${user?.id || "local"}:${record.id}`,
+    refresh,
+    persist: async (value, expectedVersion) => {
       const data = RadarCompanyDataSchema.parse({
         ...current.current.data,
         careersUrl: value.careersUrl,
@@ -38,21 +40,32 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
       const saved = await update(
         record.id,
         { title: value.title.trim() || "Untitled", body: value.body, data },
-        current.current.version,
+        expectedVersion,
       );
       current.current = saved;
+      return {
+        version: saved.version,
+        value: {
+          title: saved.title === "Untitled" ? "" : saved.title,
+          careersUrl: field(saved, "careersUrl"),
+          location: field(saved, "location"),
+          body: saved.body,
+        },
+        offline: isPending(record.id),
+      };
     },
-  );
+    pending: isPending(record.id),
+  });
   return (
     <div className="stack radar-inline-fields">
-      {draft.recovered && (
-        <div className="application-notice">
-          <span>Recover unsaved company notes?</span>
-          <Button variant="secondary" onClick={draft.acceptDraft}>
-            Recover
+      {draft.conflict && (
+        <div className="application-notice" role="alert">
+          <span>{draft.error || "This company changed elsewhere."}</span>
+          <Button variant="secondary" onClick={() => void draft.keepLocal()}>
+            Keep my changes
           </Button>
-          <Button variant="ghost" onClick={draft.discardDraft}>
-            Use saved
+          <Button variant="ghost" onClick={draft.useSaved}>
+            Use saved version
           </Button>
         </div>
       )}

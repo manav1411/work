@@ -19,11 +19,15 @@ import type {
 } from "../../../shared/model";
 import {
   richPlainText,
+  richDocumentError,
   storedRichDocument,
   validRichDocument,
   type RichNode,
 } from "../../../shared/rich-content";
 import { useWorkspace } from "../../lib/workspace";
+import { useAutosave } from "../../lib/autosave";
+import { getRevisions } from "../../lib/api";
+import type { RecordRevision } from "../../../shared/model";
 import { useEditMode } from "../../lib/edit-mode";
 import { Button, Select, Input } from "../../components/ui";
 import { markdownDocument } from "./markdownDocument";
@@ -77,13 +81,12 @@ export function RichDocumentEditor({
   const { editing } = useEditMode();
   const editingRef = useRef(editing);
   editingRef.current = editing;
-  const { user, create, update, refresh, pending } = useWorkspace();
+  const { user, create, update, refresh, isPending } = useWorkspace();
   const storageKey = `work-rich-draft:${user?.id ?? "anonymous"}:${draftKey}`;
   const server =
     storedRichDocument(record?.data) ??
     initialDocument ??
     markdownDocument(initialBody || record?.body || "");
-  const serverString = JSON.stringify(server);
   const recordRef = useRef(record);
   recordRef.current = record;
   const inputRef = useRef(input);
@@ -102,66 +105,33 @@ export function RichDocumentEditor({
   );
   const writerRef = useRef(writer);
   writerRef.current = writer;
-  const initial = useRef<{
-    document: RichNode;
-    recovered: boolean;
-    version?: number;
-  } | null>(null);
-  if (!initial.current) {
-    let document = server,
-      recovered = false,
-      version = record?.version;
-    try {
-      const draft = JSON.parse(localStorage.getItem(storageKey) ?? "null");
-      if (draft && validRichDocument(draft.document)) {
-        document = draft.document;
-        recovered = JSON.stringify(document) !== serverString;
-        version = draft.version;
-      }
-    } catch {
-      /* Bad optional local draft cannot enter editor schema. */
-    }
-    initial.current = { document, recovered, version };
-  }
-  const saved = useRef(serverString);
-  const baseVersion = useRef(initial.current.version);
-  const current = useRef(initial.current.document);
-  const blocked = useRef(initial.current.recovered);
-  const saving = useRef(false);
-  const alive = useRef(true);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const [status, setStatus] = useState(
-    initial.current.recovered
-      ? "Recovered draft — review before saving"
-      : "Saved",
-  );
-  const [error, setError] = useState("");
-  const [review, setReview] = useState(initial.current.recovered);
-  const [slash, setSlash] = useState<number | null>(null);
-  const slashRef = useRef(slash);
-  slashRef.current = slash;
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [link, setLink] = useState<string | null>(null);
-  const [block, setBlock] = useState(0);
-  const [picked, setPicked] = useState(false);
-  const pickedRef = useRef(picked);
-  pickedRef.current = picked;
-  const grabbedDocument = useRef<RichNode | null>(null);
-  const dragCleanup = useRef<(() => void) | undefined>(undefined);
-  const flush = async () => {
-    clearTimeout(timer.current);
-    const document = current.current,
-      snapshot = JSON.stringify(document);
-    if (
-      snapshot === saved.current ||
-      blocked.current ||
-      saving.current ||
-      pickedRef.current
-    )
-      return;
-    saving.current = true;
-    if (alive.current) setStatus("Saving…");
-    try {
+  const autosave = useAutosave<RichNode>({
+    initial: server,
+    version: record?.version,
+    storageKey,
+    enabled: true,
+    pending: record ? isPending(record.id) : false,
+    decodeLegacy: (raw) => {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw))
+        return undefined;
+      const draft = raw as { document?: unknown; version?: unknown };
+      if (!draft.document || typeof draft.document !== "object")
+        return undefined;
+      const document = validRichDocument(draft.document)
+        ? draft.document
+        : markdownDocument(richPlainText(draft.document as RichNode));
+      return {
+        value: document,
+        ...(typeof draft.version === "number"
+          ? { version: draft.version }
+          : {}),
+      };
+    },
+    refresh: async () => {
+      await refresh();
+    },
+    validate: richDocumentError,
+    persist: async (document, expectedVersion) => {
       const patch: RecordPatch = {
         body: richPlainText(document),
         data: {
@@ -174,44 +144,29 @@ export function RichDocumentEditor({
         },
       };
       const next = persistRef.current
-        ? await persistRef.current(patch, baseVersion.current)
-        : await writerRef.current(patch, baseVersion.current);
-      baseVersion.current = next.version;
-      saved.current = snapshot;
-      if (JSON.stringify(current.current) === snapshot) {
-        try {
-          localStorage.removeItem(storageKey);
-        } catch {
-          /* Optional storage. */
-        }
-      }
-      if (alive.current) {
-        setError("");
-        setStatus(
-          next.id.startsWith("offline-") || pending
-            ? "Saved on device"
-            : "Saved",
-        );
-      }
-    } catch (failure) {
-      blocked.current = true;
-      if (alive.current) {
-        setReview(true);
-        setStatus("Draft retained");
-        setError(
-          failure instanceof Error
-            ? failure.message
-            : "Changes could not be saved.",
-        );
-      }
-    } finally {
-      saving.current = false;
-      if (!blocked.current && JSON.stringify(current.current) !== saved.current)
-        timer.current = setTimeout(() => void flushRef.current(), 800);
-    }
-  };
-  const flushRef = useRef(flush);
-  flushRef.current = flush;
+        ? await persistRef.current(patch, expectedVersion)
+        : await writerRef.current(patch, expectedVersion);
+      return {
+        version: next.version,
+        value: document,
+        offline: next.id.startsWith("offline-") || isPending(next.id),
+      };
+    },
+  });
+  const [linkError, setLinkError] = useState("");
+  const [slash, setSlash] = useState<number | null>(null);
+  const slashRef = useRef(slash);
+  slashRef.current = slash;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [link, setLink] = useState<string | null>(null);
+  const [block, setBlock] = useState(0);
+  const [picked, setPicked] = useState(false);
+  const grabbedDocument = useRef<RichNode | null>(null);
+  const dragCleanup = useRef<(() => void) | undefined>(undefined);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<RecordRevision[] | null>(null);
+  const [historyError, setHistoryError] = useState("");
+  const [historyBusy, setHistoryBusy] = useState(false);
   const editor = useEditor(
     {
       extensions: [
@@ -225,6 +180,7 @@ export function RichDocumentEditor({
             try {
               const parsed = new URL(url);
               return (
+                url.length <= 2048 &&
                 ["http:", "https:"].includes(parsed.protocol) &&
                 !parsed.username &&
                 !parsed.password
@@ -245,7 +201,7 @@ export function RichDocumentEditor({
           placeholder: "Write, paste a link, or type / for blocks…",
         }),
       ],
-      content: initial.current.document,
+      content: autosave.value,
       editable: editing,
       shouldRerenderOnTransaction: true,
       editorProps: {
@@ -273,36 +229,10 @@ export function RichDocumentEditor({
         },
       },
       onUpdate: ({ editor: next }) => {
-        current.current = next.getJSON() as RichNode;
-        const dirty = JSON.stringify(current.current) !== saved.current;
-        try {
-          if (!dirty) localStorage.removeItem(storageKey);
-          else
-            localStorage.setItem(
-              storageKey,
-              JSON.stringify({
-                version: baseVersion.current,
-                document: current.current,
-              }),
-            );
-        } catch {
-          /* Draft remains in editor. */
-        }
-        setStatus(
-          blocked.current
-            ? "Draft retained — review required"
-            : dirty
-              ? "Unsaved"
-              : "Saved",
-        );
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => void flushRef.current(), 800);
+        autosave.setValue(next.getJSON() as RichNode);
         const { $from } = next.state.selection;
         const before = $from.parent.textBetween(0, $from.parentOffset);
         setSlash(before.endsWith("/") ? $from.pos - 1 : null);
-      },
-      onBlur: () => {
-        void flushRef.current();
       },
       onSelectionUpdate: ({ editor: next }) =>
         setBlock(next.state.selection.$from.index(0)),
@@ -313,31 +243,14 @@ export function RichDocumentEditor({
     editor?.setEditable(editing);
   }, [editing, editor]);
   useEffect(() => {
-    if (saving.current) return;
-    if (serverString === saved.current) {
-      if (!blocked.current) baseVersion.current = record?.version;
-      return;
-    }
-    if (JSON.stringify(current.current) !== saved.current) {
-      blocked.current = true;
-      setReview(true);
-      setError(
-        "Saved content changed in another session. Compare it before keeping your draft.",
-      );
-      return;
-    }
-    saved.current = serverString;
-    current.current = server;
-    baseVersion.current = record?.version;
-    editor?.commands.setContent(server, { emitUpdate: false });
-  }, [serverString, record?.version, editor]);
+    if (!editor) return;
+    const currentDocument = editor.getJSON() as RichNode;
+    if (JSON.stringify(currentDocument) !== JSON.stringify(autosave.value))
+      editor.commands.setContent(autosave.value, { emitUpdate: false });
+  }, [autosave.value, editor]);
   useEffect(() => {
-    alive.current = true;
     return () => {
-      alive.current = false;
       dragCleanup.current?.();
-      clearTimeout(timer.current);
-      void flushRef.current();
     };
   }, []);
   if (!editor) return null;
@@ -494,6 +407,7 @@ export function RichDocumentEditor({
             try {
               const url = new URL(normalizeWebUrl(link));
               if (
+                url.href.length > 2048 ||
                 !["http:", "https:"].includes(url.protocol) ||
                 url.username ||
                 url.password
@@ -506,8 +420,11 @@ export function RichDocumentEditor({
                 .setLink({ href: url.href })
                 .run();
               setLink(null);
+              setLinkError("");
             } catch {
-              setError("Enter a valid HTTP or HTTPS link.");
+              setLinkError(
+                "Enter a valid HTTP or HTTPS link under 2,048 characters.",
+              );
             }
           }}
         >
@@ -516,8 +433,12 @@ export function RichDocumentEditor({
             autoFocus
             placeholder="example.com"
             value={link}
-            onChange={(event) => setLink(event.target.value)}
+            onChange={(event) => {
+              setLink(event.target.value);
+              setLinkError("");
+            }}
           />
+          {linkError && <span role="alert">{linkError}</span>}
           <Button type="submit">Apply</Button>
           <Button
             type="button"
@@ -589,7 +510,7 @@ export function RichDocumentEditor({
                   ? null
                   : (editor.getJSON() as RichNode);
                 setPicked(!picked);
-                if (picked) setTimeout(() => void flushRef.current(), 0);
+                if (picked) setTimeout(() => void autosave.flush(), 0);
               } else if (event.key === "Escape") {
                 dragCleanup.current?.();
                 if (grabbedDocument.current)
@@ -659,34 +580,85 @@ export function RichDocumentEditor({
           ))}
         </div>
       )}
-      {(editing || review || error) && (
-        <div className="rich-save-state" role="status">
-          {status}
-          {error && <span role="alert">{error}</span>}
-          {review && (
-            <>
-              <details>
-                <summary>Compare saved content</summary>
-                <pre>{richPlainText(server)}</pre>
-              </details>
-              <Button variant="ghost" onClick={() => void refresh()}>
-                Load latest saved version
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  blocked.current = false;
-                  baseVersion.current = recordRef.current?.version;
-                  setReview(false);
-                  setError("");
-                  void flushRef.current();
-                }}
-              >
-                Keep reviewed draft
-              </Button>
-            </>
+      {editing && record && (
+        <div className="rich-history-tools">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              const next = !showHistory;
+              setShowHistory(next);
+              if (!next || history !== null || historyBusy) return;
+              setHistoryBusy(true);
+              setHistoryError("");
+              void getRevisions(record.id)
+                .then(setHistory)
+                .catch((failure: unknown) =>
+                  setHistoryError(
+                    failure instanceof Error
+                      ? failure.message
+                      : "Earlier content could not be loaded.",
+                  ),
+                )
+                .finally(() => setHistoryBusy(false));
+            }}
+          >
+            {showHistory ? "Hide earlier content" : "Restore earlier content"}
+          </Button>
+          {showHistory && (
+            <div className="rich-history-list">
+              {historyBusy && <span>Loading saved content…</span>}
+              {historyError && <span role="alert">{historyError}</span>}
+              {history?.length === 0 && (
+                <span>No earlier content is available.</span>
+              )}
+              {history?.slice(0, 12).map((revision) => (
+                <Button
+                  key={revision.id}
+                  variant="ghost"
+                  onClick={() => {
+                    const document =
+                      storedRichDocument(revision.data) ??
+                      markdownDocument(revision.body);
+                    editor.commands.setContent(document);
+                    setShowHistory(false);
+                  }}
+                >
+                  Restore from {new Date(revision.createdAt).toLocaleString()}
+                </Button>
+              ))}
+            </div>
           )}
         </div>
+      )}
+      {(editing ||
+        autosave.error ||
+        autosave.conflict ||
+        autosave.state === "Offline—will sync") && (
+        <div className="rich-save-state" role="status">
+          {autosave.state}
+          {autosave.error && <span role="alert">{autosave.error}</span>}
+        </div>
+      )}
+      {autosave.conflict && (
+        <details className="rich-conflict-review">
+          <summary>
+            Another session edited this note. Review both copies.
+          </summary>
+          <div>
+            <strong>Saved version</strong>
+            <pre>{richPlainText(autosave.savedValue)}</pre>
+          </div>
+          <div>
+            <strong>Your edits</strong>
+            <pre>{richPlainText(autosave.value)}</pre>
+          </div>
+          <Button variant="ghost" onClick={() => void autosave.keepLocal()}>
+            Keep my edits
+          </Button>
+          <Button variant="ghost" onClick={autosave.useSaved}>
+            Use saved edits
+          </Button>
+        </details>
       )}
     </div>
   );

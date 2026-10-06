@@ -9,8 +9,9 @@ import {
 } from "../../../shared/goals";
 import { type WorkRecord, niceDate } from "../../../shared/model";
 import { Button, Card, Field, Input, Select } from "../../components/ui";
+import { ApiError } from "../../lib/api";
 import { useEditMode } from "../../lib/edit-mode";
-import { useInlineAutosave } from "./useInlineAutosave";
+import { useAutosave } from "../../lib/autosave";
 export function goalInput(goal: Goal): GoalInput {
   return Object.fromEntries(
     Object.keys(EMPTY_GOAL).map((key) => [
@@ -24,6 +25,7 @@ export function GoalEditor({
   owner,
   directions,
   onSave,
+  onRefresh,
   onDelete,
   observed,
 }: {
@@ -31,6 +33,7 @@ export function GoalEditor({
   owner: string;
   directions: WorkRecord[];
   onSave: (input: GoalInput, previous: Goal) => Promise<Goal>;
+  onRefresh: () => Promise<void>;
   onDelete: () => Promise<void>;
   observed?: number;
 }) {
@@ -49,13 +52,15 @@ export function GoalEditor({
     state,
     error,
     flush,
-    recovered,
-    acceptDraft,
-    discardDraft,
-  } = useInlineAutosave(
+    conflict,
+    keepLocal,
+    useSaved,
+  } = useAutosave({
     initial,
-    `work:goal-draft:${owner}:${goal.id}`,
-    async (value) => {
+    version: goal.version,
+    storageKey: `work:goal-draft:${owner}:${goal.id}`,
+    refresh: onRefresh,
+    persist: async (value, expectedVersion) => {
       const parsed = goalInputSchema.parse({
         ...value,
         title: value.title.trim() || "Untitled goal",
@@ -64,9 +69,24 @@ export function GoalEditor({
           ? { value: current.current.value }
           : {}),
       });
-      current.current = await onSave(parsed, current.current);
+      const base =
+        expectedVersion === undefined || goal.version === expectedVersion
+          ? goal
+          : current.current.version === expectedVersion
+            ? current.current
+            : null;
+      if (!base)
+        throw new ApiError(
+          "This goal changed elsewhere. Review both copies.",
+          409,
+        );
+      current.current = await onSave(parsed, base);
+      return {
+        version: current.current.version,
+        value: goalInput(current.current),
+      };
     },
-  );
+  });
   const set = (patch: Partial<GoalInput>) =>
     setValue((previous) => ({ ...previous, ...patch }));
   const progress = goalProgress({ ...goal, ...form }, observed);
@@ -75,15 +95,15 @@ export function GoalEditor({
     <Card
       className={`stack goal-inline-card ${progress.complete ? "goal-complete" : ""}`}
     >
-      {recovered && (
-        <div className="notice notice-warning">
-          Recovered device draft. Review before saving.
+      {conflict && (
+        <div className="notice notice-warning" role="alert">
+          {error || "This goal changed elsewhere."}
           <div className="inline-actions">
-            <Button variant="secondary" onClick={acceptDraft}>
-              Save recovered draft
+            <Button variant="secondary" onClick={() => void keepLocal()}>
+              Keep my changes
             </Button>
-            <Button variant="ghost" onClick={discardDraft}>
-              Load saved goal
+            <Button variant="ghost" onClick={useSaved}>
+              Use saved version
             </Button>
           </div>
         </div>
@@ -197,11 +217,14 @@ export function GoalEditor({
           </p>
         </>
       )}
-      {legacy && (
-        <p className="notice notice-warning">
-          Recorded {form.measure} progress is preserved. Choose a supported
-          measure explicitly to convert it.
-        </p>
+      {legacy && editing && (
+        <details className="muted">
+          <summary>Previous progress measure</summary>
+          <p>
+            Existing progress is kept. Changing the measure starts a new
+            progress count.
+          </p>
+        </details>
       )}
       <div
         className="goal-progress"
@@ -269,7 +292,7 @@ export function GoalEditor({
         </div>
       )}
       {editing && <small role="status">{state}</small>}
-      {error && (
+      {error && !conflict && (
         <p className="form-error" role="alert">
           {error}
           <Button variant="ghost" onClick={flush}>

@@ -262,13 +262,15 @@ export function AssetsPage() {
                           </button>
                           {editing && (
                             <InlineTitle
+                              draftKey={`document-title:${record.id}`}
+                              version={record.version}
                               value={record.title}
                               label="Variant name"
-                              onSave={async (title) => {
-                                await update(
+                              onSave={async (title, version) => {
+                                return update(
                                   record.id,
                                   { title: title.trim() || "Untitled variant" },
-                                  record.version,
+                                  version,
                                 );
                               }}
                             />

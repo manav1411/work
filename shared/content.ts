@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { arrayField, field, type RecordKind, type WorkRecord } from "./model";
-import { richContentSchema } from "./rich-content";
+import { richContentSchema, richDocumentError } from "./rich-content";
 
 export const CONTENT_VERSION = 1;
 const id = z.string().max(180);
@@ -138,8 +138,21 @@ export function contentDataError(
   if (
     data.richContent !== undefined &&
     !richContentSchema.safeParse(data.richContent).success
-  )
-    return "Unsupported or unsafe rich document.";
+  ) {
+    const content = data.richContent;
+    const document =
+      content && typeof content === "object" && !Array.isArray(content)
+        ? (content as Record<string, unknown>).document
+        : undefined;
+    if (!content || typeof content !== "object" || Array.isArray(content))
+      return "This note has an invalid document structure. Its text is still available in the editor.";
+    const rich = content as Record<string, unknown>;
+    if (rich.version !== 1)
+      return "This note uses an unsupported saved format. Its text is still available in the editor.";
+    if (Object.keys(rich).some((key) => !["version", "document"].includes(key)))
+      return "This note contains unsupported saved formatting. Its text is still available in the editor.";
+    return richDocumentError(document) ?? "This note could not be saved.";
+  }
   const schema = contentDataSchemaFor(kind, data);
   if (!schema) return null;
   const result = schema.safeParse(data);

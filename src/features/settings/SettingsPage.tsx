@@ -19,6 +19,7 @@ import {
 } from "../../components/ui";
 import { downloadFile, jsonRequest, request } from "../../lib/api";
 import { useWorkspace } from "../../lib/workspace";
+import { useAutosave } from "../../lib/autosave";
 import { displayName } from "../../lib/display-name";
 import { editorDraftsFor, type EditorDraft } from "../../lib/device-drafts";
 import {
@@ -35,6 +36,7 @@ interface DeviceDraft {
   method: string;
   input?: Record<string, unknown>;
   patch?: Record<string, unknown>;
+  issue?: string;
 }
 type Confirmation = {
   title: string;
@@ -100,6 +102,7 @@ export function SettingsPage() {
     mode,
     user,
     pending,
+    syncIssues,
     records,
     notify,
     refresh,
@@ -110,14 +113,44 @@ export function SettingsPage() {
     discardDraft,
   } = useWorkspace();
   const location = useLocation();
-  const [form, setForm] = useState<UserPreferences>({ ...preferences });
-  const [username, setUsername] = useState(
-    leetCodeHandle(preferences.leetcode),
-  );
+  const preferenceSave = useAutosave<UserPreferences>({
+    initial: preferences,
+    storageKey: `work:preferences-draft:${user?.id || "anonymous"}:settings`,
+    validate: (value) => {
+      const handle = leetCodeHandle(value.leetcode);
+      if (handle && !/^[A-Za-z0-9_-]{1,40}$/.test(handle))
+        return "Check the LeetCode username.";
+      try {
+        new Intl.DateTimeFormat("en", {
+          timeZone: value.timezone.trim(),
+        }).format();
+      } catch {
+        return "Check the timezone.";
+      }
+      return null;
+    },
+    persist: async (value) => {
+      const handle = leetCodeHandle(value.leetcode);
+      const normalized = {
+        ...value,
+        displayName: value.displayName.trim(),
+        timezone: value.timezone.trim(),
+        leetcode: handle
+          ? `https://leetcode.com/u/${encodeURIComponent(handle)}/`
+          : "",
+      };
+      const saved = await savePreferences(normalized);
+      return { value: saved };
+    },
+  });
+  const { value: form, setValue: setForm, state: saveStatus } = preferenceSave;
+  const username = leetCodeHandle(form.leetcode);
+  const setUsername = (value: string) =>
+    setForm((current) => ({ ...current, leetcode: value }));
   const [busy, setBusy] = useState("");
-  const [saveStatus, setSaveStatus] = useState("");
   const [drafts, setDrafts] = useState<DeviceDraft[]>([]);
   const [editorDrafts, setEditorDrafts] = useState<EditorDraft[]>([]);
+  const [saveRecoveryOpen, setSaveRecoveryOpen] = useState(false);
   const [backup, setBackup] = useState<WorkBackupPreview | null>(null);
   const [backupName, setBackupName] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
@@ -127,59 +160,11 @@ export function SettingsPage() {
   const requestedRecord = records.find((record) => record.id === requestedId);
 
   useEffect(() => {
-    setForm({ ...preferences });
-    setUsername(leetCodeHandle(preferences.leetcode));
-  }, [preferences]);
-  useEffect(() => {
     document.documentElement.dataset.theme = form.theme;
   }, [form.theme]);
   useEffect(() => {
-    const handle = leetCodeHandle(username);
-    if (handle && !/^[A-Za-z0-9_-]{1,40}$/.test(handle)) {
-      setSaveStatus("Check the LeetCode username.");
-      return;
-    }
-    try {
-      new Intl.DateTimeFormat("en", { timeZone: form.timezone.trim() }).format();
-    } catch {
-      setSaveStatus("Check the timezone.");
-      return;
-    }
-    const next = {
-      displayName: form.displayName.trim(),
-      timezone: form.timezone.trim(),
-      reducedMotion: preferences.reducedMotion,
-      theme: form.theme,
-      leetcode: handle
-        ? `https://leetcode.com/u/${encodeURIComponent(handle)}/`
-        : "",
-    };
-    if (
-      next.displayName === preferences.displayName &&
-      next.timezone === preferences.timezone &&
-      next.theme === preferences.theme &&
-      next.leetcode === preferences.leetcode
-    ) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      setSaveStatus("Saving…");
-      void savePreferences(next).then(
-        () => setSaveStatus("Saved"),
-        (error: unknown) => {
-          setSaveStatus("Could not save");
-          notify(
-            error instanceof Error ? error.message : "Settings could not be saved.",
-            "error",
-          );
-        },
-      );
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [form, username, preferences, savePreferences, notify]);
-  useEffect(() => {
     if (!user) return;
-    setEditorDrafts(editorDraftsFor(user.id, records));
+    setEditorDrafts(editorDraftsFor(user.id, records, true));
     try {
       const value: unknown = JSON.parse(
         localStorage.getItem(`work-outbox:${user.id}`) ?? "[]",
@@ -195,10 +180,12 @@ export function SettingsPage() {
       location.hash === "#recovery"
     )
       document.getElementById("recovery")?.scrollIntoView({ block: "start" });
-    if (location.hash === "#device-drafts")
+    if (location.hash === "#device-drafts") {
+      setSaveRecoveryOpen(true);
       document
         .getElementById("device-drafts")
         ?.scrollIntoView({ block: "start" });
+    }
   }, [location.pathname, location.hash]);
 
   const run = async (name: string, operation: () => Promise<void>) => {
@@ -281,100 +268,112 @@ export function SettingsPage() {
         </Card>
       )}
       {(pending > 0 || editorDrafts.length > 0) && (
-        <Card id="device-drafts" className="stack">
-          <h2>
-            Device drafts{" "}
-            <span className="settings-count">
-              {pending + editorDrafts.length}
-            </span>
-          </h2>
-          <p className="muted">
-            These changes are stored on this device. Download them before
-            clearing browser data or leaving your account.
-          </p>
-          <div className="inline-actions">
-            {pending > 0 && (
+        <details
+          id="device-drafts"
+          open={saveRecoveryOpen}
+          onToggle={(event) => setSaveRecoveryOpen(event.currentTarget.open)}
+        >
+          <summary>
+            Save recovery
+            {syncIssues.length > 0 ? ` · ${syncIssues.length} need review` : ""}
+          </summary>
+          <Card className="stack">
+            <h2>
+              Pending changes{" "}
+              <span className="settings-count">
+                {pending +
+                  editorDrafts.filter((draft) => !draft.archived).length}
+              </span>
+            </h2>
+            <p className="muted">
+              Changes resume saving automatically. These tools are available if
+              a change needs review or you want to download a local copy.
+            </p>
+            <div className="inline-actions">
+              {pending > 0 && (
+                <Button
+                  disabled={!!busy}
+                  onClick={() => void run("sync", syncOutbox)}
+                >
+                  <RotateCcw size={16} />
+                  Retry sync
+                </Button>
+              )}
               <Button
+                variant="secondary"
                 disabled={!!busy}
-                onClick={() => void run("sync", syncOutbox)}
+                onClick={downloadDrafts}
               >
-                <RotateCcw size={16} />
-                Retry sync
+                <Download size={16} />
+                Download local changes
               </Button>
-            )}
-            <Button
-              variant="secondary"
-              disabled={!!busy}
-              onClick={downloadDrafts}
-            >
-              <Download size={16} />
-              Download device drafts
-            </Button>
-          </div>
-          {drafts.map((draft) => (
-            <details className="draft-conflict" key={draft.id}>
-              <summary>
-                {records.find((record) => record.id === draft.recordId)
-                  ?.title ?? String(draft.input?.title ?? draft.recordId)}
-              </summary>
-              <pre>{JSON.stringify(draft.patch ?? draft.input, null, 2)}</pre>
-              <div className="inline-actions">
-                <Button
-                  variant="secondary"
-                  disabled={!!busy}
-                  onClick={() =>
-                    void run("recover", () => recoverDraft(draft.id))
-                  }
-                >
-                  Save a separate copy
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={!!busy}
-                  onClick={() =>
-                    confirm({
-                      title: "Discard this device change?",
-                      description:
-                        "Only this unsynced change will be removed. Download your device drafts first if you need a copy.",
-                      action: () => discardDraft(draft.id),
-                    })
-                  }
-                >
-                  Discard change
-                </Button>
-              </div>
-            </details>
-          ))}
-          {editorDrafts.map((draft) => (
-            <details className="draft-conflict" key={draft.key}>
-              <summary>{draft.title}</summary>
-              <pre>{draft.value}</pre>
-              <div className="inline-actions">
-                <Link className="button button-secondary" to={draft.url}>
-                  Review draft
-                </Link>
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    confirm({
-                      title: "Discard this editor draft?",
-                      description:
-                        "Download device drafts first if you need a copy. Saved records remain available.",
-                      action: async () => {
-                        localStorage.removeItem(draft.key);
-                        setEditorDrafts(
-                          editorDraftsFor(user?.id ?? "", records),
-                        );
-                      },
-                    })
-                  }
-                >
-                  Discard draft
-                </Button>
-              </div>
-            </details>
-          ))}
-        </Card>
+            </div>
+            {drafts.map((draft) => (
+              <details className="draft-conflict" key={draft.id}>
+                <summary>
+                  {records.find((record) => record.id === draft.recordId)
+                    ?.title ?? String(draft.input?.title ?? draft.recordId)}
+                </summary>
+                {draft.issue && <p role="alert">{draft.issue}</p>}
+                <pre>{JSON.stringify(draft.patch ?? draft.input, null, 2)}</pre>
+                <div className="inline-actions">
+                  <Button
+                    variant="secondary"
+                    disabled={!!busy}
+                    onClick={() =>
+                      void run("recover", () => recoverDraft(draft.id))
+                    }
+                  >
+                    Save a separate copy
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    disabled={!!busy}
+                    onClick={() =>
+                      confirm({
+                        title: "Discard this device change?",
+                        description:
+                          "Only this unsynced change will be removed. Download local changes first if you need a copy.",
+                        action: () => discardDraft(draft.id),
+                      })
+                    }
+                  >
+                    Discard change
+                  </Button>
+                </div>
+              </details>
+            ))}
+            {editorDrafts.map((draft) => (
+              <details className="draft-conflict" key={draft.key}>
+                <summary>{draft.title}</summary>
+                <pre>{draft.value}</pre>
+                <div className="inline-actions">
+                  <Link className="button button-secondary" to={draft.url}>
+                    Open editor
+                  </Link>
+                  <Button
+                    variant="ghost"
+                    onClick={() =>
+                      confirm({
+                        title: "Discard this local change?",
+                        description:
+                          "Download local changes first if you need a copy. Saved records remain available.",
+                        action: async () => {
+                          localStorage.removeItem(draft.key);
+                          setEditorDrafts(
+                            editorDraftsFor(user?.id ?? "", records, true),
+                          );
+                        },
+                      })
+                    }
+                  >
+                    Discard local change
+                  </Button>
+                </div>
+              </details>
+            ))}
+          </Card>
+        </details>
       )}
       <div className="simple-settings-grid">
         <Card className="stack">
@@ -400,14 +399,16 @@ export function SettingsPage() {
               {mode === "demo" ? "Leave demo" : "Sign out"}
             </Button>
           </div>
-          <div className="stack settings-preferences">
+          <div
+            className="stack settings-preferences"
+            onBlur={() => void preferenceSave.flush()}
+          >
             <Field label="Display name">
               <Input
                 value={form.displayName}
                 maxLength={100}
                 placeholder={user?.name || "Your name"}
                 onChange={(event) => {
-                  setSaveStatus("");
                   setForm({ ...form, displayName: event.target.value });
                 }}
               />
@@ -416,7 +417,6 @@ export function SettingsPage() {
               <Input
                 value={form.timezone}
                 onChange={(event) => {
-                  setSaveStatus("");
                   setForm({ ...form, timezone: event.target.value });
                 }}
                 list="settings-timezones"
@@ -440,7 +440,6 @@ export function SettingsPage() {
                     key={theme}
                     aria-pressed={form.theme === theme}
                     onClick={() => {
-                      setSaveStatus("");
                       document.documentElement.dataset.theme = theme;
                       setForm({ ...form, theme });
                     }}
@@ -459,7 +458,6 @@ export function SettingsPage() {
                 autoComplete="off"
                 maxLength={200}
                 onChange={(event) => {
-                  setSaveStatus("");
                   setUsername(event.target.value);
                 }}
                 placeholder="Username or profile URL"
@@ -468,6 +466,17 @@ export function SettingsPage() {
             <span className="settings-save-status" role="status">
               {saveStatus}
             </span>
+            {preferenceSave.error && <p role="alert">{preferenceSave.error}</p>}
+            {preferenceSave.conflict && (
+              <div className="inline-actions">
+                <Button onClick={() => void preferenceSave.keepLocal()}>
+                  Keep my changes
+                </Button>
+                <Button variant="secondary" onClick={preferenceSave.useSaved}>
+                  Use saved settings
+                </Button>
+              </div>
+            )}
           </div>
         </Card>
         <Card className="stack" id="recovery">
@@ -478,8 +487,8 @@ export function SettingsPage() {
           </p>
           {(pending > 0 || editorDrafts.length > 0) && (
             <p className="field-hint">
-              Device drafts are separate from the saved backup. Download them
-              above before clearing browser data.
+              Changes still waiting to sync are stored on this device. Save
+              recovery above includes an optional download of these changes.
             </p>
           )}
           <Button disabled={!!busy} onClick={() => void exportBackup()}>

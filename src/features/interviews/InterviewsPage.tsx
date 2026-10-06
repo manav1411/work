@@ -66,9 +66,10 @@ export function InterviewsPage() {
     item: InterviewTab,
     patch: Record<string, unknown> = {},
     title = item.title,
+    expectedVersion?: number,
   ) => {
     if (item.legacyPreparationId)
-      return legacyWriter(item)({ title, data: patch });
+      return legacyWriter(item)({ title, data: patch }, expectedVersion);
     const data = {
       ...item.record?.data,
       category: item.record?.data.category ?? "interview-tab",
@@ -77,7 +78,7 @@ export function InterviewsPage() {
       ...patch,
     };
     return item.record
-      ? update(item.record.id, { title, data })
+      ? update(item.record.id, { title, data }, expectedVersion)
       : create({ kind: "note", title, data });
   };
   const upcoming = upcomingInterviews(records);
@@ -165,10 +166,12 @@ export function InterviewsPage() {
           >
             {handle}
             <InlineTitle
+              draftKey={`interview-tab-title:${item.id}`}
+              version={item.record?.version}
               value={item.title}
               autoFocus={newId === item.id}
               label="Tab name"
-              onSave={(title) => saveTab(item, {}, title)}
+              onSave={(title, version) => saveTab(item, {}, title, version)}
             />
           </div>
         )}

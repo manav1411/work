@@ -41,10 +41,7 @@ export function contentRecordWriter({
         expectedVersion !== undefined &&
         base.version !== expectedVersion
       )
-        throw new ApiError(
-          "Saved text changed while you were editing. Review your draft before retrying.",
-          409,
-        );
+        throw new ApiError("This note changed in another session.", 409);
       const seed = input();
       const data = patch.data
         ? { ...(base?.data ?? seed.data), ...patch.data }

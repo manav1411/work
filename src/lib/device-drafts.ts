@@ -1,14 +1,17 @@
 import { recordUrl, type WorkRecord } from "../../shared/model";
+import { remapReference } from "./outbox";
 
 export interface EditorDraft {
   key: string;
   value: string;
   title: string;
   url: string;
+  archived?: boolean;
 }
 export function editorDraftsFor(
   owner: string,
   records: WorkRecord[] = [],
+  includeArchives = false,
 ): EditorDraft[] {
   if (!owner) return [];
   const prefixes = [
@@ -19,15 +22,26 @@ export function editorDraftsFor(
     `work-rich-draft:${owner}:`,
     `work:application-draft:${owner}:`,
     `work:radar-draft:${owner}:`,
+    `work:title-draft:${owner}:`,
+    `work:preferences-draft:${owner}:`,
   ];
   const drafts: EditorDraft[] = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !prefixes.some((prefix) => key.startsWith(prefix))) continue;
-      const value = localStorage.getItem(key);
+      const storageKey = localStorage.key(i);
+      if (!storageKey) continue;
+      const archived = storageKey.startsWith("work:autosave-recovery:");
+      if (archived && !includeArchives) continue;
+      const key = archived
+        ? decodeURIComponent(storageKey.slice("work:autosave-recovery:".length))
+        : storageKey;
+      if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
+      const value = localStorage.getItem(storageKey);
       if (value === null) continue;
-      const id = key.split(":").at(-1) ?? "";
+      const parts = key.split(":");
+      const id = key.startsWith(`work-content-draft:${owner}:story:`)
+        ? (parts.at(-2) ?? "")
+        : (parts.at(-1) ?? "");
       const record = records.find((item) => item.id === id);
       let title =
         record?.title ??
@@ -40,8 +54,8 @@ export function editorDraftsFor(
               : "Notes draft");
       try {
         const parsed = JSON.parse(value);
-        if (typeof parsed?.title === "string" && parsed.title)
-          title = parsed.title;
+        const named = parsed?.value?.title ?? parsed?.title;
+        if (typeof named === "string" && named) title = named;
       } catch {
         /* Note drafts are plain text. */
       }
@@ -49,24 +63,63 @@ export function editorDraftsFor(
       const context = key.startsWith(contentPrefix)
         ? key.slice(contentPrefix.length)
         : "";
-      const url = context.startsWith("interview:")
-        ? `/interviews?interview=${encodeURIComponent(id)}`
-        : context.startsWith("interview-tab:")
-          ? `/interviews?tab=${encodeURIComponent(id)}`
-          : key.startsWith(`work:latex-draft:${owner}:`)
+      const url = key.startsWith(`work:preferences-draft:${owner}:`)
+        ? "/settings"
+        : context.startsWith("story:") || key.includes(":story-title:")
+          ? "/interviews?tab=behavioural"
+          : key.includes(":document-title:")
             ? `/documents?record=${encodeURIComponent(id)}`
-            : key.startsWith(`work:application-draft:${owner}:`) ||
-                key.startsWith(`work:radar-draft:${owner}:`)
-              ? `/applications?record=${encodeURIComponent(id)}`
-              : record
-                ? recordUrl(record)
-                : key.startsWith(contentPrefix)
-                  ? "/interviews"
-                  : "/direction";
-      drafts.push({ key, value, title, url });
+            : key.includes(":learn-title:") || key.includes(":workspace:learn:")
+              ? `/learn?track=${encodeURIComponent(key.includes(":workspace:learn:") ? key.split(":workspace:learn:")[1].split(":")[0] : id)}`
+              : key.includes(":interview-tab-title:")
+                ? `/interviews?tab=${encodeURIComponent(id)}`
+                : key.includes(":process-step-title:")
+                  ? `/applications?record=${encodeURIComponent(parts.at(-2) ?? "")}`
+                  : context.startsWith("interview:")
+                    ? `/interviews?interview=${encodeURIComponent(id)}`
+                    : context.startsWith("interview-tab:")
+                      ? `/interviews?tab=${encodeURIComponent(id)}`
+                      : key.startsWith(`work:latex-draft:${owner}:`)
+                        ? `/documents?record=${encodeURIComponent(id)}`
+                        : key.startsWith(`work:application-draft:${owner}:`) ||
+                            key.startsWith(`work:radar-draft:${owner}:`)
+                          ? `/applications?record=${encodeURIComponent(id)}`
+                          : record
+                            ? recordUrl(record)
+                            : key.startsWith(contentPrefix)
+                              ? "/interviews"
+                              : "/direction";
+      drafts.push({
+        key: storageKey,
+        value,
+        title: archived ? `${title} · previous copy` : title,
+        url,
+        archived,
+      });
     }
   } catch {
     /* Device storage is optional. */
   }
   return drafts;
+}
+
+/** Move pending edits when an offline-created record receives its saved ID. */
+export function remapEditorDrafts(owner: string, from: string, to: string) {
+  for (const draft of editorDraftsFor(owner)) {
+    const parts = draft.key.split(":");
+    if (!parts.includes(from)) continue;
+    const key = parts.map((part) => (part === from ? to : part)).join(":");
+    let value = draft.value;
+    try {
+      value = JSON.stringify(remapReference(JSON.parse(value), from, to));
+    } catch {
+      /* Legacy text is unchanged. */
+    }
+    try {
+      localStorage.setItem(key, value);
+      localStorage.removeItem(draft.key);
+    } catch {
+      /* Keep the original copy if device storage is unavailable. */
+    }
+  }
 }

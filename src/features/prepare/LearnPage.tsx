@@ -56,6 +56,7 @@ export function LearnPage() {
     item: LearningSubject,
     patch: Record<string, unknown>,
     title = item.title,
+    expectedVersion?: number,
   ) => {
     const data = {
       ...item.record?.data,
@@ -64,7 +65,7 @@ export function LearnPage() {
       ...patch,
     };
     return item.record
-      ? update(item.record.id, { title, data })
+      ? update(item.record.id, { title, data }, expectedVersion)
       : create({
           kind: "topic",
           title,
@@ -153,10 +154,12 @@ export function LearnPage() {
             {handle}
             <CompanyGlyph name={item.title} />
             <InlineTitle
+              draftKey={`learn-title:${item.id}`}
+              version={item.record?.version}
               value={item.title}
               label="Topic name"
               autoFocus={newId === item.id}
-              onSave={(title) => saveItem(item, {}, title)}
+              onSave={(title, version) => saveItem(item, {}, title, version)}
             />
           </div>
         )}

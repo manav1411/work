@@ -344,3 +344,34 @@
   overflow: auto;
   color: var(--ink);
 }
+.rich-history-tools {
+  margin-top: 0.65rem;
+}
+.rich-history-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+.rich-history-list > span {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.rich-conflict-review {
+  margin-top: 0.6rem;
+  padding: 0.65rem;
+  border: 1px solid var(--outline, var(--ink));
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+.rich-conflict-review > div {
+  margin-top: 0.6rem;
+}
+.rich-conflict-review pre {
+  max-height: 180px;
+  overflow: auto;
+  padding: 0.55rem;
+  white-space: pre-wrap;
+  background: var(--canvas);
+}
