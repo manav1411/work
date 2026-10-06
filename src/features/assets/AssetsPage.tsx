@@ -51,10 +51,48 @@ export function AssetsPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
+  const wasDocumentExpanded = useRef(false);
+  const documentExpandedScrollY = useRef(0);
+  const resetScrollOnNextExpand = useRef(false);
+  const openedDocumentFromRoute = useRef(
+    params.has("record") || params.has("default"),
+  );
   const documents = documentRecords(records);
   const selected = documents.find(
     (record) => record.id === params.get("record"),
   );
+  useEffect(() => {
+    const expanded = params.has("record") || params.has("default");
+    if (resetScrollOnNextExpand.current && expanded) {
+      documentExpandedScrollY.current = 0;
+      resetScrollOnNextExpand.current = false;
+      requestAnimationFrame(() => window.scrollTo(0, 0));
+    } else if (!wasDocumentExpanded.current && expanded) {
+      documentExpandedScrollY.current = window.scrollY;
+    }
+    if (wasDocumentExpanded.current && !expanded) {
+      requestAnimationFrame(() => {
+        const maxScroll = Math.max(
+          0,
+          document.documentElement.scrollHeight - window.innerHeight,
+        );
+        window.scrollTo(
+          0,
+          Math.min(documentExpandedScrollY.current, maxScroll),
+        );
+      });
+    }
+    wasDocumentExpanded.current = expanded;
+  }, [params]);
+  useEffect(() => {
+    if (!openedDocumentFromRoute.current) return;
+    if (params.has("record") && !selected) return;
+    openedDocumentFromRoute.current = false;
+    documentExpandedScrollY.current = 0;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => window.scrollTo(0, 0)),
+    );
+  }, [params, selected?.id]);
   useEffect(() => {
     if (!params.has("record") && !params.has("default")) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -357,6 +395,7 @@ export function AssetsPage() {
               onClose={() => setAdding(false)}
               onSaved={(record) => {
                 setAdding(false);
+                resetScrollOnNextExpand.current = true;
                 open(record);
               }}
             />

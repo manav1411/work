@@ -33,6 +33,7 @@ export function DocumentViewer({
   } = useDocumentFiles(record?.id, field(record, "primaryAttachmentId"));
   const file = record ? primaryDocumentFile(record, files) : undefined;
   const [blobUrl, setBlobUrl] = useState("");
+  const [pdfData, setPdfData] = useState<Uint8Array>();
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [fileLoading, setFileLoading] = useState(false);
@@ -41,6 +42,7 @@ export function DocumentViewer({
     let active = true;
     let objectUrl = "";
     setBlobUrl("");
+    setPdfData(undefined);
     setText("");
     setError("");
     setFileLoading(!!file);
@@ -50,6 +52,11 @@ export function DocumentViewer({
           if (documentPreviewKind(file) === "text") {
             const content = await blob.text();
             if (active) setText(content.slice(0, 200_000));
+            return;
+          }
+          if (documentPreviewKind(file) === "pdf") {
+            const data = new Uint8Array(await blob.arrayBuffer());
+            if (active) setPdfData(data);
             return;
           }
           objectUrl = URL.createObjectURL(blob);
@@ -151,17 +158,7 @@ export function DocumentViewer({
         !fileLoading &&
         blobUrl &&
         file &&
-        (documentPreviewKind(file) === "pdf" ? (
-          <Suspense
-            fallback={
-              <div className="document-viewer-placeholder" role="status">
-                Rendering PDF…
-              </div>
-            }
-          >
-            <PdfPreview url={blobUrl} />
-          </Suspense>
-        ) : (
+        documentPreviewKind(file) === "image" && (
           <div className="document-preview-image">
             <img
               src={blobUrl}
@@ -173,7 +170,18 @@ export function DocumentViewer({
               }
             />
           </div>
-        ))}
+        )}
+      {!loading && !fileLoading && pdfData && file && (
+        <Suspense
+          fallback={
+            <div className="document-viewer-placeholder" role="status">
+              Rendering PDF…
+            </div>
+          }
+        >
+          <PdfPreview data={pdfData} />
+        </Suspense>
+      )}
       {!loading &&
         !fileLoading &&
         file &&
@@ -192,6 +200,7 @@ export function DocumentViewer({
       {!loading &&
         !fileLoading &&
         !blobUrl &&
+        !pdfData &&
         !(file && documentPreviewKind(file) === "text") &&
         !error &&
         !listError && (

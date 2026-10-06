@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import {
@@ -8,6 +8,8 @@ import {
 import { useDocumentFiles } from "./useDocumentFiles";
 import { documentBlob } from "./files";
 
+const PdfPreview = lazy(() => import("./LatexPdfPreview"));
+
 export function useDocumentPreview(record?: WorkRecord, thumbnail = false) {
   const history = useDocumentFiles(
     record?.id,
@@ -16,27 +18,47 @@ export function useDocumentPreview(record?: WorkRecord, thumbnail = false) {
   const file = record ? primaryDocumentFile(record, history.files) : undefined;
   const [preview, setPreview] = useState({
     url: "",
+    pdfData: undefined as Uint8Array | undefined,
     text: record?.body || "",
     error: "",
   });
   useEffect(() => {
     let active = true;
     let url = "";
-    setPreview({ url: "", text: record?.body || "", error: "" });
+    setPreview({
+      url: "",
+      pdfData: undefined,
+      text: record?.body || "",
+      error: "",
+    });
     if (
       file &&
-      documentPreviewKind(file) !== "download" &&
-      !(thumbnail && documentPreviewKind(file) === "pdf")
+      documentPreviewKind(file) !== "download"
     )
       void documentBlob(file)
         .then(async (blob) => {
           if (documentPreviewKind(file) === "text") {
             const text = (await blob.text()).slice(0, 200_000);
-            if (active) setPreview({ url: "", text, error: "" });
+            if (active)
+              setPreview({ url: "", pdfData: undefined, text, error: "" });
+          } else if (thumbnail && documentPreviewKind(file) === "pdf") {
+            const pdfData = new Uint8Array(await blob.arrayBuffer());
+            if (active)
+              setPreview({
+                url: "",
+                pdfData,
+                text: record?.body || "",
+                error: "",
+              });
           } else {
             url = URL.createObjectURL(blob);
             if (active)
-              setPreview({ url, text: record?.body || "", error: "" });
+              setPreview({
+                url,
+                pdfData: undefined,
+                text: record?.body || "",
+                error: "",
+              });
             else URL.revokeObjectURL(url);
           }
         })
@@ -44,6 +66,7 @@ export function useDocumentPreview(record?: WorkRecord, thumbnail = false) {
           if (active)
             setPreview({
               url: "",
+              pdfData: undefined,
               text: record?.body || "",
               error: "Preview unavailable",
             });
@@ -62,10 +85,17 @@ export function useDocumentPreview(record?: WorkRecord, thumbnail = false) {
 }
 
 export function DocumentPreview({ record }: { record: WorkRecord }) {
-  const { url, text, file, loading, error } = useDocumentPreview(record, true);
+  const { url, pdfData, text, file, loading, error } = useDocumentPreview(
+    record,
+    true,
+  );
   return (
     <div className="document-thumbnail" aria-hidden="true">
-      {url && file && documentPreviewKind(file) === "image" ? (
+      {pdfData ? (
+        <Suspense fallback={<FileText size={30} />}>
+          <PdfPreview data={pdfData} firstPageOnly thumbnail />
+        </Suspense>
+      ) : url && file && documentPreviewKind(file) === "image" ? (
         <img src={url} alt="" />
       ) : text ? (
         <pre>{text.slice(0, 700)}</pre>

@@ -6,15 +6,17 @@ import {
   type PDFDocumentProxy,
 } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import "pdfjs-dist/web/pdf_viewer.css";
+import "./pdf-text-layer.css";
 GlobalWorkerOptions.workerSrc = workerUrl;
 
 function PdfPage({
   document,
   number,
+  thumbnail = false,
 }: {
   document: PDFDocumentProxy;
   number: number;
+  thumbnail?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -38,10 +40,14 @@ function PdfPage({
         if (!active || !canvas.current || !host.current || !layer.current)
           return;
         const base = page.getViewport({ scale: 1 });
-        const scale = Math.min(
-          1.5,
-          Math.max(0.3, (host.current.clientWidth - 16) / base.width),
+        const availableWidth = Math.max(
+          1,
+          host.current.clientWidth - (thumbnail ? 0 : 16),
         );
+        const widthScale = availableWidth / base.width;
+        const scale = thumbnail
+          ? Math.max(0.08, widthScale, host.current.clientHeight / base.height)
+          : Math.min(1.5, Math.max(0.3, widthScale));
         const viewport = page.getViewport({ scale });
         const ratio = window.devicePixelRatio || 1;
         const element = canvas.current;
@@ -85,7 +91,7 @@ function PdfPage({
       active = false;
       cancel?.();
     };
-  }, [document, number, width]);
+  }, [document, number, thumbnail, width]);
   return (
     <div className="latex-pdf-page" ref={host}>
       {error ? (
@@ -100,13 +106,25 @@ function PdfPage({
   );
 }
 
-export default function LatexPdfPreview({ url }: { url: string }) {
+export default function LatexPdfPreview({
+  url,
+  data,
+  firstPageOnly = false,
+  thumbnail = false,
+}: {
+  url?: string;
+  data?: Uint8Array;
+  firstPageOnly?: boolean;
+  thumbnail?: boolean;
+}) {
   const [pdf, setPdf] = useState<PDFDocumentProxy>();
   const [error, setError] = useState("");
   useEffect(() => {
     setPdf(undefined);
     setError("");
-    const task = getDocument({ url, withCredentials: true });
+    const task = data
+      ? getDocument({ data: data.slice() })
+      : getDocument({ url: url || "", withCredentials: true });
     let active = true;
     void task.promise
       .then((value) => {
@@ -119,17 +137,27 @@ export default function LatexPdfPreview({ url }: { url: string }) {
       active = false;
       void task.destroy();
     };
-  }, [url]);
+  }, [url, data]);
   return (
-    <div className="latex-pdf-preview">
+    <div
+      className={`latex-pdf-preview${thumbnail ? " latex-pdf-thumbnail" : ""}`}
+    >
       {error ? (
         <p className="form-error" role="alert">
           {error}
         </p>
       ) : pdf ? (
-        Array.from({ length: pdf.numPages }, (_, index) => (
-          <PdfPage key={`${url}-${index}`} document={pdf} number={index + 1} />
-        ))
+        Array.from(
+          { length: firstPageOnly ? Math.min(1, pdf.numPages) : pdf.numPages },
+          (_, index) => (
+            <PdfPage
+              key={`${url || "data"}-${index}`}
+              document={pdf}
+              number={index + 1}
+              thumbnail={thumbnail}
+            />
+          ),
+        )
       ) : (
         <p role="status">Loading PDF…</p>
       )}
