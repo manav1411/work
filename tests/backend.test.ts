@@ -658,11 +658,14 @@ describe("native compilation preservation", () => {
         (await request(`/api/latex/${document.id}/revisions/${revisionId}`))
           .status,
       ).toBe(404);
-      expect(
-        await (
-          await request(`/api/attachments/${jobs[0].pdfAttachmentId}`)
-        ).text(),
-      ).toBe(pdf);
+      const preservedPdf = await request(
+        `/api/attachments/${jobs[0].pdfAttachmentId}`,
+      );
+      expect(preservedPdf.status).toBe(200);
+      expect(preservedPdf.headers.get("Content-Disposition")).toContain(
+        'filename="Manav_Dodia_Resume.pdf"',
+      );
+      expect(await preservedPdf.text()).toBe(pdf);
       expect(
         (await request(`/api/records/${document.id}/permanent`, "DELETE"))
           .status,

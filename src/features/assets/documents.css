@@ -141,10 +141,6 @@
   flex: 0 0 auto;
   min-height: 40px;
 }
-.document-create-form {
-  display: grid;
-  gap: 1rem;
-}
 .document-link-inline {
   display: flex;
   flex-wrap: wrap;

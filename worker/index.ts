@@ -864,6 +864,8 @@ app.get("/api/attachments/:id", async (context) => {
             context.env.DB,
             context.get("user").id,
             row.record_id,
+            // Attachment access above already checks preserved submitted files.
+            true,
           ),
           row.filename,
         )

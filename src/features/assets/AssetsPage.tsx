@@ -3,19 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { Copy, FileText, Plus, Trash2, X } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import { documentRecords } from "../../../shared/documents";
-import {
-  Button,
-  Card,
-  Field,
-  Input,
-  Modal,
-  PageHeader,
-} from "../../components/ui";
+import { Button, Card, Modal, PageHeader } from "../../components/ui";
 import { useEditMode } from "../../lib/edit-mode";
 import { flushAutosaves } from "../../lib/autosave";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
-import { request, jsonRequest } from "../../lib/api";
+import { ApiError, request, jsonRequest } from "../../lib/api";
 import { DocumentEditor } from "./DocumentEditor";
 import { DocumentPreview } from "./DocumentPreview";
 import { DocumentViewer } from "./DocumentViewer";
@@ -43,16 +36,15 @@ export function AssetsPage() {
   const [params, setParams] = useSearchParams();
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<WorkRecord>();
-  const [creating, setCreating] = useState<{
-    type: "resume" | "letter";
-    source?: WorkRecord;
-  }>();
-  const [name, setName] = useState("");
+  const [newTitleId, setNewTitleId] = useState<string>();
+  const [copyStates, setCopyStates] = useState<
+    Record<string, { sourceId: string; error?: string }>
+  >({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const recordsRef = useRef(records);
   recordsRef.current = records;
-  const copyTargets = useRef(new Map<string, WorkRecord>());
+  const creatingRef = useRef(false);
   const pageRef = useRef<HTMLDivElement>(null);
   const wasDocumentExpanded = useRef(false);
   const documentExpandedScrollY = useRef(0);
@@ -64,6 +56,24 @@ export function AssetsPage() {
   const selected = documents.find(
     (record) => record.id === params.get("record"),
   );
+  useEffect(() => {
+    if (!newTitleId || !editing) return;
+    const tab = document.getElementById(`document-tab-${newTitleId}`);
+    const input = tab?.querySelector<HTMLInputElement>("input.inline-title");
+    if (!input) return;
+    input.focus({ preventScroll: true });
+    input.select();
+    const scroller = tab?.closest<HTMLElement>(".document-tabs");
+    if (tab && scroller) {
+      const tabBounds = tab.getBoundingClientRect();
+      const bounds = scroller.getBoundingClientRect();
+      if (tabBounds.left < bounds.left)
+        scroller.scrollLeft += tabBounds.left - bounds.left;
+      else if (tabBounds.right > bounds.right)
+        scroller.scrollLeft += tabBounds.right - bounds.right;
+    }
+    setNewTitleId(undefined);
+  }, [newTitleId, editing, records]);
   useEffect(() => {
     const expanded = params.has("record") || params.has("default");
     if (resetScrollOnNextExpand.current && expanded) {
@@ -117,11 +127,63 @@ export function AssetsPage() {
   function open(record: WorkRecord) {
     setParams({ record: record.id });
   }
-  async function createNative(type: "resume" | "letter", source?: WorkRecord) {
+  async function finishCopy(targetId: string, sourceId: string, retry = false) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // A lost response may have completed the copy already. Keep that snapshot.
+      const existing =
+        retry || attempt > 0
+          ? await request<{ project: unknown }>(
+              `/api/latex/${encodeURIComponent(targetId)}`,
+            )
+          : null;
+      if (existing?.project) break;
+      try {
+        await request(
+          `/api/latex/${encodeURIComponent(sourceId)}/copy`,
+          jsonRequest("POST", { targetAssetId: targetId }),
+        );
+        break;
+      } catch (failure) {
+        // Naming the new tab can advance its version while the copy is saving.
+        if (!(
+          failure instanceof ApiError &&
+          failure.status === 409 &&
+          attempt < 2
+        ))
+          throw failure;
+      }
+    }
+    await refresh();
+    setCopyStates((current) => {
+      const next = { ...current };
+      delete next[targetId];
+      return next;
+    });
+  }
+  async function retryCopy(targetId: string, sourceId: string) {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setBusy(true);
     setError("");
-    const title = name.trim();
-    const operationKey = `${type}:${source?.id ?? "blank"}:${title}`;
+    setCopyStates((current) => ({ ...current, [targetId]: { sourceId } }));
+    try {
+      await finishCopy(targetId, sourceId, true);
+    } catch (failure) {
+      setCopyStates((current) => ({
+        ...current,
+        [targetId]: { sourceId, error: errorMessage(failure) },
+      }));
+    } finally {
+      creatingRef.current = false;
+      setBusy(false);
+    }
+  }
+  async function createNative(type: "resume" | "letter", source?: WorkRecord) {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setBusy(true);
+    setError("");
+    let copyTarget: { id: string; sourceId: string } | undefined;
     try {
       let latestSource = source;
       if (source) {
@@ -138,37 +200,43 @@ export function AssetsPage() {
         }
       }
 
-      let result = copyTargets.current.get(operationKey);
-      if (!result) {
-        result = await create({
-          kind: "asset",
-          title:
-            title ||
-            (type === "resume" ? "Untitled resume" : "Untitled cover letter"),
-          data: {
-            type,
-            nativeDocument: true,
-            order: documents.filter(
-              (item) => native(item) && familyOf(item) === type,
-            ).length,
-          },
-        });
-        copyTargets.current.set(operationKey, result);
-      }
+      const result = await create({
+        kind: "asset",
+        title: latestSource
+          ? `${latestSource.title.slice(0, 233)} (copy)`
+          : "Untitled",
+        data: {
+          type,
+          nativeDocument: true,
+          order: recordsRef.current.filter(
+            (item) => native(item) && familyOf(item) === type,
+          ).length,
+        },
+      });
       if (latestSource?.data.latexProject) {
-        await request(
-          `/api/latex/${encodeURIComponent(latestSource.id)}/copy`,
-          jsonRequest("POST", { targetAssetId: result.id }),
-        );
+        const sourceId = latestSource.id;
+        copyTarget = { id: result.id, sourceId };
+        setCopyStates((current) => ({
+          ...current,
+          [result.id]: { sourceId },
+        }));
       }
-      await refresh();
-      copyTargets.current.delete(operationKey);
-      setCreating(undefined);
-      setName("");
       open(result);
+      setNewTitleId(result.id);
+      if (copyTarget) await finishCopy(copyTarget.id, copyTarget.sourceId);
     } catch (failure) {
-      setError(errorMessage(failure));
+      const failedCopy = copyTarget;
+      if (failedCopy)
+        setCopyStates((current) => ({
+          ...current,
+          [failedCopy.id]: {
+            sourceId: failedCopy.sourceId,
+            error: errorMessage(failure),
+          },
+        }));
+      else setError(errorMessage(failure));
     } finally {
+      creatingRef.current = false;
       setBusy(false);
     }
   }
@@ -178,6 +246,7 @@ export function AssetsPage() {
         <Button
           variant="danger"
           className="document-variant-delete"
+          disabled={busy && !!copyStates[record.id]}
           onClick={() => setDeleting(record)}
           aria-label={`Delete ${record.title}`}
         >
@@ -220,11 +289,8 @@ export function AssetsPage() {
             <Button
               variant="secondary"
               className="document-tab-new"
-              onClick={() => {
-                setCreating({ type });
-                setName("");
-                setError("");
-              }}
+              disabled={busy}
+              onClick={() => void createNative(type)}
             >
               <Plus size={16} /> New blank {title.toLowerCase()}
             </Button>
@@ -276,6 +342,7 @@ export function AssetsPage() {
                 draftKey={`document-title:${record.id}`}
                 version={record.version}
                 value={record.title}
+                autoFocus={newTitleId === record.id}
                 label={`${title} document name`}
                 onSave={(name, version) =>
                   update(
@@ -293,11 +360,8 @@ export function AssetsPage() {
                   variant="secondary"
                   className="document-variant-copy"
                   aria-label={`Copy ${record.title}`}
-                  onClick={() => {
-                    setCreating({ type, source: record });
-                    setName(`Copy of ${record.title}`);
-                    setError("");
-                  }}
+                  disabled={busy || !!copyStates[record.id]}
+                  onClick={() => void createNative(type, record)}
                 >
                   <Copy size={16} /> Copy
                 </Button>
@@ -392,7 +456,30 @@ export function AssetsPage() {
                   role="tabpanel"
                   aria-label={current?.title || family.title}
                 >
-                  {current ? (
+                  {current && copyStates[current.id] ? (
+                    <div
+                      role={copyStates[current.id].error ? "alert" : "status"}
+                    >
+                      <p>
+                        {copyStates[current.id].error ||
+                          "Copying document source…"}
+                      </p>
+                      {copyStates[current.id].error && (
+                        <Button
+                          variant="secondary"
+                          disabled={busy}
+                          onClick={() =>
+                            void retryCopy(
+                              current.id,
+                              copyStates[current.id].sourceId,
+                            )
+                          }
+                        >
+                          Retry copy
+                        </Button>
+                      )}
+                    </div>
+                  ) : current ? (
                     <Suspense fallback={<p role="status">Loading document…</p>}>
                       <LatexPanel key={current.id} record={current} />
                     </Suspense>
@@ -464,60 +551,6 @@ export function AssetsPage() {
       </section>
       <ProfileLinks />
       <Modal
-        open={!!creating}
-        title={
-          creating?.source
-            ? "Create a copy"
-            : `New blank ${creating?.type === "resume" ? "resume" : "cover letter"}`
-        }
-        onClose={() => {
-          setCreating(undefined);
-          setName("");
-        }}
-      >
-        {creating && (
-          <form
-            className="document-create-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createNative(creating.type, creating.source);
-            }}
-          >
-            <Field label="Name">
-              <Input
-                autoFocus
-                required
-                disabled={busy}
-                maxLength={240}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </Field>
-            {error && (
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-            )}
-            <div className="inline-actions">
-              <Button type="submit" disabled={busy || !name.trim()}>
-                {creating.source ? "Create copy" : "Create document"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  setCreating(undefined);
-                  setName("");
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        )}
-      </Modal>
-      <Modal
         open={!!deleting}
         title={`Delete ${deleting?.title || "document"}?`}
         onClose={() => setDeleting(undefined)}
@@ -532,6 +565,11 @@ export function AssetsPage() {
                 try {
                   await remove(deleting!.id);
                   if (selected?.id === deleting!.id) setParams({});
+                  setCopyStates((current) => {
+                    const next = { ...current };
+                    delete next[deleting!.id];
+                    return next;
+                  });
                   setDeleting(undefined);
                 } catch (failure) {
                   setError(errorMessage(failure));

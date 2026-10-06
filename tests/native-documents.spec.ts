@@ -50,10 +50,21 @@ test("native documents expand inline, save source and copy independently", async
     if (/^\/api\/records\/[^/]+\/attachments$/.test(path))
       return route.fulfill({ json: { attachments: [] } });
     const recordRoute = /^\/api\/records\/([^/]+)$/.exec(path);
-    if (recordRoute && method === "GET")
-      return route.fulfill({
-        json: { record: records.find((item) => item.id === recordRoute[1]) },
-      });
+    if (recordRoute) {
+      const record = records.find((item) => item.id === recordRoute[1])!;
+      if (method === "GET") return route.fulfill({ json: { record } });
+      if (method === "PATCH") {
+        const input = route.request().postDataJSON();
+        if (input.version !== record.version)
+          return route.fulfill({
+            status: 409,
+            json: { error: "Revision conflict", record },
+          });
+        record.title = input.title ?? record.title;
+        record.version++;
+        return route.fulfill({ json: { record } });
+      }
+    }
     const match = /^\/api\/latex\/([^/]+)(.*)$/.exec(path);
     if (match) {
       const [, id, tail] = match;
@@ -123,13 +134,9 @@ test("native documents expand inline, save source and copy independently", async
   await page
     .getByRole("button", { name: "New blank resume", exact: true })
     .click();
-  await page
-    .locator(".document-create-form")
-    .getByLabel("Name", { exact: true })
-    .fill("Resume");
-  await page
-    .getByRole("button", { name: "Create document", exact: true })
-    .click();
+  const resumeName = page.getByLabel("Resume document name", { exact: true });
+  await resumeName.fill("Resume");
+  await resumeName.blur();
   const editor = page.locator(
     ".latex-source-editor .cm-content[contenteditable=true]",
   );
@@ -139,10 +146,12 @@ test("native documents expand inline, save source and copy independently", async
     .poll(() => projects.get("asset-1")?.files[0].content)
     .toBe(source);
   await page.getByRole("button", { name: "Copy Resume", exact: true }).click();
-  const copy = page.locator(".document-create-form");
-  await copy.getByLabel("Name", { exact: true }).fill("Security resume");
-  await copy.getByRole("button", { name: "Create copy", exact: true }).click();
   await expect(page).toHaveURL(/\/documents\?record=asset-2$/);
+  const copyName = page
+    .getByRole("tab", { name: "Resume (copy)", exact: true })
+    .getByLabel("Resume document name", { exact: true });
+  await copyName.fill("Security resume");
+  await copyName.blur();
   await expect(
     page.getByRole("heading", { name: /^Documents\.?$/, exact: true }),
   ).toBeVisible();

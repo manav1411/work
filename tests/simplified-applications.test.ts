@@ -41,16 +41,26 @@ describe("document families", () => {
     expect(resume.body).toBe("Submitted text");
     expect(resume.data.primaryAttachmentId).toBe("pdf");
   });
-  it("honours the main variant ahead of other uploaded or native projects", () => {
-    const main = record({
-      id: "main",
-      data: { type: "resume", documentDefault: true },
+  it("prefers native projects and ignores the retired main designation", () => {
+    const uploaded = record({
+      id: "uploaded",
+      updatedAt: "2026-10-02T00:00:00Z",
+      data: {
+        type: "resume",
+        documentDefault: true,
+        primaryAttachmentId: "pdf",
+      },
     });
     const variant = record({
       id: "variant",
       data: { type: "resume", latexProject: { revisionId: "source" } },
     });
-    expect(getDocumentLinks([variant, main]).resume).toEqual({ record: main });
+    expect(getDocumentLinks([variant, uploaded]).resume).toEqual({
+      record: variant,
+    });
+    expect(getDocumentLinks([uploaded, variant]).resume).toEqual({
+      record: variant,
+    });
     expect(getDocumentLinks([])).toEqual({ resume: {}, coverLetter: {} });
   });
   it("ignores deleted and unrelated records and retains safe generic profile destinations", () => {

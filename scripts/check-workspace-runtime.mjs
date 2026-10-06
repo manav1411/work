@@ -140,10 +140,10 @@ function readArchive(bytes) {
 
 try {
   const config = JSON.parse(readFileSync("dist/work/wrangler.json", "utf8"));
-  assert.equal(
-    config.triggers?.crons?.length ?? 0,
-    0,
-    "Retired connections have no scheduled provider jobs",
+  assert.deepEqual(
+    config.triggers?.crons,
+    ["* * * * *"],
+    "Native PDF autosaves have a scheduled recovery sweep",
   );
   const db = await miniflare.getD1Database("DB");
   const files = await miniflare.getR2Bucket("FILES");
