@@ -291,7 +291,9 @@ export function ApplicationsPage() {
                           {webDestination(field(company, "careersUrl")) ? (
                             <a
                               className="radar-title-link"
-                              href={webDestination(field(company, "careersUrl"))}
+                              href={webDestination(
+                                field(company, "careersUrl"),
+                              )}
                               target="_blank"
                               rel="noopener noreferrer"
                             >
@@ -446,11 +448,14 @@ export function ApplicationsPage() {
                         ? niceDate(applicationDate(record))
                         : "—"}
                     </td>
-                    <td>{field(record, "location") || "—"}</td>
+                    <td title={field(record, "location") || "—"}>
+                      {field(record, "location") || "—"}
+                    </td>
                     <td>
                       <button
                         className="application-notes-preview application-open"
                         aria-label={`Open notes for ${record.title}`}
+                        title={record.body || "—"}
                         onClick={() => setParams({ record: record.id })}
                       >
                         <span>{record.body || "—"}</span>
@@ -497,11 +502,16 @@ export function ApplicationsPage() {
                   </div>
                   <div>
                     <dt>Location</dt>
-                    <dd>{field(record, "location") || "—"}</dd>
+                    <dd title={field(record, "location") || "—"}>
+                      {field(record, "location") || "—"}
+                    </dd>
                   </div>
                   <div>
                     <dt>Notes</dt>
-                    <dd className="application-notes-preview">
+                    <dd
+                      className="application-notes-preview"
+                      title={record.body || "—"}
+                    >
                       <span>{record.body || "—"}</span>
                     </dd>
                   </div>

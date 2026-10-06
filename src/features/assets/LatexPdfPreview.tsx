@@ -59,14 +59,22 @@ function PdfPage({
           viewport,
           transform: [ratio, 0, 0, ratio, 0, 0],
         });
+        const textLayer: { current?: TextLayer } = {};
+        cancel = () => {
+          render.cancel();
+          textLayer.current?.cancel();
+        };
+        const textContent = await page.getTextContent();
+        if (!active) return;
         const text = new TextLayer({
-          textContentSource: await page.getTextContent(),
+          textContentSource: textContent,
           container: layer.current,
           viewport,
         });
+        textLayer.current = text;
         cancel = () => {
           render.cancel();
-          text.cancel();
+          textLayer.current?.cancel();
         };
         await Promise.all([render.promise, text.render()]);
       })
@@ -84,7 +92,7 @@ function PdfPage({
         <p role="alert">{error}</p>
       ) : (
         <div className="latex-pdf-sheet">
-          <canvas ref={canvas} aria-label={`PDF page ${number}`} />
+          <canvas key={width} ref={canvas} aria-label={`PDF page ${number}`} />
           <div ref={layer} className="textLayer" />
         </div>
       )}
@@ -120,7 +128,7 @@ export default function LatexPdfPreview({ url }: { url: string }) {
         </p>
       ) : pdf ? (
         Array.from({ length: pdf.numPages }, (_, index) => (
-          <PdfPage key={index} document={pdf} number={index + 1} />
+          <PdfPage key={`${url}-${index}`} document={pdf} number={index + 1} />
         ))
       ) : (
         <p role="status">Loading PDF…</p>

@@ -164,6 +164,7 @@
 }
 .document-viewer-inline {
   min-height: 0;
+  overflow-anchor: none;
 }
 .document-inline-empty {
   padding: 1rem 0;
@@ -705,17 +706,24 @@
   background: var(--paper);
   color: var(--ink);
 }
-.document-viewer-close.button-ghost:not(:disabled):hover {
-  background: var(--pink);
-  box-shadow: 2px 2px 0 var(--ink);
-  transform: translate(-1px, -1px);
+.document-viewer-toolbar .button {
+  height: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.document-viewer-toolbar .button.icon-button {
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
 }
 .document-viewer-title {
   flex: 1;
   min-width: 180px;
   overflow-wrap: anywhere;
 }
-.document-viewer-title h1 {
+.document-viewer-title :is(h1, h2) {
   font-size: clamp(1.25rem, 2.4vw, 2rem);
   margin: 0 0 0.25rem;
 }
@@ -738,6 +746,7 @@
   height: 72dvh;
   border-radius: 11px;
   overflow: auto;
+  overflow-anchor: none;
 }
 .document-viewer:fullscreen .document-preview-frame {
   min-height: calc(100dvh - 110px);

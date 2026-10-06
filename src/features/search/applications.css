@@ -295,9 +295,11 @@
   width: 18%;
 }
 .application-table td:last-child {
+  width: 18%;
   min-width: 0;
 }
 .application-table td > * {
+  min-width: 0;
   max-width: 100%;
 }
 .application-table .application-primary-link {
@@ -343,9 +345,10 @@
 }
 .application-notes-preview {
   display: block;
-  width: 100%;
   min-width: 0;
+  width: 100%;
   max-width: 100%;
+  box-sizing: border-box;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -359,6 +362,7 @@
 .application-notes-preview > span {
   display: block;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -440,7 +444,9 @@
   font-weight: 750;
   text-decoration: none;
   box-shadow: 2px 2px 0 var(--ink);
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
 }
 .radar-card .radar-careers-button:hover {
   color: #202128;
@@ -623,15 +629,38 @@
   .application-mobile-fields div:last-child {
     grid-column: 1 / -1;
   }
+  .application-mobile-fields div {
+    min-width: 0;
+  }
   .application-mobile-fields dt {
     font-size: 0.72rem;
     color: var(--muted);
     margin-bottom: 0.3rem;
   }
   .application-mobile-fields dd {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
     margin: 0;
     font-size: 0.83rem;
     overflow-wrap: anywhere;
+  }
+  .application-mobile-fields dd.application-notes-preview {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .application-mobile-fields dd.application-notes-preview > span {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 @media (max-width: 650px) {

@@ -22,6 +22,16 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
     page.getByRole("heading", { name: "Roadmap", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".learn-roadmap")).toContainText("/150");
+  const selectedTrack = page.getByRole("tab", {
+    name: "DSA & Python",
+    exact: true,
+  });
+  await selectedTrack.hover();
+  await expect
+    .poll(() =>
+      selectedTrack.evaluate((tab) => getComputedStyle(tab).transform),
+    )
+    .toBe("none");
   await expect(
     page.getByRole("button", { name: "Weeks", exact: true }),
   ).toHaveCount(0);

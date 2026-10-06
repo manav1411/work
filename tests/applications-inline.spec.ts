@@ -13,11 +13,15 @@ test("application status, process and scheduling stay inline and preserve each o
     id: "synthetic-app",
     kind: "application",
     title: "Platform engineer",
-    body: "",
+    body: "Long application note used to check that the row stays compact: prepare an example about making platform tooling easier to operate, document a measurable result, and bring a question about on-call ownership.",
     tags: [],
     links: [],
     version: 1,
-    data: { company: "Google", recruitmentSteps: commonRecruitmentProcess() },
+    data: {
+      company: "Google",
+      location: "Melbourne, Australia — hybrid with occasional travel",
+      recruitmentSteps: commonRecruitmentProcess(),
+    },
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-01T00:00:00Z",
     deletedAt: null,
@@ -70,6 +74,56 @@ test("application status, process and scheduling stay inline and preserve each o
     return route.fulfill({ json: {} });
   });
   await page.goto("/applications");
+  const notesPreview = page
+    .locator(".application-table .application-notes-preview")
+    .first();
+  await expect(notesPreview).toHaveAttribute("title", base.body);
+  const noteOverflow = await notesPreview
+    .locator("span")
+    .evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      textOverflow: getComputedStyle(element).textOverflow,
+      boxWidth: element.getBoundingClientRect().width,
+      parentWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
+      parentScrollWidth: element.parentElement?.scrollWidth ?? 0,
+      parentClientWidth: element.parentElement?.clientWidth ?? 0,
+    }));
+  expect(noteOverflow.textOverflow).toBe("ellipsis");
+  expect(noteOverflow.scrollWidth).toBeGreaterThan(noteOverflow.clientWidth);
+  expect(noteOverflow.boxWidth).toBeLessThanOrEqual(
+    noteOverflow.parentWidth + 1,
+  );
+  expect(noteOverflow.parentScrollWidth).toBeLessThanOrEqual(
+    noteOverflow.parentClientWidth + 1,
+  );
+  await expect(
+    page.locator(".application-table td[title*='Melbourne']").first(),
+  ).toBeVisible();
+  await notesPreview.hover();
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileNotesPreview = page
+    .locator(".application-mobile-cards .application-notes-preview")
+    .first();
+  await expect(mobileNotesPreview).toHaveAttribute("title", base.body);
+  const mobileOverflow = await mobileNotesPreview
+    .locator("span")
+    .evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      textOverflow: getComputedStyle(element).textOverflow,
+      boxWidth: element.getBoundingClientRect().width,
+      parentWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
+    }));
+  expect(mobileOverflow.textOverflow).toBe("ellipsis");
+  expect(mobileOverflow.scrollWidth).toBeGreaterThan(
+    mobileOverflow.clientWidth,
+  );
+  expect(mobileOverflow.boxWidth).toBeLessThanOrEqual(
+    mobileOverflow.parentWidth + 1,
+  );
+  await mobileNotesPreview.hover();
+  await page.setViewportSize({ width: 1280, height: 900 });
   await enterEditMode(page, "Applications");
   await page
     .getByRole("link", { name: "Platform engineer", exact: true })

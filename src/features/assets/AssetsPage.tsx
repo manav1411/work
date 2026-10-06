@@ -62,11 +62,7 @@ export function AssetsPage() {
       const expanded = pageRef.current?.querySelector(
         ".document-family-expanded, .document-more-expanded",
       );
-      if (
-        target instanceof Node &&
-        expanded &&
-        !expanded.contains(target)
-      )
+      if (target instanceof Node && expanded && !expanded.contains(target))
         setParams({});
     };
     document.addEventListener("pointerdown", closeOnOutsidePointer, true);
@@ -374,22 +370,6 @@ export function AssetsPage() {
                 className={`document-card document-named ${selected?.id === record.id ? "document-more-expanded" : ""}`}
                 key={record.id}
               >
-                <button
-                  className="document-family-open"
-                  aria-expanded={selected?.id === record.id}
-                  onClick={() =>
-                    selected?.id === record.id ? setParams({}) : open(record)
-                  }
-                >
-                  {selected?.id !== record.id && (
-                    <DocumentPreview record={record} />
-                  )}
-                  <span className="document-family-title">
-                    {record.title}
-                    {selected?.id === record.id && <ChevronUp size={18} />}
-                  </span>
-                </button>
-                {selected?.id === record.id ? null : deletion(record)}
                 {selected?.id === record.id && (
                   <DocumentViewer
                     inline
@@ -398,6 +378,21 @@ export function AssetsPage() {
                     onBack={() => setParams({})}
                     onDelete={editing ? () => setDeleting(record) : undefined}
                   />
+                )}
+                {selected?.id !== record.id && (
+                  <>
+                    <button
+                      className="document-family-open"
+                      aria-label={`Open document ${record.title}`}
+                      onClick={() => open(record)}
+                    >
+                      <DocumentPreview record={record} />
+                      <span className="document-family-title">
+                        {record.title}
+                      </span>
+                    </button>
+                    {deletion(record)}
+                  </>
                 )}
               </Card>
             ))}

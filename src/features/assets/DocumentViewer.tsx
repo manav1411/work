@@ -87,7 +87,7 @@ export function DocumentViewer({
           </Button>
         )}
         <div className="document-viewer-title">
-          {!inline && <h1>{title}</h1>}
+          {inline ? <h2>{title}</h2> : <h1>{title}</h1>}
           {file && !inline && (
             <span className="muted">Uploaded copy · {file.filename}</span>
           )}
