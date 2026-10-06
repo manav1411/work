@@ -391,7 +391,6 @@ export function AssetsPage() {
                         {record.title}
                       </span>
                     </button>
-                    {deletion(record)}
                   </>
                 )}
               </Card>

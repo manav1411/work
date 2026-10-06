@@ -502,15 +502,29 @@ test("named uploaded PDFs preview in Work without canvas collisions", async ({
     .getByRole("button", { name: "Close document preview", exact: true })
     .click();
   await expect(preview).toHaveCount(0);
-  await card
-    .getByRole("button", {
-      name: "Open document Resume for Google",
-      exact: true,
-    })
-    .click();
-  await page
-    .getByRole("button", { name: "Delete Resume for Google", exact: true })
-    .click();
+  await expect(
+    card.getByRole("button", { name: "Delete Resume for Google", exact: true }),
+  ).toHaveCount(0);
+  const openDocument = card.getByRole("button", {
+    name: "Open document Resume for Google",
+    exact: true,
+  });
+  const idleCardColor = await card.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  await openDocument.hover();
+  await expect
+    .poll(() =>
+      card.evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
+    .not.toBe(idleCardColor);
+  await openDocument.click();
+  const deleteButton = page.getByRole("button", {
+    name: "Delete Resume for Google",
+    exact: true,
+  });
+  await expect(deleteButton).toBeVisible();
+  await deleteButton.click();
   await page
     .getByRole("dialog", { name: "Delete Resume for Google?", exact: true })
     .getByRole("button", { name: "Delete document", exact: true })

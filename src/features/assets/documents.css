@@ -150,6 +150,9 @@
 .document-more-expanded {
   grid-column: 1 / -1;
 }
+.document-more-grid .document-card:has(.document-family-open:hover) {
+  background: var(--surface-tint);
+}
 .document-more-grid .document-family-open {
   width: calc(100% + 2rem);
   margin: -1rem;
