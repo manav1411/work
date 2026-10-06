@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import {
+  TEXLIVE_ENVIRONMENT,
   latexEngineSchema,
   latexInputHash,
   latexJobs,
@@ -11,8 +12,9 @@ import {
   type LatexSource,
 } from "../shared/latex";
 import type { WorkRecord } from "../shared/model";
+import { documentPdfFilename } from "../shared/documents";
 import { ApiError, id, now, type Env, type Variables } from "./env";
-import { getRecord, writeRecord, type AttachmentRow } from "./db/records";
+import { getRecord, writeRecord } from "./db/records";
 import { fromBase64, getAttachment, saveAttachment, toBase64 } from "./files";
 import { parse, readLimitedBody } from "./validation";
 
@@ -35,13 +37,8 @@ async function input(request: Request) {
     );
   }
 }
-async function asset(
-  env: Env,
-  owner: string,
-  assetId: string,
-  includeDeleted = false,
-) {
-  const record = await getRecord(env.DB, owner, assetId, includeDeleted);
+async function asset(env: Env, owner: string, assetId: string) {
+  const record = await getRecord(env.DB, owner, assetId);
   if (record.kind !== "asset")
     throw new ApiError(
       400,
@@ -98,14 +95,23 @@ async function projectResponse(
 ) {
   if (!revisionId) return null;
   const source = await sourceRevision(env, owner, record, revisionId);
-  const latest = [...latexJobs(record.data)]
-    .reverse()
-    .find((job) => job.status === "succeeded");
+  const main = source.files.find((file) => file.path === source.mainFile);
+  const latest = main?.content.trim()
+    ? [...latexJobs(record.data)]
+        .reverse()
+        .find((job) => job.revisionId === revisionId)
+    : undefined;
+  const successful = main?.content.trim()
+    ? [...latexJobs(record.data)]
+        .reverse()
+        .find((job) => job.status === "succeeded")
+    : undefined;
   return {
     ...source,
     version: record.version,
     revisionId,
-    ...(latest ? { latestSuccessfulJob: publicJob(latest) } : {}),
+    ...(latest ? { latestJob: publicJob(latest) } : {}),
+    ...(successful ? { latestSuccessfulJob: publicJob(successful) } : {}),
   };
 }
 async function discardAttachment(
@@ -129,14 +135,9 @@ async function saveSource(
   owner: string,
   record: WorkRecord,
   source: LatexSource,
-  extra: Record<string, unknown> = {},
 ) {
   const inputHash = await latexInputHash(source);
-  if (
-    latexMetadata(record.data)?.inputHash === inputHash &&
-    !Object.keys(extra).length
-  )
-    return record;
+  if (latexMetadata(record.data)?.inputHash === inputHash) return record;
   const attachment = await saveAttachment(
     env,
     owner,
@@ -151,7 +152,6 @@ async function saveSource(
     updatedAt: now(),
     data: {
       ...record.data,
-      ...extra,
       latexProject: {
         revisionId: attachment.id,
         mainFile: source.mainFile,
@@ -175,12 +175,12 @@ async function mutateJobs(
   env: Env,
   owner: string,
   assetId: string,
-  mutate: (jobs: LatexJob[]) => LatexJob[],
+  mutate: (jobs: LatexJob[], record: WorkRecord) => LatexJob[],
 ) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const record = await asset(env, owner, assetId);
     const old = latexJobs(record.data);
-    const next = mutate(old);
+    const next = mutate(old, record);
     const latest = [...next]
       .reverse()
       .find(
@@ -210,8 +210,212 @@ async function mutateJobs(
     "The document changed while updating compilation. Refresh to see its status.",
   );
 }
+
+const reusableCompileJob = (job: LatexJob, revisionId: string) =>
+  job.revisionId === revisionId &&
+  ((job.status === "succeeded" &&
+    job.metadata?.texEnvironment === TEXLIVE_ENVIRONMENT) ||
+    (job.environment === TEXLIVE_ENVIRONMENT &&
+      ["queued", "running"].includes(job.status) &&
+      Date.parse(job.createdAt) > Date.now() - 600_000));
+
+function hasCompileInput(source: LatexSource) {
+  return Boolean(
+    source.files.find((file) => file.path === source.mainFile)?.content.trim(),
+  );
+}
+
+/** Add one idempotent job for a source revision, reusing a live or completed build. */
+async function enqueueCompile(
+  env: Env,
+  owner: string,
+  assetId: string,
+  revisionId: string,
+  requireCurrent = false,
+): Promise<{ job: LatexJob; created: boolean } | null> {
+  if (!env.LATEX_COMPILER_URL || !env.LATEX_COMPILER_TOKEN) return null;
+  const record = await asset(env, owner, assetId);
+  if (requireCurrent && latexMetadata(record.data)?.revisionId !== revisionId)
+    return null;
+  const source = await sourceRevision(env, owner, record, revisionId);
+  if (!hasCompileInput(source)) return null;
+  let selected: LatexJob | undefined;
+  let created = false;
+  const job: LatexJob = {
+    environment: TEXLIVE_ENVIRONMENT,
+    id: id(),
+    revisionId,
+    status: "queued",
+    createdAt: now(),
+    log: "",
+  };
+  await mutateJobs(env, owner, assetId, (jobs, current) => {
+    created = false;
+    if (
+      requireCurrent &&
+      latexMetadata(current.data)?.revisionId !== revisionId
+    )
+      return jobs;
+    const existing = [...jobs]
+      .reverse()
+      .find((item) => reusableCompileJob(item, revisionId));
+    if (existing) {
+      selected = existing;
+      return jobs;
+    }
+    selected = job;
+    created = true;
+    return [
+      ...jobs
+        .filter(
+          (item) =>
+            !["queued", "running"].includes(item.status) ||
+            Date.parse(item.createdAt) > Date.now() - 600_000,
+        )
+        .slice(-(MAX_JOBS - 1)),
+      job,
+    ];
+  });
+  return selected ? { job: selected, created } : null;
+}
+
+async function cancelQueuedJob(
+  env: Env,
+  owner: string,
+  assetId: string,
+  jobId: string,
+) {
+  await mutateJobs(env, owner, assetId, (jobs) =>
+    jobs.map((job) =>
+      job.id === jobId && ["queued", "running"].includes(job.status)
+        ? { ...job, status: "cancelled", finishedAt: now() }
+        : job,
+    ),
+  ).catch(() => {});
+}
+
+async function autoCompileAfterSave(
+  env: Env,
+  owner: string,
+  assetId: string,
+  revisionId: string,
+  jobId: string,
+) {
+  await new Promise((resolve) => setTimeout(resolve, 650));
+  try {
+    const current = await asset(env, owner, assetId);
+    if (latexMetadata(current.data)?.revisionId !== revisionId) {
+      await cancelQueuedJob(env, owner, assetId, jobId);
+      return;
+    }
+    const job = latexJobs(current.data).find((item) => item.id === jobId);
+    if (!job || job.status !== "queued") return;
+    const source = await sourceRevision(env, owner, current, revisionId);
+    await runCompile(env, owner, assetId, job, source, false, true);
+  } catch {
+    // The scheduled worker sweep resumes queued jobs if the request lifetime ends.
+  }
+}
+
+async function cancelRemoteJob(env: Env, jobId: string) {
+  if (!env.LATEX_COMPILER_URL || !env.LATEX_COMPILER_TOKEN) return;
+  await fetch(new URL(`/jobs/${jobId}`, env.LATEX_COMPILER_URL), {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${env.LATEX_COMPILER_TOKEN}`,
+      ...(env.LATEX_ACCESS_CLIENT_ID && env.LATEX_ACCESS_CLIENT_SECRET
+        ? {
+            "CF-Access-Client-Id": env.LATEX_ACCESS_CLIENT_ID,
+            "CF-Access-Client-Secret": env.LATEX_ACCESS_CLIENT_SECRET,
+          }
+        : {}),
+    },
+    signal: AbortSignal.timeout(5000),
+  }).catch(() => {});
+}
+
+/** Scheduled safety net for builds that outlive the request's waitUntil window. */
+export async function resumePendingLatexJobs(env: Env): Promise<void> {
+  if (!env.LATEX_COMPILER_URL || !env.LATEX_COMPILER_TOKEN) return;
+  const staleBefore = new Date(Date.now() - 20_000).toISOString();
+  const rows = await env.DB.prepare(
+    "SELECT owner_id,id,data FROM records WHERE kind='asset' AND deleted_at IS NULL AND json_type(data,'$.latexJobs')='array' AND EXISTS (SELECT 1 FROM json_each(json_extract(records.data,'$.latexJobs')) job WHERE json_extract(job.value,'$.status') IN ('queued','running') AND json_extract(job.value,'$.createdAt')<=?) ORDER BY updated_at LIMIT 20",
+  )
+    .bind(staleBefore)
+    .all<{ owner_id: string; id: string; data: string }>();
+
+  const work: { owner: string; assetId: string; job: LatexJob }[] = [];
+  for (const row of rows.results) {
+    try {
+      const data = JSON.parse(row.data) as Record<string, unknown>;
+      for (const job of latexJobs(data)) {
+        if (
+          work.length >= 20 ||
+          !["queued", "running"].includes(job.status) ||
+          Date.parse(job.createdAt) > Date.now() - 20_000
+        )
+          continue;
+        work.push({ owner: row.owner_id, assetId: row.id, job });
+      }
+    } catch {
+      // Ignore malformed historical job data and continue with valid records.
+    }
+    if (work.length >= 20) break;
+  }
+
+  for (let index = 0; index < work.length; index += 4) {
+    await Promise.allSettled(
+      work.slice(index, index + 4).map(async ({ owner, assetId, job }) => {
+        const age = Date.now() - Date.parse(job.createdAt);
+        if (age > 600_000) {
+          await mutateJobs(env, owner, assetId, (jobs) =>
+            jobs.map((item) =>
+              item.id === job.id && ["queued", "running"].includes(item.status)
+                ? {
+                    ...item,
+                    status: "failed",
+                    finishedAt: now(),
+                    log: "The compile job expired before its result was collected.",
+                  }
+                : item,
+            ),
+          ).catch(() => {});
+          if (job.status === "running") await cancelRemoteJob(env, job.id);
+          return;
+        }
+
+        const current = await asset(env, owner, assetId);
+        if (latexMetadata(current.data)?.revisionId !== job.revisionId) {
+          await cancelQueuedJob(env, owner, assetId, job.id);
+          if (job.status === "running") await cancelRemoteJob(env, job.id);
+          return;
+        }
+        const active = latexJobs(current.data).find(
+          (item) => item.id === job.id,
+        );
+        if (!active || !["queued", "running"].includes(active.status)) return;
+        const source = await sourceRevision(
+          env,
+          owner,
+          current,
+          active.revisionId,
+        );
+        await runCompile(
+          env,
+          owner,
+          assetId,
+          active,
+          source,
+          active.status === "running",
+          true,
+        );
+      }),
+    );
+  }
+}
 const metadataSchema = z
   .object({
+    texEnvironment: z.string().max(120).optional(),
     imageDigest: z.string().max(200).optional(),
     compilerFingerprint: z.string().max(128).optional(),
     texLiveRelease: z.string().max(80).optional(),
@@ -254,6 +458,23 @@ const compilerResultSchema = z.object({
   metadata: metadataSchema,
 });
 
+function compilerStatus(error: unknown) {
+  return (error as { status?: number } | null)?.status;
+}
+
+function retryableCompilerFailure(error: unknown) {
+  const status = compilerStatus(error);
+  return (
+    status === 408 ||
+    status === 429 ||
+    (typeof status === "number" && status >= 500) ||
+    error instanceof TypeError ||
+    ["AbortError", "TimeoutError"].includes(
+      (error as { name?: string } | null)?.name ?? "",
+    )
+  );
+}
+
 async function runCompile(
   env: Env,
   owner: string,
@@ -261,6 +482,7 @@ async function runCompile(
   job: LatexJob,
   source: LatexSource,
   retrieveOnly = false,
+  requireCurrent = false,
 ) {
   const attachments: string[] = [];
   try {
@@ -277,52 +499,97 @@ async function runCompile(
       "running"
     )
       return;
-    const url = new URL(
-      retrieveOnly ? `/jobs/${job.id}` : "/jobs",
-      env.LATEX_COMPILER_URL,
-    );
-    const response = await fetch(url, {
-      method: retrieveOnly ? "GET" : "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${env.LATEX_COMPILER_TOKEN}`,
-        ...(env.LATEX_ACCESS_CLIENT_ID && env.LATEX_ACCESS_CLIENT_SECRET
-          ? {
-              "CF-Access-Client-Id": env.LATEX_ACCESS_CLIENT_ID,
-              "CF-Access-Client-Secret": env.LATEX_ACCESS_CLIENT_SECRET,
-            }
-          : {}),
-      },
-      body: retrieveOnly
-        ? undefined
-        : JSON.stringify({
-            jobId: job.id,
-            mainFile: source.mainFile,
-            engine: source.engine,
-            files: source.files.map((file) => ({
-              path: file.path,
-              contentBase64:
-                file.encoding === "base64"
-                  ? file.content
-                  : toBase64(encode.encode(file.content)),
-            })),
-          }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) throw new Error(`Compiler returned ${response.status}.`);
-    const bytes = await readLimitedBody(response, 24 * 1024 * 1024);
-    const remote = z
-      .object({
-        status: z.enum([
-          "queued",
-          "running",
-          "succeeded",
-          "failed",
-          "cancelled",
-        ]),
-        result: compilerResultSchema.optional(),
-      })
-      .parse(JSON.parse(new TextDecoder().decode(bytes)));
+    if (
+      requireCurrent &&
+      latexMetadata(started.data)?.revisionId !== job.revisionId
+    ) {
+      await cancelQueuedJob(env, owner, assetId, job.id);
+      return;
+    }
+    const deadline = Date.now() + 22_000;
+    const compilerHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${env.LATEX_COMPILER_TOKEN}`,
+      ...(env.LATEX_ACCESS_CLIENT_ID && env.LATEX_ACCESS_CLIENT_SECRET
+        ? {
+            "CF-Access-Client-Id": env.LATEX_ACCESS_CLIENT_ID,
+            "CF-Access-Client-Secret": env.LATEX_ACCESS_CLIENT_SECRET,
+          }
+        : {}),
+    };
+    const requestJob = async (method: "GET" | "POST") => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return null;
+      const response = await fetch(
+        new URL(
+          method === "GET" ? `/jobs/${job.id}` : "/jobs",
+          env.LATEX_COMPILER_URL,
+        ),
+        {
+          method,
+          headers: compilerHeaders,
+          body:
+            method === "GET"
+              ? undefined
+              : JSON.stringify({
+                  jobId: job.id,
+                  mainFile: source.mainFile,
+                  engine: "pdflatex",
+                  files: source.files.map((file) => ({
+                    path: file.path,
+                    contentBase64:
+                      file.encoding === "base64"
+                        ? file.content
+                        : toBase64(encode.encode(file.content)),
+                  })),
+                }),
+          signal: AbortSignal.timeout(
+            Math.min(method === "POST" ? 8_000 : 4_000, remaining),
+          ),
+        },
+      );
+      if (!response.ok) {
+        const failure = new Error(`Compiler returned ${response.status}.`);
+        Object.assign(failure, { status: response.status });
+        throw failure;
+      }
+      const bytes = await readLimitedBody(response, 24 * 1024 * 1024);
+      return z
+        .object({
+          status: z.enum([
+            "queued",
+            "running",
+            "succeeded",
+            "failed",
+            "cancelled",
+          ]),
+          result: compilerResultSchema.optional(),
+        })
+        .parse(JSON.parse(new TextDecoder().decode(bytes)));
+    };
+    let remote;
+    try {
+      remote = await requestJob(retrieveOnly ? "GET" : "POST");
+    } catch (failure) {
+      if (retrieveOnly && compilerStatus(failure) === 404)
+        remote = await requestJob("POST");
+      else throw failure;
+    }
+    while (
+      remote &&
+      !retrieveOnly &&
+      ["queued", "running"].includes(remote.status) &&
+      Date.now() + 1000 < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      try {
+        remote = await requestJob("GET");
+      } catch (failure) {
+        if (compilerStatus(failure) === 404) remote = await requestJob("POST");
+        else throw failure;
+      }
+    }
+    if (!remote) return;
     if (["queued", "running"].includes(remote.status)) return;
     if (remote.status === "cancelled") {
       await mutateJobs(env, owner, assetId, (jobs) =>
@@ -382,7 +649,7 @@ async function runCompile(
     if (result.success) {
       if (!result.pdfBase64) throw new Error("Compiler did not return a PDF.");
       jobResult.pdfAttachmentId = await save(
-        `document-${job.id}.pdf`,
+        documentPdfFilename(started, `document-${job.id}.pdf`),
         "application/pdf",
         fromBase64(result.pdfBase64),
       );
@@ -413,6 +680,7 @@ async function runCompile(
   } catch (error) {
     for (const attachmentId of attachments)
       await discardAttachment(env, owner, attachmentId).catch(() => {});
+    if (retryableCompilerFailure(error)) return;
     await mutateJobs(env, owner, assetId, (jobs) =>
       jobs.map((item) =>
         item.id === job.id && ["queued", "running"].includes(item.status)
@@ -452,82 +720,88 @@ latexRoutes.put("/:assetId", async (context) => {
       "VERSION_CONFLICT",
       "This document changed in another session. Keep your draft and reload before saving.",
     );
-  const source = parse(latexSourceSchema, rawSource);
+  const source = {
+    ...parse(latexSourceSchema, rawSource),
+    engine: "pdflatex" as const,
+  };
   const next = await saveSource(context.env, owner, record, source);
+  const revisionId = latexMetadata(next.data)?.revisionId;
+  const queued = revisionId
+    ? await enqueueCompile(context.env, owner, next.id, revisionId, true)
+    : null;
+  const saved = queued ? await asset(context.env, owner, next.id) : next;
+  if (queued?.created)
+    context.executionCtx.waitUntil(
+      autoCompileAfterSave(
+        context.env,
+        owner,
+        next.id,
+        revisionId!,
+        queued.job.id,
+      ),
+    );
   return context.json({
-    project: await projectResponse(context.env, owner, next),
-    record: next,
+    project: await projectResponse(context.env, owner, saved),
+    record: saved,
   });
 });
-latexRoutes.get("/:assetId/revisions", async (context) => {
+latexRoutes.post("/:assetId/copy", async (context) => {
   const owner = context.get("user").id;
-  const record = await asset(context.env, owner, context.req.param("assetId"));
-  const rows = await context.env.DB.prepare(
-    "SELECT * FROM attachments WHERE owner_id=? AND record_id=? AND filename LIKE 'latex-source-%.json' ORDER BY created_at DESC LIMIT 100",
-  )
-    .bind(owner, record.id)
-    .all<AttachmentRow>();
-  return context.json({
-    revisions: rows.results.map((row) => ({
-      id: row.id,
-      createdAt: row.created_at,
-    })),
-  });
-});
-latexRoutes.get("/:assetId/revisions/:revisionId", async (context) => {
-  const owner = context.get("user").id;
-  const record = await asset(
+  const sourceRecord = await asset(
     context.env,
     owner,
     context.req.param("assetId"),
-    true,
   );
-  return context.json({
-    project: await projectResponse(
-      context.env,
-      owner,
-      record,
-      context.req.param("revisionId"),
-    ),
-  });
-});
-latexRoutes.post("/:assetId/fork", async (context) => {
-  const owner = context.get("user").id;
-  const record = await asset(context.env, owner, context.req.param("assetId"));
   const { targetAssetId } = parse(
     z.object({ targetAssetId: z.string().min(1) }).strict(),
     await input(context.req.raw),
   );
-  if (targetAssetId === record.id)
-    throw new ApiError(
-      400,
-      "INVALID_FORK",
-      "Choose an independent document for a fork.",
-    );
+  if (targetAssetId === sourceRecord.id)
+    throw new ApiError(400, "INVALID_COPY", "Choose a different document.");
   const target = await asset(context.env, owner, targetAssetId);
-  if (latexMetadata(target.data))
-    throw new ApiError(
-      409,
-      "PROJECT_EXISTS",
-      "The target document already contains a project.",
-    );
-  const revisionId = latexMetadata(record.data)?.revisionId;
+  const revisionId = latexMetadata(sourceRecord.data)?.revisionId;
   if (!revisionId)
     throw new ApiError(
       400,
       "NO_SOURCE",
-      "Import or create the source before forking this document.",
+      "Save the source before copying this document.",
     );
-  const next = await saveSource(
+  const originalSource = await sourceRevision(
     context.env,
     owner,
-    target,
-    await sourceRevision(context.env, owner, record, revisionId),
-    { parentVariantId: record.id, forkRevisionId: revisionId },
+    sourceRecord,
+    revisionId,
   );
+  const source = { ...originalSource, engine: "pdflatex" as const };
+  // A retry after a lost response may already have saved the independent copy.
+  if (
+    latexMetadata(target.data) &&
+    latexMetadata(target.data)?.inputHash !== (await latexInputHash(source))
+  )
+    throw new ApiError(
+      409,
+      "PROJECT_EXISTS",
+      "The target document already contains a different project.",
+    );
+  const next = await saveSource(context.env, owner, target, source);
+  const targetRevisionId = latexMetadata(next.data)?.revisionId;
+  const queued = targetRevisionId
+    ? await enqueueCompile(context.env, owner, next.id, targetRevisionId, true)
+    : null;
+  const saved = queued ? await asset(context.env, owner, next.id) : next;
+  if (queued?.created)
+    context.executionCtx.waitUntil(
+      autoCompileAfterSave(
+        context.env,
+        owner,
+        next.id,
+        targetRevisionId!,
+        queued.job.id,
+      ),
+    );
   return context.json({
-    project: await projectResponse(context.env, owner, next),
-    record: next,
+    project: await projectResponse(context.env, owner, saved),
+    record: saved,
   });
 });
 latexRoutes.post("/:assetId/compile", async (context) => {
@@ -538,54 +812,39 @@ latexRoutes.post("/:assetId/compile", async (context) => {
     await input(context.req.raw),
   );
   const source = await sourceRevision(context.env, owner, record, revisionId);
-  const reusable = (job: LatexJob) =>
-    job.revisionId === revisionId &&
-    (job.status === "succeeded" ||
-      (["queued", "running"].includes(job.status) &&
-        Date.parse(job.createdAt) > Date.now() - 600_000));
-  const existing = [...latexJobs(record.data)].reverse().find(reusable);
-  if (existing) return context.json({ job: publicJob(existing) });
+  if (!hasCompileInput(source))
+    throw new ApiError(
+      400,
+      "EMPTY_SOURCE",
+      "Add content to the main .tex file before compiling.",
+    );
   if (!context.env.LATEX_COMPILER_URL || !context.env.LATEX_COMPILER_TOKEN)
     throw new ApiError(
       503,
       "COMPILER_UNCONFIGURED",
       "The native TeX compiler has not been connected. Your LaTeX source is saved; compilation becomes available when the service is configured.",
     );
-  const job: LatexJob = {
-    id: id(),
+  const selected = await enqueueCompile(
+    context.env,
+    owner,
+    record.id,
     revisionId,
-    status: "queued",
-    createdAt: now(),
-    log: "",
-  };
-  let selected = job;
-  await mutateJobs(context.env, owner, record.id, (jobs) => {
-    const duplicate = [...jobs].reverse().find(reusable);
-    if (duplicate) {
-      selected = duplicate;
-      return jobs;
-    }
-    selected = job;
-    return [
-      ...jobs
-        .filter(
-          (item) =>
-            !["queued", "running"].includes(item.status) ||
-            Date.parse(item.createdAt) > Date.now() - 600_000,
-        )
-        .slice(-(MAX_JOBS - 1)),
-      job,
-    ];
-  });
-  if (selected.id !== job.id)
+  );
+  if (!selected)
+    throw new ApiError(
+      404,
+      "NOT_FOUND",
+      "This source revision is unavailable.",
+    );
+  if (!selected.created)
     return context.json(
-      { job: publicJob(selected) },
-      selected.status === "succeeded" ? 200 : 202,
+      { job: publicJob(selected.job) },
+      selected.job.status === "succeeded" ? 200 : 202,
     );
   context.executionCtx.waitUntil(
-    runCompile(context.env, owner, record.id, job, source),
+    runCompile(context.env, owner, record.id, selected.job, source),
   );
-  return context.json({ job: publicJob(job) }, 202);
+  return context.json({ job: publicJob(selected.job) }, 202);
 });
 latexRoutes.get("/:assetId/jobs/:jobId", async (context) => {
   const record = await asset(

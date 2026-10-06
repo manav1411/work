@@ -18,6 +18,14 @@ import {
   type Goal,
 } from "../../shared/goals";
 import { recruitmentSteps } from "../../shared/applications";
+import {
+  latexInputHash,
+  latexMetadata,
+  latexSaveSchema,
+  latexSourceSchema,
+  type LatexProject,
+  type LatexSource,
+} from "../../shared/latex";
 import { recordDataError } from "../../shared/record-contract";
 import { demoGoals } from "./demo-goals";
 import {
@@ -142,7 +150,8 @@ function seedDemoShowcase(
     }
     if (Array.isArray(storyKeys))
       data.storyIds = storyKeys.flatMap((key) => {
-        const story = typeof key === "string" ? recordByKey.get(key) : undefined;
+        const story =
+          typeof key === "string" ? recordByKey.get(key) : undefined;
         return story ? [story.id] : [];
       });
     record.data = data;
@@ -332,12 +341,117 @@ export function createDemoStore() {
     typeof init?.body === "string"
       ? (JSON.parse(init.body) as Record<string, unknown>)
       : {};
+  const documentAsset = (id: string) => {
+    const found = record(id);
+    if (found.kind !== "asset" || found.deletedAt)
+      throw new ApiError("Document not found.", 404);
+    return found;
+  };
+  const latexProject = (asset: WorkRecord): LatexProject | null => {
+    const revisionId = latexMetadata(asset.data)?.revisionId;
+    if (!revisionId) return null;
+    const stored = state.files[revisionId];
+    if (!stored) throw new ApiError("The source is unavailable.", 410);
+    const bytes = Uint8Array.from(atob(stored), (character) =>
+      character.charCodeAt(0),
+    );
+    const source = latexSourceSchema.parse(
+      JSON.parse(new TextDecoder().decode(bytes)),
+    );
+    return { ...source, version: asset.version, revisionId };
+  };
+  const saveLatex = async (asset: WorkRecord, source: LatexSource) => {
+    const inputHash = await latexInputHash(source);
+    if (latexMetadata(asset.data)?.inputHash === inputHash) return asset;
+    const revisionId = crypto.randomUUID();
+    const text = JSON.stringify(source);
+    state.attachments.push({
+      id: revisionId,
+      recordId: asset.id,
+      filename: `latex-source-${revisionId}.json`,
+      contentType: "application/json",
+      size: new TextEncoder().encode(text).length,
+      createdAt: new Date().toISOString(),
+    });
+    state.files[revisionId] = base64(text);
+    const next = {
+      ...asset,
+      version: asset.version + 1,
+      updatedAt: new Date().toISOString(),
+      data: {
+        ...asset.data,
+        latexProject: {
+          revisionId,
+          mainFile: source.mainFile,
+          engine: source.engine,
+          inputHash,
+        },
+      },
+    };
+    state.records = state.records.map((item) =>
+      item.id === asset.id ? next : item,
+    );
+    persist();
+    return next;
+  };
   const adapter: ApiAdapter = async (path, init) => {
     if (path.startsWith("/api/connectors"))
       throw new ApiError("Connections have been retired.", 410);
     const url = new URL(path, "https://demo.invalid");
     const method = init?.method ?? "GET";
     const body = parse(init);
+    const latexRoute = /^\/api\/latex\/([^/]+)(?:\/(.*))?$/.exec(url.pathname);
+    if (latexRoute) {
+      const asset = documentAsset(decodeURIComponent(latexRoute[1]));
+      const action = latexRoute[2];
+      if (!action && method === "GET")
+        return { project: latexProject(asset), configured: false };
+      if (!action && method === "PUT") {
+        const parsed = latexSaveSchema.safeParse(body);
+        if (!parsed.success)
+          throw new ApiError(parsed.error.issues[0].message, 400);
+        const { expectedVersion, ...source } = parsed.data;
+        if (expectedVersion !== asset.version)
+          throw new ApiError(
+            "This document changed. Reload the saved source.",
+            409,
+          );
+        const saved = await saveLatex(asset, source);
+        return { project: latexProject(saved), record: saved };
+      }
+      if (action === "copy" && method === "POST") {
+        if (
+          typeof body.targetAssetId !== "string" ||
+          body.targetAssetId === asset.id
+        )
+          throw new ApiError("Choose a different document.", 400);
+        const target = documentAsset(body.targetAssetId);
+        const source = latexProject(asset);
+        if (!source) throw new ApiError("Save the source before copying.", 400);
+        const content = {
+          files: source.files,
+          mainFile: source.mainFile,
+          engine: source.engine,
+        };
+        if (
+          latexMetadata(target.data) &&
+          latexMetadata(target.data)?.inputHash !==
+            (await latexInputHash(content))
+        )
+          throw new ApiError(
+            "The target document already contains a different project.",
+            409,
+          );
+        const saved = await saveLatex(target, content);
+        return { project: latexProject(saved), record: saved };
+      }
+      if (action === "compile" && method === "POST")
+        throw new ApiError(
+          "The demo saves LaTeX source. PDF compilation is available in your signed-in workspace.",
+          503,
+        );
+      throw new ApiError("This document operation is unavailable.", 404);
+    }
     if (url.pathname === "/api/goals" && method === "GET")
       return { goals: state.goals!.filter((goal) => !goal.deletedAt) };
     if (url.pathname === "/api/goals" && method === "POST") {

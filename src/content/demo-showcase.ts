@@ -367,8 +367,8 @@ export function demoShowcaseRecords(today = localDate()): RecordInput[] {
     },
     {
       kind: "asset",
-      title: "Sample résumé outline",
-      body: "A text preview showing how a supporting document appears in the demo workspace. This is not a finished or verified résumé.",
+      title: "Sample resume outline",
+      body: "A text preview showing how a supporting document appears in the demo workspace. This is not a finished or verified resume.",
       tags: ["demo", "resume"],
       data: {
         demoSeedKey: "document-resume-outline",

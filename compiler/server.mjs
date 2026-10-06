@@ -18,6 +18,7 @@ import { LIMITS, validateJob, inputHash, diagnostics } from "./protocol.mjs";
 export { LIMITS, validateJob, inputHash, diagnostics } from "./protocol.mjs";
 const execute = promisify(execFile),
   base = dirname(fileURLToPath(import.meta.url));
+const texEnvironment = "texlive-2025-20250308-pdftex-1.40.27";
 async function outputFile(path, limit) {
   try {
     const info = await lstat(path);
@@ -36,30 +37,41 @@ export async function startCompiler({
   port = 8788,
   timeout = 90000,
   temporaryDirectory = process.env.WORK_COMPILER_TMPDIR || join(base, "state"),
+  texliveDirectory = process.env.WORK_TEXLIVE_ROOT || "/opt/work-texlive/2025",
 } = {}) {
   if (!token || token.length < 24)
     throw new Error("WORK_COMPILER_TOKEN must contain at least 24 characters");
   if (!Number.isFinite(timeout) || timeout < 1000 || timeout > 180000)
     throw new Error("Compile timeout must be 1000–180000 ms");
   await mkdir(temporaryDirectory, { recursive: true, mode: 0o700 });
-  const versions = await Promise.all(
-    ["pdflatex", "xelatex", "lualatex", "latexmk", "pdftotext"].map(
-      async (engine) => {
-        const { stdout, stderr } = await execute(
-          engine,
-          [
-            engine === "latexmk"
-              ? "-version"
-              : engine === "pdftotext"
-                ? "-v"
-                : "--version",
-          ],
-          { maxBuffer: 8192 },
-        );
-        return `${engine}:${(stdout || stderr).trim()}`;
-      },
-    ),
+  const texliveBin = join(
+    resolve(texliveDirectory),
+    "bin",
+    process.arch === "arm64" ? "aarch64-linux" : "x86_64-linux",
   );
+  const compilerPath = `${texliveBin}:/usr/bin:/bin`;
+  const versions = await Promise.all(
+    ["pdflatex", "latexmk", "pdftotext"].map(async (engine) => {
+      const { stdout, stderr } = await execute(
+        engine === "pdftotext"
+          ? "/usr/bin/pdftotext"
+          : join(texliveBin, engine),
+        [
+          engine === "latexmk"
+            ? "-version"
+            : engine === "pdftotext"
+              ? "-v"
+              : "--version",
+        ],
+        { maxBuffer: 8192, env: { ...process.env, PATH: compilerPath } },
+      );
+      return `${engine}:${(stdout || stderr).trim()}`;
+    }),
+  );
+  if (!versions[0].includes("1.40.27 (TeX Live 2025)"))
+    throw new Error(
+      "This service requires the official TeX Live 2025 release with pdfTeX 1.40.27. Run install-texlive-2025.sh before activating it.",
+    );
   await execute("bwrap", ["--version"]);
   const compilerFingerprint = createHash("sha256")
     .update(versions.join("\n"))
@@ -70,7 +82,10 @@ export async function startCompiler({
   let active = null;
   for (const filename of await readdir(temporaryDirectory)) {
     if (/^work-tex-[a-zA-Z0-9]+$/.test(filename)) {
-      await rm(join(temporaryDirectory, filename), { recursive: true, force: true });
+      await rm(join(temporaryDirectory, filename), {
+        recursive: true,
+        force: true,
+      });
       continue;
     }
     if (/^[a-zA-Z0-9_-]+\.json$/.test(filename)) {
@@ -138,6 +153,9 @@ export async function startCompiler({
         "--ro-bind",
         "/usr",
         "/usr",
+        "--ro-bind",
+        resolve(texliveDirectory),
+        resolve(texliveDirectory),
         "--symlink",
         "usr/bin",
         "/bin",
@@ -158,16 +176,8 @@ export async function startCompiler({
         "--ro-bind",
         "/etc/fonts",
         "/etc/fonts",
-        "--ro-bind",
-        "/etc/texmf",
-        "/etc/texmf",
         "--dir",
         "/var",
-        "--dir",
-        "/var/lib",
-        "--ro-bind",
-        "/var/lib/texmf",
-        "/var/lib/texmf",
         "--dir",
         "/var/cache",
         "--ro-bind",
@@ -184,7 +194,7 @@ export async function startCompiler({
         "--clearenv",
         "--setenv",
         "PATH",
-        "/usr/bin:/bin",
+        compilerPath,
         "/usr/bin/prlimit",
         "--cpu=90",
         "--as=1073741824",
@@ -252,13 +262,14 @@ export async function startCompiler({
           (await outputFile(join(build, "fonts.txt"), 20000))?.toString() || "",
         diagnostics: diagnostics(log),
         metadata: {
+          texEnvironment,
           compilerFingerprint,
           texLiveRelease:
             /TeX Live\s+(\d{4})/.exec(versions[0])?.[1] || "unknown",
           engine: job.engine,
           inputHash: inputHash(job),
           configuration: {
-            latexmkVersion: versions[3].slice(0, 200),
+            latexmkVersion: versions[1].slice(0, 200),
             shellEscape: false,
             customLatexmkrc: false,
             synctex: true,
@@ -334,7 +345,8 @@ export async function startCompiler({
           ready: true,
           compilerFingerprint,
           activeJobs: active ? 1 : 0,
-          engines: ["pdflatex", "xelatex", "lualatex"],
+          engines: ["pdflatex"],
+          texEnvironment,
           versions,
         });
       const match = /^\/jobs\/([a-zA-Z0-9_-]{1,100})$/.exec(req.url || "");

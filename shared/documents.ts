@@ -20,6 +20,21 @@ export const DOCUMENT_FILE_TYPES = [
 export const DOCUMENT_ACCEPT =
   ".pdf,.docx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.json";
 
+export function documentPdfFilename(
+  record: WorkRecord | undefined,
+  fallback = "document.pdf",
+): string {
+  switch (field(record, "type")) {
+    case "resume":
+      return "Manav_Dodia_Resume.pdf";
+    case "letter":
+    case "cover-letter":
+      return "Manav_Dodia_Cover_Letter.pdf";
+    default:
+      return fallback;
+  }
+}
+
 export function documentUrl(value: string): string {
   return webDestination(value);
 }
@@ -83,10 +98,7 @@ export function documentRecords(records: WorkRecord[]): WorkRecord[] {
     .filter((record) => record.kind === "asset" && !record.deletedAt)
     .sort(
       (a, b) =>
-        Number(b.data.documentDefault === true) -
-          Number(a.data.documentDefault === true) ||
-        b.updatedAt.localeCompare(a.updatedAt) ||
-        a.id.localeCompare(b.id),
+        b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
     );
 }
 

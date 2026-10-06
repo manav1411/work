@@ -3,6 +3,7 @@ import { ArrowLeft, Download, FileText, Trash2, X } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import {
   documentPreviewKind,
+  documentPdfFilename,
   primaryDocumentFile,
 } from "../../../shared/documents";
 import { Button, Card } from "../../components/ui";
@@ -104,9 +105,12 @@ export function DocumentViewer({
             <Button
               variant="secondary"
               onClick={() =>
-                void downloadDocumentFile(file).catch((failure) =>
-                  setError(errorMessage(failure)),
-                )
+                void downloadDocumentFile(
+                  file,
+                  file.contentType === "application/pdf"
+                    ? documentPdfFilename(record, file.filename)
+                    : file.filename,
+                ).catch((failure) => setError(errorMessage(failure)))
               }
             >
               <Download size={16} /> Download

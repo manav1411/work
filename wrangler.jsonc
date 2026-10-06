@@ -5,6 +5,7 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-02",
   "compatibility_flags": ["nodejs_compat"],
+  "triggers": { "crons": ["* * * * *"] },
   "routes": [{ "pattern": "work.manavdodia.com", "custom_domain": true }],
   "assets": {
     "binding": "ASSETS",
@@ -30,6 +31,7 @@
   "env": {
     "staging": {
       "name": "work-staging",
+      "triggers": { "crons": ["* * * * *"] },
       "routes": [],
       "vars": {
         "ENVIRONMENT": "staging",

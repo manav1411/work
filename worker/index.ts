@@ -19,8 +19,9 @@ import { recordContractStatements, validateRecordContract } from "./contracts";
 import { goalRoutes } from "./goals";
 import { goalMigrationRoutes } from "./goal-migration";
 import { learningRoutes } from "./learning";
-import { latexRoutes } from "./latex";
-import { applicationStatusLabel } from '../shared/applications';
+import { latexRoutes, resumePendingLatexJobs } from "./latex";
+import { documentPdfFilename } from "../shared/documents";
+import { applicationStatusLabel } from "../shared/applications";
 import { assertNativeInput, assertProviderPatch } from "./connectors/store";
 import { ProviderFailure } from "./connectors/providers";
 import {
@@ -225,7 +226,7 @@ app.all("/api/connectors/webhooks/*", (context) =>
 app.use("/api/*", async (context, next) => {
   const path = new URL(context.req.url).pathname;
   const known =
-    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|latex\/[^/]+(?:\/(?:revisions(?:\/[^/]+)?|fork|compile|jobs\/[^/]+|submissions))?|connectors(?:\/.*)?|records(?:\/batch|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|backup(?:\/restores(?:\/[^/]+(?:\/commit|\/files\/[^/]+)?)?)?|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
+    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|latex\/[^/]+(?:\/(?:copy|compile|jobs\/[^/]+|submissions))?|connectors(?:\/.*)?|records(?:\/(?:batch|reorder)|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|backup(?:\/restores(?:\/[^/]+(?:\/commit|\/files\/[^/]+)?)?)?|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
       path,
     );
   if (!known)
@@ -553,8 +554,28 @@ app.patch("/api/records/:id", async (context) => {
       ],
     };
   }
-  if(record.kind==='application'&&['applicationStatus','selectedStepId','terminalOutcome'].some(key=>record.data[key]!==before.data[key])){
-    record.data={...record.data,stageHistory:[...(Array.isArray(before.data.stageHistory)?before.data.stageHistory:[]).slice(-99),{from:applicationStatusLabel(before),to:applicationStatusLabel(record),at:record.updatedAt,fromStepId:before.data.selectedStepId||'',toStepId:record.data.selectedStepId||''}]};
+  if (
+    record.kind === "application" &&
+    ["applicationStatus", "selectedStepId", "terminalOutcome"].some(
+      (key) => record.data[key] !== before.data[key],
+    )
+  ) {
+    record.data = {
+      ...record.data,
+      stageHistory: [
+        ...(Array.isArray(before.data.stageHistory)
+          ? before.data.stageHistory
+          : []
+        ).slice(-99),
+        {
+          from: applicationStatusLabel(before),
+          to: applicationStatusLabel(record),
+          at: record.updatedAt,
+          fromStepId: before.data.selectedStepId || "",
+          toStepId: record.data.selectedStepId || "",
+        },
+      ],
+    };
   }
   const response = { record };
   try {
@@ -787,7 +808,7 @@ app.post("/api/records/:id/attachments", async (context) => {
     throw new ApiError(
       400,
       "NATIVE_DOCUMENT_ONLY",
-      "Résumé and cover-letter PDFs are generated from LaTeX. Upload other files under Other documents.",
+      "Resume and cover-letter PDFs are generated from LaTeX. Upload other files under Other documents.",
     );
   const bytes = await readLimitedBody(context.req.raw, MAX_FILE_BYTES + 64_000);
   const form = await new Response(bytes.buffer as ArrayBuffer, {
@@ -836,11 +857,22 @@ app.get("/api/attachments/:id", async (context) => {
       "image/webp",
       "image/gif",
     ].includes(row.content_type);
+  const responseFilename =
+    row.content_type === "application/pdf"
+      ? documentPdfFilename(
+          await getRecord(
+            context.env.DB,
+            context.get("user").id,
+            row.record_id,
+          ),
+          row.filename,
+        )
+      : row.filename;
   return new Response(object.body, {
     headers: {
       "Content-Type": row.content_type,
       "Content-Length": String(row.size),
-      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${filename(row.filename).replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(row.filename)}`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${filename(responseFilename).replace(/[^\x20-\x7e]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(responseFilename)}`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy":
@@ -1063,4 +1095,7 @@ app.onError((error, context) => {
 export { app };
 export default {
   fetch: app.fetch,
+  scheduled(_event: ScheduledController, env: Env, context: ExecutionContext) {
+    context.waitUntil(resumePendingLatexJobs(env));
+  },
 };

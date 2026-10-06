@@ -6,71 +6,58 @@ import {
   useRef,
   useState,
 } from "react";
-import { FileCode2, Play, Plus, X } from "lucide-react";
-import { unzipSync, strFromU8 } from "fflate";
-import { field, type WorkRecord } from "../../../shared/model";
+import { Download } from "lucide-react";
+import type { WorkRecord } from "../../../shared/model";
+import { documentPdfFilename } from "../../../shared/documents";
 import {
-  validLatexPath,
+  TEXLIVE_ENVIRONMENT,
   latexSourceSchema,
-  type LatexFile as ProjectFile,
   type LatexJob as Job,
   type LatexProject as Project,
 } from "../../../shared/latex";
-import { Button, Input, Select } from "../../components/ui";
+import { Button, Select } from "../../components/ui";
 import { ApiError, jsonRequest, request } from "../../lib/api";
 import { useAutosave } from "../../lib/autosave";
 import { mergeLatexProjects } from "../../lib/latex-autosave";
 import { useEditMode } from "../../lib/edit-mode";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
+import { downloadDocumentFile } from "./files";
 
 const SourceEditor = lazy(() => import("./LatexSourceEditor"));
 const PdfPreview = lazy(() => import("./LatexPdfPreview"));
-const safePath = validLatexPath;
 const signature = (project: Pick<Project, "files" | "mainFile" | "engine">) =>
   JSON.stringify([project.files, project.mainFile, project.engine]);
-const template = (letter: boolean) =>
-  `\\documentclass[11pt]{article}\n\\usepackage[margin=0.75in]{geometry}\n\\usepackage[T1]{fontenc}\n\\usepackage{lmodern}\n\\usepackage[hidelinks]{hyperref}\n\\pagestyle{empty}\n\\begin{document}\n{\\Large\\bfseries Your Name}\\par\n\\href{mailto:you@example.com}{you@example.com} $\\vert$ Your location\\par\n\n${letter ? "\\bigskip\nDear Hiring Team,\n\nYour cover letter goes here.\n\n\\bigskip\nKind regards,\\par\nYour Name" : "\\section*{Experience}\n\\textbf{Role --- Company} \\hfill Dates\\par\n\\begin{itemize}\n\\item Describe your contribution and its impact.\n\\end{itemize}\n\\section*{Education}\nYour qualification --- Institution\\par\n\\section*{Skills}\nYour relevant skills"}\n\\end{document}\n`;
+const hasMainSource = (project: Project | null | undefined) =>
+  !!project?.files.find(
+    (file) =>
+      file.path === project.mainFile &&
+      file.encoding === "utf8" &&
+      file.content.trim().length > 0,
+  );
 
-export default function LatexDocumentPanel({
-  record,
-  primary,
-  onSourceReady,
-}: {
-  record: WorkRecord;
-  primary?: WorkRecord;
-  onSourceReady?: () => void;
-}) {
+export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
   const { editing } = useEditMode();
-  const { user, refresh, records, update } = useWorkspace();
+  const { user, refresh } = useWorkspace();
   const [serverProject, setServerProject] = useState<Project | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [source, setSource] = useState(false);
-  const [split, setSplit] = useState(50);
+  const [configured, setConfigured] = useState(true);
   const [path, setPath] = useState("main.tex");
   const [line, setLine] = useState<number>();
   const [error, setError] = useState("");
   const [compileError, setCompileError] = useState("");
   const [job, setJob] = useState<Job>();
   const [successful, setSuccessful] = useState<Job>();
-  const [comparison, setComparison] = useState<Project>();
-  const [comparisonLabel, setComparisonLabel] = useState("");
-  const [revisions, setRevisions] =
-    useState<{ id: string; createdAt: string }[]>();
-  const [text, setText] = useState<string>();
-  const compileTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const [conflictSource, setConflictSource] = useState<Project>();
+  const [showConflictReview, setShowConflictReview] = useState(false);
+  const conflictDialog = useRef<HTMLDialogElement>(null);
   const alive = useRef(true);
   const compileSequence = useRef(0);
   const sourceLoadSequence = useRef(0);
-  const latestSavedProject = useRef<Project | null>(null);
   const compileRef = useRef<(revisionId: string) => Promise<void>>(
     async () => {},
   );
-  const extractedUrl = useRef(successful?.textUrl);
-  const readyCallback = useRef(onSourceReady);
-  readyCallback.current = onSourceReady;
-  extractedUrl.current = successful?.textUrl;
   const draftKey = `work:latex-draft:${user?.id || "demo"}:${record.id}`;
   const api = `/api/latex/${encodeURIComponent(record.id)}`;
   const loadSource = useCallback(async () => {
@@ -78,14 +65,43 @@ export default function LatexDocumentPanel({
     setLoading(true);
     setError("");
     try {
-      const { project: next } = await request<{ project: Project | null }>(api);
+      const { project: next, configured: compilerConfigured } = await request<{
+        project: Project | null;
+        configured?: boolean;
+      }>(api);
       if (!alive.current || sequence !== sourceLoadSequence.current) return;
       setServerProject(next);
-      latestSavedProject.current = next;
+      setConfigured(compilerConfigured !== false);
       setLoaded(true);
       if (next) {
+        const latestJob = next.latestJob;
         setPath(next.mainFile);
-        setSuccessful(next.latestSuccessfulJob);
+        setJob(latestJob);
+        setSuccessful(
+          latestJob?.status === "succeeded"
+            ? latestJob
+            : next.latestSuccessfulJob,
+        );
+        const alreadyCompiled =
+          (next.latestSuccessfulJob?.revisionId === next.revisionId &&
+            next.latestSuccessfulJob.metadata?.texEnvironment ===
+              TEXLIVE_ENVIRONMENT) ||
+          (latestJob?.status === "succeeded" &&
+            latestJob.metadata?.texEnvironment === TEXLIVE_ENVIRONMENT &&
+            latestJob.revisionId === next.revisionId);
+        const compileInProgressOrFailed =
+          latestJob?.revisionId === next.revisionId &&
+          latestJob.environment === TEXLIVE_ENVIRONMENT &&
+          (["queued", "running"].includes(latestJob.status) ||
+            (latestJob.status === "failed" &&
+              latestJob.metadata?.texEnvironment === TEXLIVE_ENVIRONMENT));
+        if (
+          compilerConfigured !== false &&
+          hasMainSource(next) &&
+          !alreadyCompiled &&
+          !compileInProgressOrFailed
+        )
+          void compileRef.current(next.revisionId);
       }
     } catch (failure) {
       if (!alive.current || sequence !== sourceLoadSequence.current) return;
@@ -100,11 +116,19 @@ export default function LatexDocumentPanel({
     }
   }, [api]);
   const refreshSource = async () => {
-    const { project: latest } = await request<{ project: Project | null }>(api);
+    const { project: latest } = await request<{
+      project: Project | null;
+    }>(api);
+    if (!alive.current) return latest;
     setServerProject(latest);
-    latestSavedProject.current = latest;
     setLoaded(true);
-    if (latest?.latestSuccessfulJob) setSuccessful(latest.latestSuccessfulJob);
+    const latestJob = latest?.latestJob;
+    setJob(latestJob);
+    setSuccessful(
+      latestJob?.status === "succeeded"
+        ? latestJob
+        : latest?.latestSuccessfulJob,
+    );
     return latest;
   };
   const autosave = useAutosave<Project | null>({
@@ -147,58 +171,50 @@ export default function LatexDocumentPanel({
     persist: async (value, expectedVersion) => {
       if (!value) return;
       if (alive.current) setCompileError("");
-      const { project: next } = await request<{ project: Project }>(
+      const { project: next } = await request<{
+        project: Project;
+      }>(
         api,
         jsonRequest("PUT", {
           expectedVersion: expectedVersion ?? value.version ?? record.version,
           files: value.files,
           mainFile: value.mainFile,
-          engine: value.engine,
+          engine: "pdflatex",
         }),
       );
       const saved: Project = {
         ...value,
+        engine: "pdflatex",
         version: next.version,
         revisionId: next.revisionId,
       };
-      latestSavedProject.current = saved;
       if (alive.current) {
         setServerProject(saved);
+        const latestJob = next.latestJob;
+        setJob(latestJob);
+        if (latestJob?.status === "succeeded") setSuccessful(latestJob);
+        else if (next.latestSuccessfulJob)
+          setSuccessful(next.latestSuccessfulJob);
         void refresh();
-        clearTimeout(compileTimer.current);
-        compileTimer.current = setTimeout(
-          () => void compileRef.current(next.revisionId),
-          1000,
-        );
       }
       return { version: next.version, value: saved };
     },
   });
   const project = autosave.value || undefined;
   const setProject = autosave.setValue;
-  const liveProject = useRef(project);
-  liveProject.current = project;
   const flushRef = useRef(autosave.flush);
   flushRef.current = autosave.flush;
   useEffect(() => {
-    if (project) readyCallback.current?.();
-  }, [!!project]);
+    if (loaded && project && project.engine !== "pdflatex")
+      setProject({ ...project, engine: "pdflatex" });
+  }, [loaded, project?.engine]);
   useEffect(() => {
     alive.current = true;
     void loadSource();
     return () => {
       alive.current = false;
-      clearTimeout(compileTimer.current);
     };
   }, [loadSource]);
-  useEffect(() => {
-    const flushOnLeave = () => void flushRef.current();
-    window.addEventListener("pagehide", flushOnLeave);
-    return () => {
-      window.removeEventListener("pagehide", flushOnLeave);
-      if (editing) flushOnLeave();
-    };
-  }, [editing, record.id]);
   useEffect(() => {
     if (
       !loaded ||
@@ -213,15 +229,8 @@ export default function LatexDocumentPanel({
       revisionId: "",
       mainFile: "main.tex",
       engine: "pdflatex",
-      files: [
-        {
-          path: "main.tex",
-          encoding: "utf8",
-          content: template(field(record, "type") === "letter"),
-        },
-      ],
+      files: [{ path: "main.tex", encoding: "utf8", content: "" }],
     });
-    setSource(true);
   }, [
     loaded,
     editing,
@@ -229,11 +238,7 @@ export default function LatexDocumentPanel({
     error,
     record.version,
     record.data.nativeDocument,
-    record.data.type,
   ]);
-  useEffect(() => {
-    setText(undefined);
-  }, [successful?.textUrl]);
   useEffect(() => {
     const metadata = record.data.latexProject as
       { revisionId?: string } | undefined;
@@ -243,7 +248,6 @@ export default function LatexDocumentPanel({
       record.version > current.version
         ? (() => {
             const next = { ...current, version: record.version };
-            latestSavedProject.current = next;
             return next;
           })()
         : current,
@@ -253,7 +257,7 @@ export default function LatexDocumentPanel({
   const compile = useCallback(
     async (revisionId: string) => {
       const sequence = ++compileSequence.current;
-      setCompileError("");
+      if (alive.current) setCompileError("");
       try {
         const result = await request<{ job: Job }>(
           `${api}/compile`,
@@ -276,231 +280,131 @@ export default function LatexDocumentPanel({
     [api],
   );
   compileRef.current = compile;
+  const previousEditing = useRef(editing);
+  useEffect(() => {
+    const wasEditing = previousEditing.current;
+    previousEditing.current = editing;
+    if (wasEditing && !editing) void flushRef.current();
+  }, [editing]);
+  useEffect(() => {
+    const flushOnLeave = () => void flushRef.current();
+    window.addEventListener("pagehide", flushOnLeave);
+    return () => {
+      window.removeEventListener("pagehide", flushOnLeave);
+      if (editing) flushOnLeave();
+    };
+  }, [editing, record.id]);
+  useEffect(() => {
+    const dialog = conflictDialog.current;
+    if (!dialog) return;
+    if (showConflictReview && !dialog.open) dialog.showModal();
+    else if (!showConflictReview && dialog.open) dialog.close();
+  }, [showConflictReview, conflictSource]);
   useEffect(() => {
     if (!job || !["queued", "running"].includes(job.status)) return;
     let active = true;
-    const timer = setTimeout(
-      () =>
-        void request<{ job: Job }>(`${api}/jobs/${encodeURIComponent(job.id)}`)
-          .then(({ job: next }) => {
-            if (active) {
-              setJob(next);
-              if (next.status === "succeeded") setSuccessful(next);
-              if (next.status === "failed")
-                setCompileError(
-                  "PDF compilation failed. Your source remains saved.",
-                );
-            }
-          })
-          .catch((failure) => {
-            if (active) setCompileError(errorMessage(failure));
-          }),
-      1200,
-    );
+    let delay = 1200;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const { job: next } = await request<{ job: Job }>(
+          `${api}/jobs/${encodeURIComponent(job.id)}`,
+        );
+        if (!active) return;
+        setJob(next);
+        setCompileError(
+          next.status === "failed"
+            ? "PDF compilation failed. Your source remains saved."
+            : "",
+        );
+        if (next.status === "succeeded") setSuccessful(next);
+        if (!["queued", "running"].includes(next.status)) return;
+        delay = 1200;
+      } catch (failure) {
+        if (!active) return;
+        setCompileError(errorMessage(failure));
+        delay = Math.min(delay * 2, 15_000);
+      }
+      if (active) timer = setTimeout(() => void poll(), delay);
+    };
+    timer = setTimeout(() => void poll(), delay);
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [job, api]);
+  }, [job?.id, job?.status, api]);
 
-  async function importFiles(file: File) {
-    try {
-      if (file.size > 5 * 1024 * 1024)
-        throw new Error("Source imports are limited to 5 MB.");
-      const files: ProjectFile[] = [];
-      if (/\.zip$/i.test(file.name)) {
-        const zipped = new Uint8Array(await file.arrayBuffer());
-        let total = 0;
-        let count = 0;
-        const paths = new Set<string>();
-        // Inspect the complete central directory before allocating inflated files.
-        unzipSync(zipped, {
-          filter: (item) => {
-            if (item.name.endsWith("/")) return false;
-            if (++count > 100)
-              throw new Error(
-                "A source project can contain at most 100 files.",
-              );
-            if (!safePath(item.name))
-              throw new Error(
-                `Unsupported source file: ${item.name}. Custom executable build rules are not supported.`,
-              );
-            if (paths.has(item.name.toLowerCase()))
-              throw new Error("Source ZIP paths must be unique.");
-            paths.add(item.name.toLowerCase());
-            if (item.compression === 0 && item.size !== item.originalSize)
-              throw new Error("The source ZIP has inconsistent file sizes.");
-            if (
-              item.originalSize > 5 * 1024 * 1024 ||
-              (total += item.originalSize) > 5 * 1024 * 1024
-            )
-              throw new Error("Unsafe path or oversized source ZIP.");
-            return false;
-          },
-        });
-        const archive = unzipSync(zipped, {
-          filter: (item) => !item.name.endsWith("/"),
-        });
-        if (Object.keys(archive).length > 100)
-          throw new Error("A source project can contain at most 100 files.");
-        for (const [path, bytes] of Object.entries(archive)) {
-          const utf8 =
-            /\.(tex|sty|cls|bib|bst|txt|md|csv|json|cfg|def|clo|fd)$/i.test(
-              path,
-            );
-          let binary = "";
-          if (!utf8)
-            for (let start = 0; start < bytes.length; start += 8192)
-              binary += String.fromCharCode(
-                ...bytes.subarray(start, start + 8192),
-              );
-          files.push({
-            path,
-            content: utf8 ? strFromU8(bytes) : btoa(binary),
-            encoding: utf8 ? "utf8" : "base64",
-          });
-        }
-      } else {
-        if (!safePath(file.name) || !/\.tex$/i.test(file.name))
-          throw new Error("Choose a .tex file or source ZIP.");
-        files.push({
-          path: file.name,
-          content: await file.text(),
-          encoding: "utf8",
-        });
-      }
-      if (!files.some((item) => /\.tex$/i.test(item.path)))
-        throw new Error("The project needs at least one .tex file.");
-      const mainFile =
-        files.find((item) => item.path === "main.tex")?.path ||
-        files.find((item) => /\.tex$/i.test(item.path))!.path;
-      setProject({
-        ...project,
-        version: project?.version || record.version,
-        revisionId: project?.revisionId || "",
-        files,
-        mainFile,
-        engine: project?.engine || "pdflatex",
-      });
-      setPath(mainFile);
-      setSource(true);
-      setError("");
-    } catch (failure) {
-      setError(errorMessage(failure));
-    }
-  }
-  async function compare(mode: "fork" | "primary" | "parent") {
-    const parent = field(record, "parentVariantId");
-    const fork = field(record, "forkRevisionId");
-    const destination = mode === "primary" ? primary?.id : parent;
-    if (!destination || (mode === "fork" && !fork)) return;
-    try {
-      const result = await request<{ project: Project }>(
-        `/api/latex/${encodeURIComponent(destination)}${mode === "fork" ? `/revisions/${encodeURIComponent(fork)}` : ""}`,
-      );
-      setComparison(result.project);
-      setComparisonLabel(
-        mode === "fork"
-          ? `Fork baseline · ${field(record, "forkedFromTitle", records.find((item) => item.id === parent)?.title || "historical parent")}`
-          : mode === "parent"
-            ? `Current parent · ${records.find((item) => item.id === parent)?.title || "parent"}`
-            : `Primary · ${primary?.title || "main document"}`,
-      );
-      setSource(true);
-    } catch (failure) {
-      setError(errorMessage(failure));
-    }
-  }
   const currentFile = project?.files.find((file) => file.path === path);
-  const comparedFile = comparison?.files.find((file) => file.path === path);
-  const selectableFiles = [
-    ...new Set([
-      ...(project?.files.map((file) => file.path) || []),
-      ...(comparison?.files.map((file) => file.path) || []),
-    ]),
-  ];
+  const conflictFile = conflictSource?.files.find((file) => file.path === path);
   const savedProject = autosave.savedValue || undefined;
   const dirty =
     !!project &&
     (!savedProject || signature(project) !== signature(savedProject));
-  const matching =
+  const currentPdf =
     !!project &&
     !dirty &&
-    autosave.state === "Saved" &&
-    successful?.revisionId === project.revisionId;
-  const applications = records.filter((item) => item.kind === "application");
-  const linked = Array.isArray(record.data.applicationIds)
-    ? (record.data.applicationIds as string[])
-    : [];
+    successful?.revisionId === project.revisionId &&
+    successful.metadata?.texEnvironment === TEXLIVE_ENVIRONMENT;
+  const activeJob =
+    !!job &&
+    job.revisionId === project?.revisionId &&
+    ["queued", "running"].includes(job.status);
+  const localCompareText =
+    currentFile?.encoding === "utf8"
+      ? currentFile.content.slice(0, 60_000)
+      : currentFile
+        ? "This is a binary project file."
+        : "This file is absent from your saved copy.";
+  const remoteCompareText =
+    conflictFile?.encoding === "utf8"
+      ? conflictFile.content.slice(0, 60_000)
+      : conflictFile
+        ? "This is a binary project file."
+        : "This file is absent from the latest saved copy.";
   if (loading) return <p role="status">Loading source…</p>;
   return (
     <div className="latex-document-panel">
       <div className="latex-toolbar">
-        {project && (
+        {editing && project && (
           <>
-            {!editing && (
-              <Button
-                variant={source ? "secondary" : "ghost"}
-                onClick={() => setSource((value) => !value)}
-              >
-                <FileCode2 size={16} /> Source
-              </Button>
-            )}
             <span className="latex-state" role="status">
               {autosave.state}
             </span>
             <span className="latex-preview-state" role="status">
-              {job && ["queued", "running"].includes(job.status)
+              {activeJob
                 ? "Compiling PDF…"
-                : compileError
+                : job?.status === "failed"
                   ? "PDF compilation failed"
-                  : successful
-                    ? matching
-                      ? "PDF up to date"
-                      : "Previous PDF"
-                    : "No compiled PDF"}
+                  : currentPdf
+                    ? "PDF up to date"
+                    : successful?.pdfUrl
+                      ? "Previous PDF"
+                      : "No compiled PDF"}
             </span>
-            <Button
-              variant="secondary"
-              disabled={!!job && ["queued", "running"].includes(job.status)}
-              onClick={() =>
-                void (async () => {
-                  clearTimeout(compileTimer.current);
-                  if (dirty) await autosave.flush();
-                  clearTimeout(compileTimer.current);
-                  const current = liveProject.current;
-                  const saved =
-                    latestSavedProject.current ||
-                    (autosave.savedValue as Project | null);
-                  if (
-                    current &&
-                    saved &&
-                    signature(current) === signature(saved)
-                  )
-                    await compile(current.revisionId || saved.revisionId);
-                })()
-              }
-            >
-              <Play size={15} /> Recompile
-            </Button>
           </>
         )}
-        {successful?.pdfUrl && (
-          <a
-            className="button button-secondary"
-            href={successful.pdfUrl}
-            download
+        {successful?.pdfUrl && (editing || currentPdf) && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (!successful.pdfAttachmentId) return;
+              void downloadDocumentFile({
+                id: successful.pdfAttachmentId,
+                filename: documentPdfFilename(record),
+              }).catch((failure) => setError(errorMessage(failure)));
+            }}
           >
-            {matching ? "Download PDF" : "Download previous PDF"}
-          </a>
+            <Download size={16} />
+            {editing && !currentPdf ? "Download previous PDF" : "Download"}
+          </Button>
         )}
       </div>
-      {autosave.error && !autosave.conflict && (
+      {editing && autosave.error && !autosave.conflict && (
         <p className="form-error" role="alert">
           {autosave.error}
         </p>
       )}
-      {compileError && (
+      {editing && compileError && (
         <p className="form-error" role="alert">
           {compileError}
         </p>
@@ -510,12 +414,12 @@ export default function LatexDocumentPanel({
           {error}
         </p>
       )}
-      {!loaded && !loading && (
+      {editing && !loaded && !loading && (
         <Button variant="secondary" onClick={() => void loadSource()}>
           Retry loading source
         </Button>
       )}
-      {autosave.conflict && (
+      {editing && autosave.conflict && (
         <div className="latex-conflict" role="alert">
           <span>
             {autosave.error ||
@@ -527,377 +431,96 @@ export default function LatexDocumentPanel({
               void refreshSource()
                 .then((latest) => {
                   if (!latest) return;
-                  setComparison(latest);
-                  setComparisonLabel("Latest saved source");
-                  setSource(true);
+                  setConflictSource(latest);
+                  setShowConflictReview(true);
                 })
                 .catch((failure) => setError(errorMessage(failure)))
             }
           >
-            Compare latest
+            Compare saved source
           </Button>
-          <Button variant="secondary" onClick={() => void autosave.keepLocal()}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setShowConflictReview(false);
+              void autosave.keepLocal();
+            }}
+          >
             Keep my source
           </Button>
           <Button
             variant="ghost"
             onClick={() => {
               autosave.useSaved();
-              setComparison(undefined);
-              setComparisonLabel("");
               if (serverProject) setPath(serverProject.mainFile);
+              setShowConflictReview(false);
+              setConflictSource(undefined);
             }}
           >
             Use latest
           </Button>
         </div>
       )}
-      {!project && loaded && editing && (
-        <div className="latex-start">
-          <Button
-            onClick={() => {
-              setProject({
-                version: record.version,
-                revisionId: "",
-                mainFile: "main.tex",
-                engine: "pdflatex",
-                files: [
-                  {
-                    path: "main.tex",
-                    encoding: "utf8",
-                    content: template(field(record, "type") === "letter"),
-                  },
-                ],
-              });
-              setSource(true);
-            }}
-          >
-            Create LaTeX source
-          </Button>
-          <label className="button button-secondary">
-            Import source
-            <Input
-              type="file"
-              accept=".zip,.tex"
-              className="latex-file-input"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void importFiles(file);
-                event.target.value = "";
-              }}
-            />
-          </label>
-        </div>
-      )}
-      {project && (source || editing) && (
-        <details className="latex-settings">
-          <summary>Files & settings</summary>
-          <div className="inline-actions">
-            <Select
-              aria-label="Project file"
-              value={path}
-              onChange={(event) => setPath(event.target.value)}
-            >
-              {selectableFiles.map((filePath) => (
-                <option key={filePath} value={filePath}>
-                  {filePath}
-                </option>
-              ))}
-            </Select>
-            <Select
-              aria-label="Main LaTeX file"
-              disabled={!editing}
-              value={project.mainFile}
-              onChange={(event) =>
-                setProject({ ...project, mainFile: event.target.value })
-              }
-            >
-              {project.files
-                .filter((file) => /\.tex$/i.test(file.path))
-                .map((file) => (
-                  <option key={file.path} value={file.path}>
-                    {file.path}
-                  </option>
-                ))}
-            </Select>
-            <Select
-              aria-label="LaTeX engine"
-              disabled={!editing}
-              value={project.engine}
-              onChange={(event) =>
-                setProject({
-                  ...project,
-                  engine: event.target.value as Project["engine"],
-                })
-              }
-            >
-              <option value="pdflatex">pdfLaTeX</option>
-              <option value="xelatex">XeLaTeX</option>
-              <option value="lualatex">LuaLaTeX</option>
-            </Select>
-            {editing && (
-              <>
-                <label className="button button-secondary">
-                  Import source
-                  <Input
-                    type="file"
-                    accept=".zip,.tex"
-                    className="latex-file-input"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (
-                        file &&
-                        window.confirm(
-                          "Replace this project's working source files?",
-                        )
-                      )
-                        void importFiles(file);
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    const filename = window.prompt(
-                      "New source file name",
-                      "section.tex",
-                    );
-                    if (
-                      filename &&
-                      safePath(filename) &&
-                      !project.files.some((file) => file.path === filename)
-                    ) {
-                      setProject({
-                        ...project,
-                        files: [
-                          ...project.files,
-                          { path: filename, encoding: "utf8", content: "" },
-                        ],
-                      });
-                      setPath(filename);
-                    }
-                  }}
-                >
-                  <Plus size={15} /> File
-                </Button>
-                {path !== project.mainFile && (
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setProject({
-                        ...project,
-                        files: project.files.filter(
-                          (file) => file.path !== path,
-                        ),
-                      });
-                      setPath(project.mainFile);
-                    }}
-                  >
-                    Delete file
-                  </Button>
-                )}
-              </>
-            )}
-          </div>
-        </details>
-      )}
-      {project && (
-        <div className="inline-actions">
-          {field(record, "forkRevisionId") && (
-            <Button variant="ghost" onClick={() => void compare("fork")}>
-              Changes since fork
-            </Button>
-          )}
-          {primary && primary.id !== record.id && (
-            <Button variant="ghost" onClick={() => void compare("primary")}>
-              Changes from primary
-            </Button>
-          )}
-          {field(record, "parentVariantId") !== primary?.id &&
-            records.some(
-              (item) => item.id === field(record, "parentVariantId"),
-            ) && (
-              <Button variant="ghost" onClick={() => void compare("parent")}>
-                Changes from current parent
-              </Button>
-            )}
-          {comparison && (
-            <Button variant="ghost" onClick={() => setComparison(undefined)}>
-              <X size={15} /> Close differences
-            </Button>
-          )}
-          {comparison && comparisonLabel && (
-            <small className="muted">{comparisonLabel}</small>
-          )}
-        </div>
-      )}
-      {(project || successful?.pdfUrl) && (
-        <div
-          className={`latex-workbench ${source || editing ? "with-source" : ""}`}
-          style={{ "--latex-split": `${split}%` } as React.CSSProperties}
-        >
+      {editing && project && (
+        <div className="latex-workbench with-source">
           <Suspense fallback={<p role="status">Loading editor…</p>}>
-            {project &&
-              (source || editing) &&
-              ((currentFile || comparedFile)?.encoding === "utf8" ? (
-                <div className="latex-source-pane">
-                  <SourceEditor
-                    key={path}
-                    line={line}
-                    value={currentFile?.content || ""}
-                    readOnly={!editing}
-                    original={
-                      comparison ? comparedFile?.content || "" : undefined
-                    }
-                    onChange={(value) =>
-                      setProject(
-                        (current) =>
-                          current && {
-                            ...current,
-                            files: !current.files.some(
-                              (file) => file.path === path,
-                            )
-                              ? [
-                                  ...current.files,
-                                  { path, content: value, encoding: "utf8" },
-                                ]
-                              : current.files.map((file) =>
-                                  file.path === path
-                                    ? { ...file, content: value }
-                                    : file,
-                                ),
-                          },
-                      )
-                    }
-                  />
-                  {comparison && editing && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        const original = comparison.files.find(
-                          (file) => file.path === path,
-                        );
-                        if (
-                          original &&
-                          window.confirm(
-                            "Copy this comparison file into your working source?",
-                          )
-                        )
-                          setProject({
-                            ...project,
-                            files: !project.files.some(
-                              (file) => file.path === path,
-                            )
-                              ? [...project.files, original]
-                              : project.files.map((file) =>
-                                  file.path === path ? original : file,
-                                ),
-                          });
-                      }}
-                    >
-                      Copy comparison file
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <p>Binary project file · included in your backup</p>
-              ))}
-            {(source || editing) && project && (
-              <input
-                className="latex-resize"
-                type="range"
-                min="25"
-                max="75"
-                value={split}
-                aria-label="Source pane width"
-                onChange={(event) => setSplit(Number(event.target.value))}
-              />
+            {currentFile?.encoding === "utf8" ? (
+              <div className="latex-source-pane">
+                <SourceEditor
+                  key={path}
+                  line={line}
+                  value={currentFile.content}
+                  readOnly={false}
+                  onChange={(value) =>
+                    setProject(
+                      (current) =>
+                        current && {
+                          ...current,
+                          files: current.files.map((file) =>
+                            file.path === path
+                              ? { ...file, content: value }
+                              : file,
+                          ),
+                        },
+                    )
+                  }
+                />
+              </div>
+            ) : (
+              <p>Binary project file · included in your backup</p>
             )}
             {successful?.pdfUrl ? (
               <PdfPreview url={successful.pdfUrl} />
             ) : (
-              project && (
-                <div className="latex-empty-preview">
-                  {job?.status === "failed"
-                    ? "Compilation failed. Open the log below."
-                    : "Your compiled PDF will appear here."}
-                </div>
-              )
+              <div className="latex-empty-preview" role="status">
+                {activeJob
+                  ? "Compiling the latest saved source…"
+                  : compileError ||
+                    "The compiled PDF will appear here after the source is saved."}
+              </div>
             )}
           </Suspense>
         </div>
       )}
-      {project && (
-        <details
-          onToggle={(event) => {
-            if (event.currentTarget.open && !revisions)
-              void request<{ revisions: { id: string; createdAt: string }[] }>(
-                `${api}/revisions`,
-              )
-                .then((result) => setRevisions(result.revisions))
-                .catch((failure) => setError(errorMessage(failure)));
-          }}
-        >
-          <summary>Earlier source versions</summary>
-          {revisions ? (
-            revisions.map((revision) => (
-              <div className="document-version" key={revision.id}>
-                <span>
-                  {new Date(revision.createdAt).toLocaleString()}
-                  {revision.id === project.revisionId ? " · Current" : ""}
-                </span>
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    void request<{ project: Project }>(
-                      `${api}/revisions/${encodeURIComponent(revision.id)}`,
-                    )
-                      .then((result) => {
-                        setComparison(result.project);
-                        setSource(true);
-                      })
-                      .catch((failure) => setError(errorMessage(failure)))
-                  }
-                >
-                  Review
-                </Button>
-                {editing && revision.id !== project.revisionId && (
-                  <Button
-                    variant="ghost"
-                    onClick={() =>
-                      void request<{ project: Project }>(
-                        `${api}/revisions/${encodeURIComponent(revision.id)}`,
-                      )
-                        .then(({ project: earlier }) => {
-                          setProject((current) =>
-                            current
-                              ? {
-                                  ...earlier,
-                                  version: current.version,
-                                  revisionId: current.revisionId,
-                                }
-                              : earlier,
-                          );
-                          setPath(earlier.mainFile);
-                          setComparison(undefined);
-                          setComparisonLabel("");
-                          setSource(true);
-                        })
-                        .catch((failure) => setError(errorMessage(failure)))
-                    }
-                  >
-                    Restore
-                  </Button>
-                )}
-              </div>
-            ))
-          ) : (
-            <p role="status">Loading source history…</p>
-          )}
-        </details>
+      {!editing && currentPdf && successful?.pdfUrl && (
+        <Suspense fallback={<p role="status">Loading PDF…</p>}>
+          <PdfPreview url={successful.pdfUrl} />
+        </Suspense>
       )}
-      {job && (
+      {!editing && !currentPdf && (
+        <p className="latex-empty-preview" role="status">
+          {job?.status === "failed"
+            ? "PDF compilation failed. Switch to edit mode to fix the source."
+            : activeJob
+              ? "The latest PDF is compiling…"
+              : !hasMainSource(project)
+                ? "This document is empty. Switch to edit mode to add your LaTeX source."
+                : !configured
+                  ? "The PDF compiler is unavailable. Your source remains saved."
+                  : compileError || "The latest PDF is not available yet."}
+        </p>
+      )}
+      {editing && job && (
         <details className="latex-build-log" open={job.status === "failed"}>
           <summary>Compile log · {job.status}</summary>
           {job.diagnostics?.map((diagnostic, index) => (
@@ -910,7 +533,6 @@ export default function LatexDocumentPanel({
                   onClick={() => {
                     setPath(diagnostic.file!);
                     setLine(diagnostic.line);
-                    setSource(true);
                   }}
                 >
                   {diagnostic.file}:{diagnostic.line} · {diagnostic.message}
@@ -937,114 +559,86 @@ export default function LatexDocumentPanel({
           )}
         </details>
       )}
-      {successful?.textUrl && (
-        <details
-          onToggle={(event) => {
-            if (event.currentTarget.open && text === undefined)
-              void fetch(successful.textUrl!, { credentials: "same-origin" })
-                .then((response) => {
-                  if (!response.ok)
-                    throw new Error("Text extraction unavailable");
-                  return response.text();
-                })
-                .then((value) => {
-                  if (extractedUrl.current === successful.textUrl)
-                    setText(value);
-                })
-                .catch((failure) => setError(errorMessage(failure)));
-          }}
-        >
-          <summary>Extracted PDF text</summary>
-          <pre className="document-preview-text">
-            {text ?? "Loading extracted text…"}
-          </pre>
-        </details>
-      )}
-      {editing && (
-        <details className="latex-application-links">
-          <summary>
-            Application links{linked.length ? ` (${linked.length})` : ""}
-          </summary>
-          {applications.map((application) => (
-            <label key={application.id}>
-              <input
-                type="checkbox"
-                checked={linked.includes(application.id)}
-                onChange={(event) =>
-                  void update(record.id, {
-                    data: {
-                      ...record.data,
-                      applicationIds: event.target.checked
-                        ? [...linked, application.id]
-                        : linked.filter((id) => id !== application.id),
-                    },
-                  }).catch((failure) => setError(errorMessage(failure)))
-                }
-              />
-              {application.title}
-            </label>
-          ))}
-          {!applications.length && (
-            <p className="muted">Create an application to link this variant.</p>
-          )}
-          {matching &&
-            successful?.pdfUrl &&
-            linked.map((applicationId) => (
-              <Button
-                key={applicationId}
-                variant="ghost"
-                onClick={() =>
-                  void request(
-                    `${api}/submissions`,
-                    jsonRequest("POST", {
-                      applicationId,
-                      jobId: successful.id,
-                    }),
-                  )
-                    .then(() => refresh())
-                    .catch((failure) => setError(errorMessage(failure)))
-                }
-              >
-                Record submitted version ·{" "}
-                {applications.find((item) => item.id === applicationId)?.title}
-              </Button>
-            ))}
-        </details>
-      )}
-      {Array.isArray(record.data.submissions) &&
-        record.data.submissions.length > 0 && (
-          <details>
-            <summary>
-              Submitted versions ({record.data.submissions.length})
-            </summary>
-            {(
-              record.data.submissions as {
-                applicationId?: string;
-                pdfAttachmentId: string;
-                submittedAt: string;
-              }[]
-            ).map((submission, index) => (
-              <div
-                className="document-version"
-                key={`${submission.pdfAttachmentId}-${index}`}
-              >
-                <span>
-                  {applications.find(
-                    (item) => item.id === submission.applicationId,
-                  )?.title || "Previous application"}{" "}
-                  · {new Date(submission.submittedAt).toLocaleDateString()}
-                </span>
-                <a
-                  className="button button-ghost"
-                  href={`/api/attachments/${encodeURIComponent(submission.pdfAttachmentId)}`}
-                  download
-                >
-                  Download submitted PDF
-                </a>
-              </div>
-            ))}
-          </details>
-        )}
+      <dialog
+        ref={conflictDialog}
+        className="latex-conflict-dialog"
+        onCancel={(event) => {
+          event.preventDefault();
+          setShowConflictReview(false);
+        }}
+        onClose={() => setShowConflictReview(false)}
+      >
+        <div className="latex-conflict-dialog-content">
+          <h2>Compare saved source</h2>
+          <p className="muted">
+            Review the local and saved copies for the selected file before
+            choosing which to keep.
+          </p>
+          <label>
+            File to compare
+            <Select
+              aria-label="File to compare"
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+            >
+              {[
+                ...new Set([
+                  ...(project?.files.map((file) => file.path) || []),
+                  ...(conflictSource?.files.map((file) => file.path) || []),
+                ]),
+              ].map((filePath) => (
+                <option key={filePath} value={filePath}>
+                  {filePath}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <div className="latex-conflict-files">
+            <section>
+              <h3>Your source</h3>
+              <pre className="latex-conflict-file">{localCompareText}</pre>
+            </section>
+            <section>
+              <h3>Latest saved source</h3>
+              <pre className="latex-conflict-file">{remoteCompareText}</pre>
+            </section>
+          </div>
+          {(currentFile?.content.length || 0) > 60_000 ||
+          (conflictFile?.content.length || 0) > 60_000 ? (
+            <p className="muted">
+              Long files show their first 60,000 characters here.
+            </p>
+          ) : null}
+          <div className="inline-actions">
+            <Button
+              variant="ghost"
+              onClick={() => setShowConflictReview(false)}
+            >
+              Close comparison
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowConflictReview(false);
+                void autosave.keepLocal();
+              }}
+            >
+              Keep my source
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                autosave.useSaved();
+                if (serverProject) setPath(serverProject.mainFile);
+                setShowConflictReview(false);
+                setConflictSource(undefined);
+              }}
+            >
+              Use latest
+            </Button>
+          </div>
+        </div>
+      </dialog>
     </div>
   );
 }

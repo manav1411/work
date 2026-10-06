@@ -1,5 +1,5 @@
 [Unit]
-Description=Work private native LaTeX compiler
+Description=Work private TeX Live 2025 compiler
 After=network.target
 
 [Service]
@@ -8,6 +8,7 @@ User=work-compiler
 StateDirectory=work-compiler
 EnvironmentFile=/etc/work-compiler.env
 Environment=WORK_COMPILER_TMPDIR=/var/lib/work-compiler
+Environment=WORK_TEXLIVE_ROOT=/opt/work-texlive/2025
 ExecStart=/opt/work-compiler/node /opt/work-compiler/server.mjs
 Restart=on-failure
 RestartSec=5

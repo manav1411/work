@@ -7,7 +7,9 @@ import {
   request,
 } from "../../lib/api";
 
-export async function documentBlob(file: Attachment): Promise<Blob> {
+export async function documentBlob(
+  file: Pick<Attachment, "id">,
+): Promise<Blob> {
   const destination = await getAttachmentUrl(file.id);
   let response: Response;
   try {
@@ -34,8 +36,11 @@ export async function documentBlob(file: Attachment): Promise<Blob> {
   return response.blob();
 }
 
-export async function downloadDocumentFile(file: Attachment): Promise<void> {
-  downloadFile(await documentBlob(file), file.filename);
+export async function downloadDocumentFile(
+  file: Pick<Attachment, "id" | "filename">,
+  name = file.filename,
+): Promise<void> {
+  downloadFile(await documentBlob(file), name);
 }
 
 /** Confirm a server commit instead of placing a binary pointer in the offline outbox. */

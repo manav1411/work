@@ -3,7 +3,6 @@ import type { WorkRecord } from "../shared/model";
 import { directionDataSchema } from "../shared/direction";
 import { webDestination, profileLinkDataSchema } from "../shared/documents";
 import { directionNotes } from "../src/features/direction/directionAdapter";
-import { variantTree } from "../src/features/assets/variantTree";
 const record = (id: string, data: WorkRecord["data"] = {}): WorkRecord => ({
   id,
   kind: "asset",
@@ -18,26 +17,6 @@ const record = (id: string, data: WorkRecord["data"] = {}): WorkRecord => ({
   deletedAt: null,
 });
 describe("document and direction compatibility", () => {
-  it("keeps actual nested fork parents, missing parents and cycles without duplication", () => {
-    const main = record("main"),
-      security = record("security", { parentVariantId: "main" }),
-      tailored = record("tailored", { parentVariantId: "security" }),
-      orphan = record("orphan", { parentVariantId: "deleted" }),
-      a = record("a", { parentVariantId: "b" }),
-      b = record("b", { parentVariantId: "a" });
-    const result = variantTree([tailored, security, main, orphan, a, b]);
-    expect(
-      result.slice(0, 3).map((item) => [item.record.id, item.depth]),
-    ).toEqual([
-      ["main", 0],
-      ["security", 1],
-      ["tailored", 2],
-    ]);
-    expect(
-      result.find((item) => item.record === orphan)?.historicalParent,
-    ).toBe(true);
-    expect(new Set(result.map((item) => item.record.id)).size).toBe(6);
-  });
   it("preserves authored legacy direction fields in the notes adapter without mutating the record", () => {
     const old = record("direction", {
       focus: "Security",

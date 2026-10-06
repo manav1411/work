@@ -438,3 +438,13 @@
   width: 0;
   height: 0;
 }
+
+/* Keep focus behaviour without drawing rectangular focus rings. */
+:focus,
+:focus-visible,
+:focus-within,
+:focus::after,
+:focus-visible::after,
+:focus-within::after {
+  outline: none !important;
+}

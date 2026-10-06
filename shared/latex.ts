@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const LATEX_MAX_BYTES = 5 * 1024 * 1024;
 export const LATEX_MAX_FILES = 100;
+export const TEXLIVE_ENVIRONMENT = "texlive-2025-20250308-pdftex-1.40.27";
 export const latexEngineSchema = z.enum(["pdflatex", "xelatex", "lualatex"]);
 export type LatexEngine = z.infer<typeof latexEngineSchema>;
 
@@ -97,6 +98,7 @@ export const latexSaveSchema = z
   .strict();
 
 export interface LatexJob {
+  environment?: string;
   id: string;
   revisionId: string;
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -116,6 +118,7 @@ export interface LatexJob {
     message: string;
   }[];
   metadata?: {
+    texEnvironment?: string;
     imageDigest?: string;
     compilerFingerprint?: string;
     texLiveRelease?: string;
@@ -135,6 +138,9 @@ export interface LatexJob {
 export interface LatexProject extends LatexSource {
   version: number;
   revisionId: string;
+  /** Most recent build for this exact saved source revision, in any status. */
+  latestJob?: LatexJob;
+  /** Keeps the last rendered PDF visible in the editor while a new build runs. */
   latestSuccessfulJob?: LatexJob;
 }
 export interface LatexProjectMetadata {

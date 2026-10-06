@@ -10,8 +10,7 @@ export const LIMITS = {
 export function validateJob(input) {
   if (!input || !/^[a-zA-Z0-9_-]{1,100}$/.test(input.jobId))
     throw new Error("Invalid job ID");
-  if (!["pdflatex", "xelatex", "lualatex"].includes(input.engine))
-    throw new Error("Unsupported engine");
+  if (input.engine !== "pdflatex") throw new Error("Unsupported engine");
   if (
     !Array.isArray(input.files) ||
     !input.files.length ||

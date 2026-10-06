@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ChevronUp, FileText, GitFork, Plus } from "lucide-react";
+import { Copy, FileText, Plus, Trash2, X } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import { documentRecords } from "../../../shared/documents";
 import {
@@ -10,9 +10,9 @@ import {
   Input,
   Modal,
   PageHeader,
-  Select,
 } from "../../components/ui";
 import { useEditMode } from "../../lib/edit-mode";
+import { flushAutosaves } from "../../lib/autosave";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
 import { request, jsonRequest } from "../../lib/api";
@@ -21,12 +21,13 @@ import { DocumentPreview } from "./DocumentPreview";
 import { DocumentViewer } from "./DocumentViewer";
 import { ProfileLinks } from "./ProfileLinks";
 import { InlineTitle } from "../content/InlineTitle";
-import { variantTree } from "./variantTree";
+import { SortableList } from "../content/SortableList";
+import { reorderRecords } from "../content/reorderRecords";
 import "./documents.css";
 const LatexPanel = lazy(() => import("./LatexDocumentPanel"));
 export { getDocumentLinks } from "./documentLinks";
 const FAMILIES = [
-  { type: "resume", title: "Résumé" },
+  { type: "resume", title: "Resume" },
   { type: "letter", title: "Cover letter" },
 ] as const;
 const familyOf = (record: WorkRecord) =>
@@ -35,21 +36,23 @@ const native = (record: WorkRecord) =>
   !!record.data.latexProject || record.data.nativeDocument === true;
 
 export function AssetsPage() {
-  const { records, create, update, remove, refresh, pending } = useWorkspace();
+  const workspace = useWorkspace();
+  const { records, create, update, remove, refresh, pending, isPending } =
+    workspace;
   const { editing } = useEditMode();
   const [params, setParams] = useSearchParams();
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<WorkRecord>();
-  const [fork, setFork] = useState<WorkRecord>();
-  const [forkTarget, setForkTarget] = useState<{
-    parentId: string;
-    record: WorkRecord;
-    forked?: boolean;
+  const [creating, setCreating] = useState<{
+    type: "resume" | "letter";
+    source?: WorkRecord;
   }>();
   const [name, setName] = useState("");
-  const [application, setApplication] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const recordsRef = useRef(records);
+  recordsRef.current = records;
+  const copyTargets = useRef(new Map<string, WorkRecord>());
   const pageRef = useRef<HTMLDivElement>(null);
   const wasDocumentExpanded = useRef(false);
   const documentExpandedScrollY = useRef(0);
@@ -97,9 +100,13 @@ export function AssetsPage() {
     if (!params.has("record") && !params.has("default")) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
       const target = event.target;
+      const modal = pageRef.current?.querySelector("dialog[open]");
       const expanded = pageRef.current?.querySelector(
         ".document-family-expanded, .document-more-expanded",
       );
+      // Portalled controls consume the dismissal click before the document does.
+      if (document.querySelector('[data-work-overlay="open"]')) return;
+      if (target instanceof Node && modal?.contains(target)) return;
       if (target instanceof Node && expanded && !expanded.contains(target))
         setParams({});
     };
@@ -107,51 +114,57 @@ export function AssetsPage() {
     return () =>
       document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
   }, [params, setParams]);
-  const applications = records.filter(
-    (record) => record.kind === "application" && !record.deletedAt,
-  );
   function open(record: WorkRecord) {
     setParams({ record: record.id });
   }
-  async function createNative(type: "resume" | "letter", parent?: WorkRecord) {
+  async function createNative(type: "resume" | "letter", source?: WorkRecord) {
     setBusy(true);
     setError("");
+    const title = name.trim();
+    const operationKey = `${type}:${source?.id ?? "blank"}:${title}`;
     try {
-      const result =
-        parent && forkTarget?.parentId === parent.id
-          ? forkTarget.record
-          : await create({
-              kind: "asset",
-              title: parent
-                ? name.trim() || "Untitled variant"
-                : type === "resume"
-                  ? "Main résumé"
-                  : "Main cover letter",
-              data: {
-                type,
-                nativeDocument: true,
-                documentDefault: !parent,
-                ...(parent ? { forkedFromTitle: parent.title } : {}),
-                ...(application ? { applicationIds: [application] } : {}),
-              },
-            });
-      if (parent && !forkTarget)
-        setForkTarget({ parentId: parent.id, record: result });
-      if (
-        parent &&
-        !(forkTarget?.parentId === parent.id && forkTarget.forked)
-      ) {
+      let latestSource = source;
+      if (source) {
+        await flushAutosaves();
+        const localSource = recordsRef.current.find(
+          (record) => record.id === source.id,
+        );
+        if (localSource) latestSource = localSource;
+        if (!isPending(source.id) && !source.id.startsWith("offline-")) {
+          const response = await request<{ record: WorkRecord }>(
+            `/api/records/${encodeURIComponent(source.id)}`,
+          );
+          latestSource = response.record;
+        }
+      }
+
+      let result = copyTargets.current.get(operationKey);
+      if (!result) {
+        result = await create({
+          kind: "asset",
+          title:
+            title ||
+            (type === "resume" ? "Untitled resume" : "Untitled cover letter"),
+          data: {
+            type,
+            nativeDocument: true,
+            order: documents.filter(
+              (item) => native(item) && familyOf(item) === type,
+            ).length,
+          },
+        });
+        copyTargets.current.set(operationKey, result);
+      }
+      if (latestSource?.data.latexProject) {
         await request(
-          `/api/latex/${encodeURIComponent(parent.id)}/fork`,
+          `/api/latex/${encodeURIComponent(latestSource.id)}/copy`,
           jsonRequest("POST", { targetAssetId: result.id }),
         );
-        setForkTarget({ parentId: parent.id, record: result, forked: true });
       }
       await refresh();
-      setFork(undefined);
-      setForkTarget(undefined);
+      copyTargets.current.delete(operationKey);
+      setCreating(undefined);
       setName("");
-      setApplication("");
       open(result);
     } catch (failure) {
       setError(errorMessage(failure));
@@ -163,13 +176,136 @@ export function AssetsPage() {
     return (
       editing && (
         <Button
-          variant="ghost"
+          variant="danger"
+          className="document-variant-delete"
           onClick={() => setDeleting(record)}
           aria-label={`Delete ${record.title}`}
         >
-          Delete
+          <Trash2 size={16} /> Delete
         </Button>
       )
+    );
+  }
+  function documentTabs(
+    type: "resume" | "letter",
+    title: string,
+    variants: WorkRecord[],
+    current?: WorkRecord,
+  ) {
+    return (
+      <SortableList
+        className="section-tabs editable-tabs document-tabs"
+        horizontal
+        label={`${title} documents`}
+        items={variants}
+        onReorder={async (ids) => {
+          await flushAutosaves();
+          const latest =
+            workspace.mode === "demo"
+              ? recordsRef.current
+              : (await request<{ records: WorkRecord[] }>("/api/records"))
+                  .records;
+          const ordered = ids.map((id) => {
+            const item = latest.find((record) => record.id === id);
+            if (!item)
+              throw new Error(
+                "A document changed. Reload the list before arranging it.",
+              );
+            return item;
+          });
+          await reorderRecords(ordered, workspace);
+        }}
+        trailing={
+          editing && (
+            <Button
+              variant="secondary"
+              className="document-tab-new"
+              onClick={() => {
+                setCreating({ type });
+                setName("");
+                setError("");
+              }}
+            >
+              <Plus size={16} /> New blank {title.toLowerCase()}
+            </Button>
+          )
+        }
+      >
+        {(record, handle) => (
+          <div className="document-tab-item">
+            <div
+              className={`editable-tab document-tab ${current?.id === record.id ? "active" : ""}`}
+              role="tab"
+              id={`document-tab-${record.id}`}
+              aria-controls={`document-content-${type}`}
+              aria-label={record.title}
+              aria-selected={current?.id === record.id}
+              tabIndex={current?.id === record.id ? 0 : -1}
+              onClick={() => open(record)}
+              onFocusCapture={(event) => {
+                if (event.target instanceof HTMLInputElement) open(record);
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (["Enter", " "].includes(event.key)) {
+                  event.preventDefault();
+                  open(record);
+                } else if (
+                  ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+                ) {
+                  event.preventDefault();
+                  const index = variants.indexOf(record);
+                  const next =
+                    variants[
+                      event.key === "Home"
+                        ? 0
+                        : event.key === "End"
+                          ? variants.length - 1
+                          : (index +
+                              (event.key === "ArrowRight" ? 1 : -1) +
+                              variants.length) %
+                            variants.length
+                    ];
+                  open(next);
+                  document.getElementById(`document-tab-${next.id}`)?.focus();
+                }
+              }}
+            >
+              {handle}
+              <InlineTitle
+                draftKey={`document-title:${record.id}`}
+                version={record.version}
+                value={record.title}
+                label={`${title} document name`}
+                onSave={(name, version) =>
+                  update(
+                    record.id,
+                    { title: name.trim() || `Untitled ${title.toLowerCase()}` },
+                    version,
+                  )
+                }
+              />
+            </div>
+            {editing && (
+              <div className="document-tab-actions">
+                {deletion(record)}
+                <Button
+                  variant="secondary"
+                  className="document-variant-copy"
+                  aria-label={`Copy ${record.title}`}
+                  onClick={() => {
+                    setCreating({ type, source: record });
+                    setName(`Copy of ${record.title}`);
+                    setError("");
+                  }}
+                >
+                  <Copy size={16} /> Copy
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </SortableList>
     );
   }
   return (
@@ -182,38 +318,61 @@ export function AssetsPage() {
       )}
       <div className="document-grid">
         {FAMILIES.map((family) => {
-          const variants = documents.filter(
-            (record) => native(record) && familyOf(record) === family.type,
+          const familyRecords = documents
+            .filter(
+              (record) => native(record) && familyOf(record) === family.type,
+            )
+            .sort(
+              (a, b) =>
+                a.createdAt.localeCompare(b.createdAt) ||
+                a.id.localeCompare(b.id),
+            );
+          const variants = [...familyRecords].sort(
+            (a, b) =>
+              (typeof a.data.order === "number"
+                ? a.data.order
+                : familyRecords.indexOf(a)) -
+              (typeof b.data.order === "number"
+                ? b.data.order
+                : familyRecords.indexOf(b)),
           );
-          const primary =
-            variants.find((record) => record.data.documentDefault === true) ||
-            variants.find((record) => !field(record, "parentVariantId")) ||
-            variants[0];
-          const expanded =
+          const expanded = !!(
             params.get("default") === family.type ||
-            (selected &&
-              native(selected) &&
-              familyOf(selected) === family.type);
+            (selected && native(selected) && familyOf(selected) === family.type)
+          );
           const current =
-            selected && variants.includes(selected) ? selected : primary;
+            selected && variants.includes(selected) ? selected : variants[0];
           return (
             <Card
               key={family.type}
               className={`document-card document-${family.type} ${expanded ? "document-family-expanded" : ""}`}
             >
-              <button
-                id={`document-family-${family.type}`}
-                className="document-family-open"
-                aria-expanded={!!expanded}
-                onClick={() =>
-                  expanded
-                    ? setParams({})
-                    : primary
-                      ? open(primary)
+              {expanded ? (
+                <div className="document-viewer-toolbar document-family-heading">
+                  <h2>{family.title}</h2>
+                  <div className="document-family-tabs">
+                    {documentTabs(family.type, family.title, variants, current)}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    className="icon-button document-viewer-close"
+                    onClick={() => setParams({})}
+                    aria-label={`Close ${family.title}`}
+                  >
+                    <X size={18} />
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  id={`document-family-${family.type}`}
+                  className="document-family-open"
+                  aria-expanded={false}
+                  onClick={() =>
+                    current
+                      ? open(current)
                       : setParams({ default: family.type })
-                }
-              >
-                {!expanded && (
+                  }
+                >
                   <div className="document-art" aria-hidden="true">
                     <div className="document-paper">
                       <FileText size={38} strokeWidth={1.6} />
@@ -223,155 +382,20 @@ export function AssetsPage() {
                     </div>
                     <span className="document-star">✦</span>
                   </div>
-                )}
-                <span className="document-family-title">
-                  {family.title}
-                  {expanded ? (
-                    <ChevronUp size={20} />
-                  ) : (
-                    <span className="document-family-count">
-                      {variants.length > 1 ? `${variants.length} versions` : ""}
-                    </span>
-                  )}
-                </span>
-              </button>
+                  <span className="document-family-title">{family.title}</span>
+                </button>
+              )}
               {expanded && (
-                <div className="document-family-content">
-                  <div
-                    className="document-variant-tree"
-                    aria-label={`${family.title} variants`}
-                  >
-                    {variantTree(variants).map(
-                      ({ record, depth, historicalParent }) => (
-                        <div
-                          key={record.id}
-                          className="document-variant-row"
-                          style={{ paddingLeft: `${depth * 1.2}rem` }}
-                        >
-                          {depth > 0 && <GitFork size={14} />}
-                          <button
-                            className={`document-variant-select ${current?.id === record.id ? "is-selected" : ""}`}
-                            onClick={() => open(record)}
-                          >
-                            {editing ? <FileText size={15} /> : record.title}
-                            {record.id === primary?.id && (
-                              <span className="document-default-label">
-                                Main
-                              </span>
-                            )}
-                          </button>
-                          {editing && (
-                            <InlineTitle
-                              draftKey={`document-title:${record.id}`}
-                              version={record.version}
-                              value={record.title}
-                              label="Variant name"
-                              onSave={async (title, version) => {
-                                return update(
-                                  record.id,
-                                  { title: title.trim() || "Untitled variant" },
-                                  version,
-                                );
-                              }}
-                            />
-                          )}
-                          {historicalParent && (
-                            <small className="muted">
-                              Historical parent:{" "}
-                              {field(
-                                record,
-                                "forkedFromTitle",
-                                "removed variant",
-                              )}
-                            </small>
-                          )}
-                          {Array.isArray(record.data.applicationIds) &&
-                            record.data.applicationIds.length > 0 && (
-                              <small className="muted">
-                                Application variant
-                              </small>
-                            )}
-                          {deletion(record)}
-                        </div>
-                      ),
-                    )}
-                  </div>
-                  {editing && current && !!current.data.latexProject && (
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        setFork(current);
-                        setName("");
-                        setApplication("");
-                      }}
-                    >
-                      <GitFork size={16} />
-                      New variant
-                    </Button>
-                  )}
-                  {fork && variants.includes(fork) && (
-                    <form
-                      className="document-fork-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void createNative(family.type, fork);
-                      }}
-                    >
-                      <Field label="Variant name">
-                        <Input
-                          autoFocus
-                          value={name}
-                          maxLength={240}
-                          placeholder="Security, Master, Google…"
-                          onChange={(event) => setName(event.target.value)}
-                        />
-                      </Field>
-                      <Field label="Application">
-                        <Select
-                          value={application}
-                          onChange={(event) =>
-                            setApplication(event.target.value)
-                          }
-                        >
-                          <option value="">General variant</option>
-                          {applications.map((record) => (
-                            <option key={record.id} value={record.id}>
-                              {field(record, "company")} · {record.title} ·{" "}
-                              {field(record, "status")}
-                            </option>
-                          ))}
-                        </Select>
-                      </Field>
-                      <div className="inline-actions">
-                        <Button type="submit" disabled={busy}>
-                          Create variant
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => setFork(undefined)}
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </form>
-                  )}
+                <div
+                  className="document-family-content"
+                  id={`document-content-${family.type}`}
+                  role="tabpanel"
+                  aria-label={current?.title || family.title}
+                >
                   {current ? (
                     <Suspense fallback={<p role="status">Loading document…</p>}>
-                      <LatexPanel
-                        key={current.id}
-                        record={current}
-                        primary={primary}
-                      />
+                      <LatexPanel key={current.id} record={current} />
                     </Suspense>
-                  ) : editing ? (
-                    <Button
-                      disabled={busy}
-                      onClick={() => void createNative(family.type)}
-                    >
-                      <Plus size={16} />
-                      Write in LaTeX
-                    </Button>
                   ) : (
                     <p className="muted">No document yet.</p>
                   )}
@@ -440,11 +464,65 @@ export function AssetsPage() {
       </section>
       <ProfileLinks />
       <Modal
+        open={!!creating}
+        title={
+          creating?.source
+            ? "Create a copy"
+            : `New blank ${creating?.type === "resume" ? "resume" : "cover letter"}`
+        }
+        onClose={() => {
+          setCreating(undefined);
+          setName("");
+        }}
+      >
+        {creating && (
+          <form
+            className="document-create-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createNative(creating.type, creating.source);
+            }}
+          >
+            <Field label="Name">
+              <Input
+                autoFocus
+                required
+                disabled={busy}
+                maxLength={240}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </Field>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="inline-actions">
+              <Button type="submit" disabled={busy || !name.trim()}>
+                {creating.source ? "Create copy" : "Create document"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setCreating(undefined);
+                  setName("");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+      <Modal
         open={!!deleting}
         title={`Delete ${deleting?.title || "document"}?`}
         onClose={() => setDeleting(undefined)}
       >
-        <p>Independent variants and submitted versions remain available.</p>
+        <p>This document will be removed from your list.</p>
         <div className="inline-actions">
           <Button
             variant="danger"

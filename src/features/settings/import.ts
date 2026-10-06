@@ -191,7 +191,7 @@ export async function parseMarkdownFiles(
   };
   if (!files.length) {
     preview.errors.push(
-      "Select Markdown notes, a Notion export folder, or a résumé PDF.",
+      "Select Markdown notes, a Notion export folder, or a resume PDF.",
     );
     return preview;
   }
@@ -493,12 +493,12 @@ export async function parseMarkdownFiles(
       record: {
         kind: "asset",
         title: cleanNotionTitle(filename),
-        body: `Imported ${resume ? "résumé" : "document"} PDF. Review the content and label this version before linking it to an application.\n\n[Open PDF](work-attachment://${encodeURIComponent(filename)})`,
+        body: `Imported ${resume ? "resume" : "document"} PDF. Review the content and label this version before linking it to an application.\n\n[Open PDF](work-attachment://${encodeURIComponent(filename)})`,
         tags: ["imported"],
         links: [],
         data: {
           subtype: resume ? "resume" : "document",
-          type: resume ? "Résumé" : "Document",
+          type: resume ? "Resume" : "Document",
           originalPath: item.path,
           sourceFiles: [item.path],
           source: "PDF upload",

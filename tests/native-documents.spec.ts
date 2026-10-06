@@ -3,12 +3,11 @@ import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
 import type { LatexProject } from "../shared/latex";
 import { enterEditMode } from "./edit-mode-helper";
 
-test("native documents expand inline, save source, fork independently and show source differences", async ({
+test("native documents expand inline, save source and copy independently", async ({
   page,
 }) => {
   const records: WorkRecord[] = [];
   const projects = new Map<string, LatexProject>();
-  const snapshots = new Map<string, LatexProject>();
   let revision = 0;
   const source =
     "\\documentclass{article}\n\\begin{document}\nPrimary wording\n\\end{document}\n";
@@ -50,6 +49,11 @@ test("native documents expand inline, save source, fork independently and show s
     }
     if (/^\/api\/records\/[^/]+\/attachments$/.test(path))
       return route.fulfill({ json: { attachments: [] } });
+    const recordRoute = /^\/api\/records\/([^/]+)$/.exec(path);
+    if (recordRoute && method === "GET")
+      return route.fulfill({
+        json: { record: records.find((item) => item.id === recordRoute[1]) },
+      });
     const match = /^\/api\/latex\/([^/]+)(.*)$/.exec(path);
     if (match) {
       const [, id, tail] = match;
@@ -75,18 +79,15 @@ test("native documents expand inline, save source, fork independently and show s
         };
         record.data.latexProject = { revisionId: project.revisionId };
         projects.set(id, structuredClone(project));
-        snapshots.set(project.revisionId, structuredClone(project));
         return route.fulfill({ json: { project, record } });
       }
-      if (tail === "/fork" && method === "POST") {
+      if (tail === "/copy" && method === "POST") {
         const input = route.request().postDataJSON();
         const target = records.find((item) => item.id === input.targetAssetId)!;
         const original = projects.get(id)!;
         target.version++;
         target.data = {
           ...target.data,
-          parentVariantId: id,
-          forkRevisionId: original.revisionId,
           latexProject: { revisionId: `revision-${++revision}` },
         };
         const project = {
@@ -96,13 +97,8 @@ test("native documents expand inline, save source, fork independently and show s
           version: target.version,
         };
         projects.set(target.id, project);
-        snapshots.set(project.revisionId, structuredClone(project));
         return route.fulfill({ json: { project, record: target } });
       }
-      if (tail.startsWith("/revisions/"))
-        return route.fulfill({
-          json: { project: snapshots.get(tail.split("/").pop()!) },
-        });
       if (tail === "/compile") {
         const input = route.request().postDataJSON();
         // Intentionally no PDF: this checks browser behavior, not real TeX output.
@@ -125,7 +121,14 @@ test("native documents expand inline, save source, fork independently and show s
   await enterEditMode(page, "Documents");
   await page.locator("#document-family-resume").click();
   await page
-    .getByRole("button", { name: "Write in LaTeX", exact: true })
+    .getByRole("button", { name: "New blank resume", exact: true })
+    .click();
+  await page
+    .locator(".document-create-form")
+    .getByLabel("Name", { exact: true })
+    .fill("Resume");
+  await page
+    .getByRole("button", { name: "Create document", exact: true })
     .click();
   const editor = page.locator(
     ".latex-source-editor .cm-content[contenteditable=true]",
@@ -135,14 +138,10 @@ test("native documents expand inline, save source, fork independently and show s
   await expect
     .poll(() => projects.get("asset-1")?.files[0].content)
     .toBe(source);
-  await page.getByRole("button", { name: "New variant", exact: true }).click();
-  const fork = page.locator(".document-fork-form");
-  await fork
-    .getByLabel("Variant name", { exact: true })
-    .fill("Security résumé");
-  await fork
-    .getByRole("button", { name: "Create variant", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Copy Resume", exact: true }).click();
+  const copy = page.locator(".document-create-form");
+  await copy.getByLabel("Name", { exact: true }).fill("Security resume");
+  await copy.getByRole("button", { name: "Create copy", exact: true }).click();
   await expect(page).toHaveURL(/\/documents\?record=asset-2$/);
   await expect(
     page.getByRole("heading", { name: /^Documents\.?$/, exact: true }),
@@ -153,17 +152,7 @@ test("native documents expand inline, save source, fork independently and show s
     .poll(() => projects.get("asset-2")?.files[0].content)
     .toBe(tailored);
   expect(projects.get("asset-1")?.files[0].content).toBe(source);
-  await page
-    .getByRole("button", { name: "Changes since fork", exact: true })
-    .click();
-  await expect(page.locator(".cm-mergeView")).toBeVisible();
-  await expect(
-    page.locator(".cm-mergeViewEditors .cm-content").first(),
-  ).toContainText("Primary wording");
-  await expect(
-    page.locator(".cm-mergeViewEditors .cm-content").last(),
-  ).toContainText("Security wording");
-  await page.locator("#document-family-resume").click();
+  await page.getByRole("button", { name: "Close Resume", exact: true }).click();
   await expect(page).toHaveURL(/\/documents$/);
   await expect(page.locator(".document-family-expanded")).toHaveCount(0);
 });

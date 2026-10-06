@@ -105,6 +105,7 @@ export function ThemedSelect({
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal container={portalContainer ?? undefined}>
         <SelectPrimitive.Content
+          data-work-overlay="open"
           className={`themed-select-content ${contentClassName}`.trim()}
           position="popper"
           sideOffset={5}
@@ -225,6 +226,7 @@ export function DateInput({
         </Popover.Trigger>
         <Popover.Portal container={portalContainer ?? undefined}>
           <Popover.Content
+            data-work-overlay="open"
             ref={calendar}
             sideOffset={6}
             collisionPadding={12}

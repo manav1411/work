@@ -204,7 +204,7 @@ export function evidenceBullet(record: WorkRecord) {
   const outcome = field(record, "outcome", field(record, "impact"));
   return {
     kind: "asset" as const,
-    title: `${record.title} — résumé bullet`,
+    title: `${record.title} — resume bullet`,
     body: [contribution, outcome].filter(Boolean).join(" "),
     tags: record.tags,
     links: [record.id, ...record.links],
@@ -223,7 +223,7 @@ export const CAREER_TIMELINE = [
   {
     month: "OCT 2026",
     title: "Set the direction",
-    body: "Capture actual work evidence, establish a résumé baseline, shortlist teams, and choose a sustainable routine.",
+    body: "Capture actual work evidence, establish a resume baseline, shortlist teams, and choose a sustainable routine.",
   },
   {
     month: "NOV 2026",

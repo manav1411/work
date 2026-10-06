@@ -76,7 +76,7 @@ export async function resumePendingSources(
       // For a new source project the expected version is the parent record version.
       const version = remote?.version ?? raw.baseVersion ?? value.version;
       if (typeof version !== "number") continue;
-      const { project: saved } = await request<{ project: LatexProject }>(
+      await request<{ project: LatexProject }>(
         api,
         jsonRequest("PUT", { ...merged.value, expectedVersion: version }),
       );
@@ -84,11 +84,7 @@ export async function resumePendingSources(
       if (localStorage.getItem(draft.key) === draft.value)
         localStorage.removeItem(draft.key);
       changed = true;
-      // Compilation is independent: its failure never puts saved source back into recovery.
-      void request(
-        `${api}/compile`,
-        jsonRequest("POST", { revisionId: saved.revisionId }),
-      ).catch(() => undefined);
+      // The server compiles saved source independently, including after navigation.
     } catch {
       // Keep the durable local copy for the next reconnect or editor visit.
     }

@@ -77,6 +77,7 @@ export function SortableList<T extends { id: string }>({
   className = "",
   horizontal = false,
   label,
+  trailing,
 }: {
   items: T[];
   onReorder: (ids: string[]) => Promise<void>;
@@ -84,6 +85,7 @@ export function SortableList<T extends { id: string }>({
   className?: string;
   horizontal?: boolean;
   label?: string;
+  trailing?: ReactNode;
 }) {
   const { editing } = useEditMode();
   const [busy, setBusy] = useState(false);
@@ -150,6 +152,7 @@ export function SortableList<T extends { id: string }>({
               {(handle) => children(item, handle)}
             </SortableItem>
           ))}
+          {trailing}
         </div>
       </SortableContext>
       {error && (

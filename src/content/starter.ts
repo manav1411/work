@@ -31,7 +31,7 @@ export const STARTER_RECORDS: RecordInput[] = [
   },
   {
     kind: "action",
-    title: "Refresh the experience section of your résumé",
+    title: "Refresh the experience section of your resume",
     body: "Bring the backend and cybersecurity rotations up to date with verified evidence.",
     tags: ["applications"],
     data: {

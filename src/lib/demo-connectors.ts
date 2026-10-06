@@ -598,7 +598,7 @@ export function createDemoConnectorHandler(deps: DemoConnectorDependencies) {
               ? username || "Demo GitHub"
               : provider === "leetcode"
                 ? username || "Demo LeetCode profile"
-                : "Demo résumé project";
+                : "Demo resume project";
       const current: ConnectorConnection = {
         id: before?.id || id(),
         provider,

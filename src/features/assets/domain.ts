@@ -143,7 +143,7 @@ export function profileTasks(data: RecordData): ProfileTask[] {
 export function defaultProfileTasks(): ProfileTask[] {
   return [
     {
-      text: "Résumé: show contribution and actual engineering impact",
+      text: "Resume: show contribution and actual engineering impact",
       nextAction:
         "Rewrite one current-role bullet using evidence from your work log.",
       url: "",
@@ -160,9 +160,9 @@ export function defaultProfileTasks(): ProfileTask[] {
       url: "https://github.com",
     },
     {
-      text: "Website: update the résumé and links",
+      text: "Website: update the resume and links",
       nextAction:
-        "Upload the current résumé and check the contact and project links.",
+        "Upload the current resume and check the contact and project links.",
       url: "",
     },
     {

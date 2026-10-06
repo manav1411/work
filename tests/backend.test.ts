@@ -411,7 +411,7 @@ describe("native LaTeX projects", () => {
     });
   });
 
-  it("forks an independent source and keeps historical revisions readable", async () => {
+  it("copies an independent source without exposing earlier source versions", async () => {
     const parent = await create("Main resume", {
       kind: "asset",
       data: { type: "resume" },
@@ -426,7 +426,7 @@ describe("native LaTeX projects", () => {
         expectedVersion: 1,
       })
     ).json()) as { project: { revisionId: string } };
-    const response = await request(`/api/latex/${parent.id}/fork`, "POST", {
+    const response = await request(`/api/latex/${parent.id}/copy`, "POST", {
       targetAssetId: target.id,
     });
     expect(response.status).toBe(200);
@@ -435,7 +435,7 @@ describe("native LaTeX projects", () => {
       record: WorkRecord;
     };
     expect(fork.project.revisionId).not.toBe(saved.project.revisionId);
-    expect(fork.record.data.parentVariantId).toBe(parent.id);
+    expect(fork.record.data.parentVariantId).toBeUndefined();
     expect(
       (
         await request(`/api/latex/${target.id}`, "PUT", {
@@ -461,10 +461,10 @@ describe("native LaTeX projects", () => {
           `/api/latex/${parent.id}/revisions/${saved.project.revisionId}`,
         )
       ).status,
-    ).toBe(200);
+    ).toBe(404);
   });
 
-  it("rejects source reads and forks across private owners", async () => {
+  it("rejects source reads and copies across private owners", async () => {
     const foreign = await foreignRecord();
     await env.DB.prepare(
       "UPDATE records SET kind='asset', version=version+1 WHERE id=?",
@@ -482,7 +482,7 @@ describe("native LaTeX projects", () => {
     });
     expect(
       (
-        await request(`/api/latex/${document.id}/fork`, "POST", {
+        await request(`/api/latex/${document.id}/copy`, "POST", {
           targetAssetId: foreign.id,
         })
       ).status,
@@ -657,7 +657,7 @@ describe("native compilation preservation", () => {
       expect(
         (await request(`/api/latex/${document.id}/revisions/${revisionId}`))
           .status,
-      ).toBe(200);
+      ).toBe(404);
       expect(
         await (
           await request(`/api/attachments/${jobs[0].pdfAttachmentId}`)

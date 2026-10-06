@@ -20,7 +20,6 @@ function getDocument(records: WorkRecord[], type: DocumentType): DocumentLink {
         b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
     );
   const record =
-    candidates.find((item) => item.data.documentDefault === true) ||
     candidates.find((item) => item.data.latexProject) ||
     candidates.find((item) => field(item, "primaryAttachmentId")) ||
     candidates[0];

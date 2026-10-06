@@ -1,5 +1,9 @@
 #!/bin/sh
 set -eu
+if [ ! -d /opt/work-texlive/2025 ]; then
+  printf '%s\n' 'Install the pinned toolchain with sudo sh install-texlive-2025.sh first.' >&2
+  exit 1
+fi
 # Run with sudo from /home/manav/base/work_project. No credentials in arguments.
 cd /home/manav/base/work_project
 if ! id -u work-compiler >/dev/null 2>&1; then

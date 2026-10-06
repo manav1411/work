@@ -23,7 +23,7 @@ export const NOTE_TEMPLATES = [
   {
     id: "achievement",
     title: "Work achievement",
-    body: "# Work achievement\n\n## Context and problem\n\n## My contribution\n\n## Outcome\n\n## Evidence and measurement\n\n## Technologies\n\n## Feedback\n\n## Résumé bullet draft\n",
+    body: "# Work achievement\n\n## Context and problem\n\n## My contribution\n\n## Outcome\n\n## Evidence and measurement\n\n## Technologies\n\n## Feedback\n\n## Resume bullet draft\n",
   },
   {
     id: "project",
