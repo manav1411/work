@@ -604,7 +604,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         "You have device drafts. Review or download and discard them in Settings before signing out.",
         409,
       );
-    if (mode !== "demo")
+    const localSignOut = mode === "local";
+    if (mode !== "demo" && !localSignOut)
       await request("/api/auth/sign-out", jsonRequest("POST", {}));
     sessionStorage.removeItem("work-demo-active");
     setApiAdapter(null);
@@ -613,8 +614,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRecords([]);
     recordsRef.current = [];
     setMode("cloud");
+    if (localSignOut) setConfigured(false);
     setPreferences({ ...DEFAULT_PREFERENCES });
-    location.assign("/");
+    // Local development auth has no provider session to revoke; staying on
+    // this page lets the user choose the demo instead of immediately being
+    // signed back into the automatically provisioned local account.
+    if (!localSignOut) location.assign("/");
   }, [mode]);
   const recoverDraft = useCallback(
     async (queueId: string) => {

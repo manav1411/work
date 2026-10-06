@@ -84,6 +84,62 @@ test("six destinations and the account menu work with keyboard, pointer, and sig
   ).toBeNull();
 });
 
+test("local development sign-out opens the demo without calling GitHub auth", async ({
+  page,
+}) => {
+  let authSignOutCalled = false;
+  await page.route("**/api/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === "/api/session")
+      return route.fulfill({
+        json: {
+          user: {
+            id: "local-manav",
+            name: "Manav",
+            email: "local@example.invalid",
+          },
+          local: true,
+          configured: true,
+        },
+      });
+    if (path === "/api/records")
+      return route.fulfill({ json: { records: [] } });
+    if (path === "/api/preferences")
+      return route.fulfill({ json: { preferences: DEFAULT_PREFERENCES } });
+    if (path === "/api/goals")
+      return route.fulfill({ json: { goals: [] } });
+    if (path === "/api/connectors")
+      return route.fulfill({ json: { connections: [] } });
+    if (path === "/api/auth/sign-out") {
+      authSignOutCalled = true;
+      return route.fulfill({
+        status: 503,
+        json: { error: { message: "GitHub sign-in is not configured yet." } },
+      });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto("/home");
+  const account = page
+    .locator(".sidebar")
+    .getByRole("button", { name: "Account: Manav" });
+  await expect(account).toBeVisible();
+  await account.click();
+  await page.getByRole("menuitem", { name: "Sign out", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Sign in", exact: true }),
+  ).toBeVisible();
+  expect(authSignOutCalled).toBe(false);
+  await expect(
+    page.getByRole("button", { name: "Sign in with GitHub", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: /Open demo/ }).click();
+  await expect(
+    page.locator(".sidebar").getByRole("button", { name: "Account: Demo" }),
+  ).toBeVisible();
+});
+
 test("mobile navigation fits, traps drawer focus, and returns focus on close", async ({
   page,
 }) => {
