@@ -452,14 +452,18 @@ export function ApplicationsPage() {
                       {field(record, "location") || "—"}
                     </td>
                     <td>
-                      <button
-                        className="application-notes-preview application-open"
+                      <Link
+                        className="application-open application-primary-link"
                         aria-label={`Open notes for ${record.title}`}
-                        title={record.body || "—"}
-                        onClick={() => setParams({ record: record.id })}
+                        to={`/applications?record=${encodeURIComponent(record.id)}`}
                       >
-                        {record.body || "—"}
-                      </button>
+                        <span
+                          className="application-notes-preview"
+                          title={record.body || "—"}
+                        >
+                          {record.body || "—"}
+                        </span>
+                      </Link>
                     </td>
                   </tr>
                 ))}

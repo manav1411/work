@@ -343,21 +343,22 @@
   overflow-wrap: anywhere;
   max-width: 150px;
 }
+/* Let the text block fill the cell's content width, as the Role preview does.
+   Percentage widths inside a button can extend beyond the cell in Safari. */
 .application-notes-preview {
   display: block;
   min-width: 0;
-  width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  height: 1.2em;
   overflow: hidden;
+  overflow-wrap: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.82rem;
-  line-height: 1.2;
   text-align: left;
   padding: 0;
   border: 0;
+  font-size: 0.82rem;
+  line-height: 1.2;
 }
 .radar-notes-preview {
   position: relative;
@@ -638,12 +639,12 @@
   }
   .application-mobile-fields dd.application-notes-preview {
     display: block;
-    width: 100%;
     max-width: 100%;
-    height: 1.2em;
     overflow: hidden;
+    overflow-wrap: normal;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.82rem;
     line-height: 1.2;
   }
 }
