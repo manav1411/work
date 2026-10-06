@@ -60,6 +60,7 @@ export function RichDocumentEditor({
   initialBody = "",
   initialDocument,
   persist,
+  allowBlockReordering = true,
 }: {
   record?: WorkRecord;
   input: RecordInput;
@@ -67,6 +68,7 @@ export function RichDocumentEditor({
   label?: string;
   initialBody?: string;
   initialDocument?: RichNode;
+  allowBlockReordering?: boolean;
   persist?: (
     patch: RecordPatch,
     expectedVersion?: number,
@@ -352,7 +354,7 @@ export function RichDocumentEditor({
   return (
     <div
       ref={containerRef}
-      className={`rich-document ${editing ? "is-editing" : "is-reading"}`}
+      className={`rich-document ${editing ? "is-editing" : "is-reading"} ${allowBlockReordering ? "" : "rich-document-no-block-reordering"}`}
     >
       {editing &&
         (!editor.state.selection.empty ||
@@ -532,20 +534,20 @@ export function RichDocumentEditor({
       <div
         className="rich-document-canvas"
         onPointerDown={(event) => {
-          if (editing && !picked) {
+          if (editing && allowBlockReordering && !picked) {
             const child = (event.target as HTMLElement).closest(".tiptap > *");
             if (child)
               setBlock(Array.from(editor.view.dom.children).indexOf(child));
           }
         }}
         onPointerMove={(event) => {
-          if (!editing || picked) return;
+          if (!editing || !allowBlockReordering || picked) return;
           const child = (event.target as HTMLElement).closest(".tiptap > *");
           if (child)
             setBlock(Array.from(editor.view.dom.children).indexOf(child));
         }}
       >
-        {editing && (
+        {editing && allowBlockReordering && (
           <button
             type="button"
             className={`rich-block-handle ${picked ? "picked" : ""}`}

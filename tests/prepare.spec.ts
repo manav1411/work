@@ -22,6 +22,15 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
     page.getByRole("heading", { name: "Roadmap", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".learn-roadmap")).toContainText("/150");
+  const roadmapNotes = page.locator(".learn-roadmap + .rich-document");
+  await expect(roadmapNotes).toHaveCount(1);
+  await expect
+    .poll(() =>
+      roadmapNotes.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).marginTop),
+      ),
+    )
+    .toBe(24);
   const selectedTrack = page.getByRole("tab", {
     name: "DSA & Python",
     exact: true,
@@ -49,6 +58,28 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   ).toHaveAttribute("href", "https://leetcode.com/problems/binary-search/");
   await expect(popover.getByLabel("Solved")).toHaveCount(1);
   expect(sourceRequests).toEqual([]);
+  await enterEditMode(page, "Learn");
+  const handle = page.locator(".learn-track-tabs .sort-handle").first();
+  const handleStyle = await handle.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      borderWidth: style.borderTopWidth,
+      background: style.backgroundColor,
+      shadow: style.boxShadow,
+      radius: style.borderTopLeftRadius,
+    };
+  });
+  expect(handleStyle).toEqual({
+    borderWidth: "0px",
+    background: "rgba(0, 0, 0, 0)",
+    shadow: "none",
+    radius: "0px",
+  });
+  await expect
+    .poll(() =>
+      selectedTrack.evaluate((tab) => tab.getBoundingClientRect().height),
+    )
+    .toBe(40);
 });
 
 test("Databases supports multiple readings and optional notes that persist after reload", async ({

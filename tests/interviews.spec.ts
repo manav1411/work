@@ -20,11 +20,34 @@ test.beforeEach(async ({ page }) => {
   await enterEditMode(page, "Interviews");
 });
 
+test("editable tab rows match the Applications tab height", async ({
+  page,
+}) => {
+  const interviewHeight = await page
+    .locator(".editable-tabs > .sortable-item > .editable-tab")
+    .first()
+    .evaluate((tab) => tab.getBoundingClientRect().height);
+  await page.goto("/applications");
+  const applicationHeight = await page
+    .locator(".application-tabs button")
+    .first()
+    .evaluate((tab) => tab.getBoundingClientRect().height);
+  await page.goto("/learn");
+  const learnHeight = await page
+    .locator(".learn-track-tabs .editable-tab")
+    .first()
+    .evaluate((tab) => tab.getBoundingClientRect().height);
+  expect(interviewHeight).toBe(40);
+  expect(learnHeight).toBe(applicationHeight);
+  expect(interviewHeight).toBe(applicationHeight);
+});
+
 test("main notes and STAR competencies save inline across interview tabs", async ({
   page,
 }) => {
   const intro = page.locator(".interview-intro");
   const editor = intro.locator(".rich-document-prose[contenteditable=true]");
+  await expect(intro.locator(".rich-block-handle")).toHaveCount(0);
   await editor.fill("Lead with the decision and my contribution.");
   await expect
     .poll(() =>
@@ -42,8 +65,7 @@ test("main notes and STAR competencies save inline across interview tabs", async
   await expect(page).toHaveURL(/tab=technical/);
   await expect(
     page.locator(".sidebar").getByRole("link", { name: "Interviews" }),
-  ).not.toHaveAttribute("data-editing", "true");
-  await enterEditMode(page, "Interviews");
+  ).toHaveAttribute("data-editing", "true");
   await page
     .locator(".interview-intro .rich-document-prose[contenteditable=true]")
     .fill("Clarify constraints before coding.");
@@ -58,17 +80,19 @@ test("main notes and STAR competencies save inline across interview tabs", async
     )
     .toBe("Clarify constraints before coding.");
 
-  await page
-    .getByRole("tab", { name: "Behavioural", exact: true })
-    .focus();
+  await page.getByRole("tab", { name: "Behavioural", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/tab=behavioural/);
   await expect(
     page.locator(".sidebar").getByRole("link", { name: "Interviews" }),
-  ).not.toHaveAttribute("data-editing", "true");
-  await enterEditMode(page, "Interviews");
-  await page.getByRole("button", { name: "Add STAR story", exact: true }).click();
+  ).toHaveAttribute("data-editing", "true");
+  await page
+    .getByRole("button", { name: "Add STAR story", exact: true })
+    .click();
   const card = page.locator(".interview-story-card").first();
+  await expect(card.getByRole("heading", { name: "Situation" })).toBeVisible();
+  await expect(card.getByLabel("Situation", { exact: true })).toBeHidden();
+  await card.locator(".interview-story-toggle").click();
   await card
     .getByLabel("Story title", { exact: true })
     .fill("Resolving the deployment disagreement");
@@ -86,14 +110,16 @@ test("main notes and STAR competencies save inline across interview tabs", async
   await expect
     .poll(() =>
       page.evaluate(() => {
-        const record = JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
-          (item: WorkRecord) => item.kind === "story",
+        const record = JSON.parse(
+          sessionStorage.getItem("work-demo-v1")!,
+        ).records.find((item: WorkRecord) => item.kind === "story");
+        return (
+          record && {
+            tags: record.tags,
+            action: record.data.action,
+            result: record.data.result,
+          }
         );
-        return record && {
-          tags: record.tags,
-          action: record.data.action,
-          result: record.data.result,
-        };
       }),
     )
     .toMatchObject({
@@ -106,16 +132,56 @@ test("main notes and STAR competencies save inline across interview tabs", async
   await expect(page.locator(".interview-story-card")).toHaveCount(1);
   await page.reload();
   await enterEditMode(page, "Interviews");
-  await expect(
-    page.locator(".interview-story-card").getByLabel("Story title"),
-  ).toHaveValue("Resolving the deployment disagreement");
-  await expect(page.locator(".interview-story-card")).toContainText(
-    "conflict",
+  const story = page.locator(".interview-story-card").first();
+  await expect(story.getByRole("heading", { name: "Situation" })).toBeVisible();
+  await expect(story.getByLabel("Situation", { exact: true })).toBeHidden();
+  await expect(story.getByLabel("Story title")).toHaveValue(
+    "Resolving the deployment disagreement",
   );
+  await expect(story).toContainText("conflict");
+  await story.locator(".interview-story-toggle").click();
+  await expect(story.getByLabel("Situation", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Technical", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(page.locator(".interview-intro")).toContainText(
     "Clarify constraints before coding.",
+  );
+});
+
+test("STAR stories start collapsed and expand independently", async ({
+  page,
+}) => {
+  await page
+    .getByRole("button", { name: "Add STAR story", exact: true })
+    .click();
+  const first = page.locator(".interview-story-card").first();
+  await expect(first.getByRole("heading", { name: "Situation" })).toBeVisible();
+  await expect(first.locator(".interview-story-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await first.locator(".interview-story-toggle").click();
+  await expect(first.locator(".interview-story-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+
+  await page
+    .getByRole("button", { name: "Add STAR story", exact: true })
+    .click();
+  const second = page.locator(".interview-story-card").last();
+  await expect(second.locator(".interview-story-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await second.locator(".interview-story-toggle").click();
+  await expect(first.locator(".interview-story-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  await expect(second.locator(".interview-story-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "true",
   );
 });
 

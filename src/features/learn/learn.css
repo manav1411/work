@@ -895,6 +895,16 @@
   border-color: var(--ink);
   box-shadow: 3px 3px 0 var(--ink);
 }
+.learn-track-tabs .sort-handle {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.learn-roadmap + .rich-document {
+  margin-top: 24px;
+}
 .learn-subject-heading {
   display: flex;
   align-items: start;

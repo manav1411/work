@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from "react";
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import {
   field,
   type WorkRecord,
@@ -27,10 +27,12 @@ function StoryField({
   story,
   name,
   write,
+  expanded,
 }: {
   story: WorkRecord;
   name: string;
   write: (patch: RecordPatch) => Promise<WorkRecord>;
+  expanded: boolean;
 }) {
   const { editing } = useEditMode();
   const { user } = useWorkspace();
@@ -120,33 +122,35 @@ function StoryField({
   return (
     <section className="inline-star-field" data-field={name}>
       <h4>{name[0].toUpperCase() + name.slice(1)}</h4>
-      {editing ? (
-        <textarea
-          aria-label={name[0].toUpperCase() + name.slice(1)}
-          className="inline-star-text"
-          rows={Math.min(12, Math.max(2, text.split("\n").length))}
-          value={text}
-          placeholder={
-            name === "lessons" ? "What you learned…" : `Write the ${name}…`
-          }
-          onBlur={() => void save()}
-          onChange={(event) => {
-            latest.current = event.target.value;
-            setText(event.target.value);
-            try {
-              localStorage.setItem(draftKey, event.target.value);
-            } catch {
-              /* Optional storage. */
+      <div className="inline-star-field-content" hidden={!expanded}>
+        {editing ? (
+          <textarea
+            aria-label={name[0].toUpperCase() + name.slice(1)}
+            className="inline-star-text"
+            rows={Math.min(12, Math.max(2, text.split("\n").length))}
+            value={text}
+            placeholder={
+              name === "lessons" ? "What you learned…" : `Write the ${name}…`
             }
-            clearTimeout(timer.current);
-            timer.current = setTimeout(() => void saveRef.current(), 800);
-          }}
-        />
-      ) : text ? (
-        <Markdown content={text} />
-      ) : (
-        <p className="muted">—</p>
-      )}
+            onBlur={() => void save()}
+            onChange={(event) => {
+              latest.current = event.target.value;
+              setText(event.target.value);
+              try {
+                localStorage.setItem(draftKey, event.target.value);
+              } catch {
+                /* Optional storage. */
+              }
+              clearTimeout(timer.current);
+              timer.current = setTimeout(() => void saveRef.current(), 800);
+            }}
+          />
+        ) : text ? (
+          <Markdown content={text} />
+        ) : (
+          <p className="muted">—</p>
+        )}
+      </div>
       {(error || review) && (
         <p role="alert">
           {error || "Recovered draft — review before saving."}
@@ -182,6 +186,7 @@ function InlineStoryCard({
 }) {
   const { create, update, remove } = useWorkspace();
   const { editing } = useEditMode();
+  const [expanded, setExpanded] = useState(false);
   const ref = useRef(story);
   ref.current = story;
   const write = useMemo(
@@ -211,24 +216,48 @@ function InlineStoryCard({
             onSave={(title) => write({ title })}
           />
         </h3>
-        {editing && (
-          <DeleteControl
-            label="Delete story"
-            onDelete={() => remove(story.id)}
-          />
-        )}
-      </header>
-      {story.tags.length > 0 && (
-        <div className="interview-story-tags">
-          {story.tags.map((tag) => (
-            <Badge key={tag}>{tag}</Badge>
-          ))}
+        <div className="interview-story-header-actions">
+          {editing && (
+            <DeleteControl
+              label="Delete story"
+              onDelete={() => remove(story.id)}
+            />
+          )}
+          <Button
+            variant="ghost"
+            className="icon-button interview-story-toggle"
+            aria-label={`${expanded ? "Collapse" : "Expand"} STAR story ${story.title}`}
+            aria-expanded={expanded}
+            aria-controls={`star-story-content-${story.id}`}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <ChevronDown size={18} />
+          </Button>
         </div>
-      )}
+      </header>
+      <div className="interview-story-tags">
+        <span className="interview-story-competency-label">Competencies</span>
+        {story.tags.length > 0 ? (
+          story.tags.map((tag) => <Badge key={tag}>{tag}</Badge>)
+        ) : (
+          <span className="muted">—</span>
+        )}
+      </div>
       {editing && <StoryCompetencies story={story} write={write} />}
-      {["situation", "task", "action", "result", "lessons"].map((name) => (
-        <StoryField key={name} story={story} name={name} write={write} />
-      ))}
+      <div
+        id={`star-story-content-${story.id}`}
+        className="interview-story-fields"
+      >
+        {["situation", "task", "action", "result", "lessons"].map((name) => (
+          <StoryField
+            key={name}
+            story={story}
+            name={name}
+            write={write}
+            expanded={expanded}
+          />
+        ))}
+      </div>
     </Card>
   );
 }

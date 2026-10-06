@@ -20,11 +20,13 @@ export function ContentPanel({
   seeds = [],
   record,
   initialBody = "",
+  allowBlockReordering = true,
 }: {
   context: ContentContext;
   seeds?: SeedResource[];
   record?: WorkRecord;
   initialBody?: string;
+  allowBlockReordering?: boolean;
 }) {
   const { records } = useWorkspace();
   const scoped = records.filter((item) => contentMatches(item, context));
@@ -82,6 +84,7 @@ export function ContentPanel({
       }}
       draftKey={`workspace:${key}`}
       label="Workspace notes"
+      allowBlockReordering={allowBlockReordering}
     />
   );
 }

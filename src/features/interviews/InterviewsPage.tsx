@@ -183,7 +183,8 @@ export function InterviewsPage() {
           {tab && (
             <>
               <section className="interview-intro">
-                {editing && tab.key !== "behavioural" && <header className="content-section-heading interview-tab-actions">
+                {editing && tab.key !== "behavioural" && (
+                  <header className="content-section-heading interview-tab-actions">
                     <DeleteControl
                       label="Delete tab"
                       onDelete={async () => {
@@ -193,11 +194,13 @@ export function InterviewsPage() {
                         setParams({});
                       }}
                     />
-                </header>}
+                  </header>
+                )}
                 {tab.legacyPreparationId ? (
                   <RichDocumentEditor
                     key={tab.id}
                     record={tab.record}
+                    allowBlockReordering={false}
                     input={{
                       kind: "note",
                       title: tab.title,
@@ -218,6 +221,7 @@ export function InterviewsPage() {
                   <ContentPanel
                     key={tab.id}
                     record={tab.record}
+                    allowBlockReordering={false}
                     context={{
                       scope: "interviews",
                       ...(tab.record?.data.category === "interview-preparation"
@@ -244,10 +248,7 @@ export function InterviewsPage() {
                     item.links.includes(record.id)),
               );
               return (
-                <div
-                  key={item.id}
-                  className="interview-upcoming-card"
-                >
+                <div key={item.id} className="interview-upcoming-card">
                   <strong>
                     {application
                       ? applicationCompany(application, records)

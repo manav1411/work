@@ -538,6 +538,44 @@ test("named uploaded PDFs preview in Work without canvas collisions", async ({
       exact: true,
     }),
   ).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Add document", exact: true }).click();
+  const textForm = otherDocuments.locator("form");
+  await textForm
+    .getByLabel("Name", { exact: true })
+    .fill("Sample resume outline");
+  await textForm.getByLabel("Upload file", { exact: true }).setInputFiles({
+    name: "sample-resume.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from(
+      [
+        "Resume outline",
+        "Experience",
+        "Software engineer",
+        "Built a useful system",
+        "Improved reliability",
+        "Education",
+        "Computer science",
+        "Projects",
+        "A small project",
+        "Skills",
+      ].join("\n"),
+    ),
+  });
+  await textForm
+    .getByRole("button", { name: "Add document", exact: true })
+    .click();
+  const textPreview = page.locator(
+    ".document-viewer-inline .document-preview-text",
+  );
+  await expect(textPreview).toContainText("Resume outline");
+  await expect
+    .poll(() =>
+      page
+        .locator(".document-viewer-inline")
+        .evaluate((viewer) => viewer.getBoundingClientRect().height),
+    )
+    .toBeLessThan(400);
 });
 
 test("standalone appointment links remain editable without inventing an application", async ({

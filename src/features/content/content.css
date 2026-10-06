@@ -172,6 +172,9 @@
 .is-editing .rich-document-prose {
   padding-left: 28px;
 }
+.rich-document-no-block-reordering.is-editing .rich-document-prose {
+  padding-left: 0;
+}
 @media (max-width: 600px) {
   .rich-document-canvas {
     min-height: max(54vh, 300px);

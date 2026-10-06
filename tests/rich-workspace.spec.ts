@@ -126,11 +126,18 @@ test("inline STAR fields save together and calendar hover dismisses after a clic
   page,
 }) => {
   await page.goto("/interviews");
+  await page.evaluate(() => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    state.records = [];
+    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+  });
+  await page.reload();
   await enterEditMode(page, "Interviews");
   await page
     .getByRole("button", { name: "Add STAR story", exact: true })
     .click();
   const story = page.locator(".interview-story-card").last();
+  await story.locator(".interview-story-toggle").click();
   await story.getByLabel("Story title").fill("Ownership");
   await story
     .getByLabel("Situation", { exact: true })

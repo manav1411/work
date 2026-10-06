@@ -688,6 +688,9 @@
   min-height: calc(100dvh - 130px);
   gap: 1rem;
 }
+.document-viewer.document-viewer-inline {
+  min-height: 0;
+}
 .document-viewer:fullscreen {
   padding: 1rem;
   background: var(--canvas);
