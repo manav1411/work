@@ -145,6 +145,9 @@
 .sortable-item:has(.sort-handle[aria-pressed="true"]) {
   outline: 2px dashed var(--ink);
 }
+.editable-tabs > .sortable-item:has(.sort-handle[aria-pressed="true"]) {
+  outline: none;
+}
 .rich-document {
   position: relative;
   min-width: 0;

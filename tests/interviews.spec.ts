@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import type { WorkRecord } from "../shared/model";
 import { enterEditMode } from "./edit-mode-helper";
 
@@ -20,11 +20,38 @@ test.beforeEach(async ({ page }) => {
   await enterEditMode(page, "Interviews");
 });
 
+test("tab dragging has no dashed outline and Learn notes stay fixed", async ({
+  page,
+}) => {
+  const outlineStyle = async (handle: Locator) => {
+    await handle.focus();
+    await page.keyboard.press("Space");
+    await expect(handle).toHaveAttribute("aria-pressed", "true");
+    const outline = await handle
+      .locator("xpath=../..")
+      .evaluate((item) => getComputedStyle(item).outlineStyle);
+    await page.keyboard.press("Escape");
+    return outline;
+  };
+  expect(
+    await outlineStyle(page.locator(".editable-tabs .sort-handle").first()),
+  ).toBe("none");
+  await page.goto("/learn");
+  await enterEditMode(page, "Learn");
+  await expect(page.locator(".learn-track-tabs .sort-handle")).toHaveCount(
+    await page.getByRole("tab").count(),
+  );
+  await expect(page.locator(".learn-page .rich-block-handle")).toHaveCount(0);
+  expect(
+    await outlineStyle(page.locator(".learn-track-tabs .sort-handle").first()),
+  ).toBe("none");
+});
+
 test("editable tab rows match the Applications tab height", async ({
   page,
 }) => {
   const interviewHeight = await page
-    .locator(".editable-tabs > .sortable-item > .editable-tab")
+    .locator(".editable-tabs .editable-tab")
     .first()
     .evaluate((tab) => tab.getBoundingClientRect().height);
   await page.goto("/applications");
@@ -40,6 +67,54 @@ test("editable tab rows match the Applications tab height", async ({
   expect(interviewHeight).toBe(40);
   expect(learnHeight).toBe(applicationHeight);
   expect(interviewHeight).toBe(applicationHeight);
+});
+
+test("interview delete control aligns with the main text column", async ({
+  page,
+}) => {
+  const technicalTab = page.getByRole("tab", {
+    name: "Technical",
+    exact: true,
+  });
+  await technicalTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(technicalTab).toHaveAttribute("aria-selected", "true");
+  const deleteTab = page.getByRole("button", {
+    name: "Delete tab",
+    exact: true,
+  });
+  await expect(deleteTab).toBeVisible();
+  const deleteStyle = await deleteTab.evaluate((button) => {
+    const rect = button.getBoundingClientRect();
+    const tabListRect = document
+      .querySelector(
+        '[role="tablist"][aria-label="Interview preparation tabs"]',
+      )!
+      .getBoundingClientRect();
+    const panelRect = button
+      .closest('[role="tabpanel"]')!
+      .getBoundingClientRect();
+    const upcomingRect = document
+      .querySelector(".interview-upcoming")!
+      .getBoundingClientRect();
+    const style = getComputedStyle(button);
+    return {
+      background: style.backgroundColor,
+      borderColor: style.borderColor,
+      borderStyle: style.borderStyle,
+      belowTabBar: rect.top >= tabListRect.bottom,
+      rightAlignedToTextColumn: Math.abs(rect.right - panelRect.right) < 1,
+      beforeUpcomingInterviews: rect.right < upcomingRect.left,
+    };
+  });
+  expect(deleteStyle).toEqual({
+    background: "rgb(255, 222, 220)",
+    borderColor: "rgb(133, 44, 38)",
+    borderStyle: "solid",
+    belowTabBar: true,
+    rightAlignedToTextColumn: true,
+    beforeUpcomingInterviews: true,
+  });
 });
 
 test("main notes and STAR competencies save inline across interview tabs", async ({

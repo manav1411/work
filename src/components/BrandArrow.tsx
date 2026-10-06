@@ -17,9 +17,9 @@ export function BrandArrow() {
     >
       <svg viewBox="0 0 24 24" fill="none">
         <path
-          d="M5 21 20 6M6 6h15v15"
+          d="M5 23 20 5M12.5 5H20v7.5"
           stroke="currentColor"
-          strokeWidth="2.25"
+          strokeWidth="1.9"
           strokeLinecap="round"
           strokeLinejoin="round"
         />

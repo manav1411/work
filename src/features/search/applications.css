@@ -349,24 +349,15 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  height: 1.2em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 0.82rem;
   line-height: 1.2;
-  min-height: 0;
-  max-height: none;
   text-align: left;
-  align-items: flex-start;
-}
-.application-notes-preview > span {
-  display: block;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  padding: 0;
+  border: 0;
 }
 .radar-notes-preview {
   position: relative;
@@ -649,18 +640,11 @@
     display: block;
     width: 100%;
     max-width: 100%;
+    height: 1.2em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .application-mobile-fields dd.application-notes-preview > span {
-    display: block;
-    width: 100%;
-    min-width: 0;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    line-height: 1.2;
   }
 }
 @media (max-width: 650px) {

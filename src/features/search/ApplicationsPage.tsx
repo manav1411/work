@@ -458,7 +458,7 @@ export function ApplicationsPage() {
                         title={record.body || "—"}
                         onClick={() => setParams({ record: record.id })}
                       >
-                        <span>{record.body || "—"}</span>
+                        {record.body || "—"}
                       </button>
                     </td>
                   </tr>
@@ -512,7 +512,7 @@ export function ApplicationsPage() {
                       className="application-notes-preview"
                       title={record.body || "—"}
                     >
-                      <span>{record.body || "—"}</span>
+                      {record.body || "—"}
                     </dd>
                   </div>
                 </dl>

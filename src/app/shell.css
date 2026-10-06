@@ -102,8 +102,8 @@
 .account-menu > button:hover,
 .account-menu > a:focus-visible,
 .account-menu > button:focus-visible {
-  background: var(--lime);
-  color: #202128;
+  background: var(--surface-tint);
+  color: var(--ink);
 }
 .account-email {
   margin: 0 0 4px;
@@ -170,6 +170,7 @@
 .signin-mark {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 13px;
   height: 75px;
   position: relative;
@@ -177,11 +178,11 @@
 .signin-mark:before {
   content: "";
   position: absolute;
-  width: 170px;
+  width: 176px;
   height: 2px;
   background: var(--ink);
-  left: 10px;
-  top: 38px;
+  left: calc(50% - 97.5px);
+  top: calc(50% - 1px);
 }
 .signin-mark i {
   position: relative;
@@ -207,10 +208,11 @@
   background: var(--lime);
 }
 .signin-mark > span {
-  margin-left: 27px;
-  color: var(--blue);
-  font-family: var(--font-heading);
+  position: relative;
+  top: -5px;
+  margin-left: 0;
   font-size: 59px;
+  line-height: 1;
   font-weight: 750;
 }
 @media (max-width: 1050px) and (min-width: 761px) {

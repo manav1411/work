@@ -85,6 +85,28 @@ test.beforeEach(async ({ page }) => {
   await enterEditMode(page, "Applications");
 });
 
+test("edit mode stays active when switching between application views", async ({
+  page,
+}) => {
+  const editingStatus = page
+    .getByRole("status")
+    .filter({ hasText: "Editing Applications" });
+  await expect(editingStatus).toBeVisible();
+  await page.getByRole("tab", { name: /On your radar/ }).click();
+  await expect(page).toHaveURL(/tab=radar/);
+  await expect(editingStatus).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Add company", exact: true }).first(),
+  ).toBeVisible();
+
+  await page.getByRole("tab", { name: /Applications/ }).click();
+  await expect(page).not.toHaveURL(/tab=radar/);
+  await expect(editingStatus).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "New application", exact: true }).first(),
+  ).toBeVisible();
+});
+
 test("tracker replaces spreadsheet fields, supports search/filter, and preserves submitted snapshots", async ({
   page,
 }) => {

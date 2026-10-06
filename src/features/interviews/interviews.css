@@ -35,6 +35,9 @@
   padding: 0;
   margin-bottom: 30px;
 }
+.interview-tab-actions {
+  margin-bottom: 14px;
+}
 .interview-intro h3 {
   margin: 0;
 }
@@ -62,9 +65,6 @@
 }
 .interview-upcoming-card strong {
   font-size: 13px;
-}
-.interview-tab-actions {
-  justify-content: flex-end;
 }
 .interview-upcoming-card.active {
   border-color: var(--blue);

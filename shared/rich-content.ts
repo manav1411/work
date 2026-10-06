@@ -146,8 +146,13 @@ export function validRichDocument(value: unknown): value is RichNode {
               !!url.username ||
               !!url.password ||
               String(mark.attrs?.href).length > 2048 ||
+              (mark.attrs?.title !== undefined &&
+                mark.attrs.title !== null &&
+                (typeof mark.attrs.title !== "string" ||
+                  mark.attrs.title.length > 500)) ||
               Object.keys(mark.attrs ?? {}).some(
-                (key) => !["href", "target", "rel", "class"].includes(key),
+                (key) =>
+                  !["href", "target", "rel", "class", "title"].includes(key),
               )
             );
           } catch {

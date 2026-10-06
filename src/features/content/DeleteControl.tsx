@@ -6,10 +6,12 @@ export function DeleteControl({
   label = "Delete",
   onDelete,
   disabled = false,
+  actionVariant = "ghost",
 }: {
   label?: string;
   onDelete: () => Promise<void>;
   disabled?: boolean;
+  actionVariant?: "primary" | "secondary" | "ghost" | "danger";
 }) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -50,7 +52,7 @@ export function DeleteControl({
         </>
       ) : (
         <Button
-          variant="ghost"
+          variant={actionVariant}
           disabled={disabled}
           aria-label={label}
           onClick={() => setConfirm(true)}

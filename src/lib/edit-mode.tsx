@@ -29,7 +29,9 @@ export function EditModeProvider({ children }: { children: ReactNode }) {
   const search = new URLSearchParams(location.search);
   const tab =
     search.get(location.pathname === "/learn" ? "track" : "tab") || "";
-  const scope = ["/learn", "/interviews"].includes(location.pathname)
+  const scope = ["/learn", "/interviews", "/applications"].includes(
+    location.pathname,
+  )
     ? location.pathname
     : `${location.pathname}:${tab}`;
   const previous = useRef(scope);

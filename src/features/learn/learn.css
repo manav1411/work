@@ -12,7 +12,7 @@
   width: 0;
   height: 0;
 }
-.learn-track-tabs button {
+.learn-track-tabs .editable-tab {
   flex: 0 0 auto;
   background: transparent;
   border: 1.5px solid transparent;
@@ -22,7 +22,7 @@
   font-size: 13px;
   font-weight: 650;
 }
-.learn-track-tabs button.active {
+.learn-track-tabs .editable-tab.active {
   background: var(--lime);
   border-color: var(--ink);
   color: #202128;
@@ -179,8 +179,7 @@
   padding: 15px 0;
   max-width: 720px;
 }
-.learn-source-details a,
-.learn-reading-card a {
+.learn-source-details a {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -191,22 +190,6 @@
   flex: 1 1 100%;
   font-size: 12px;
   margin: 0;
-}
-.learn-reading-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
-}
-.learn-reading-card h2 {
-  font-size: 23px;
-}
-.learn-reading-card p {
-  font-size: 14px;
-  color: var(--muted);
-}
-.learn-reading-card a {
-  font-size: 13px;
-  font-weight: 650;
 }
 .learn-modal {
   background: var(--paper);
@@ -705,11 +688,6 @@
   color: inherit;
   padding: 0;
 }
-.learn-reading-card h2 {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
 .learn-roadmap-popover {
   position: absolute;
   z-index: 3;
@@ -841,9 +819,6 @@
   .learn-week-actions .button {
     padding: 8px 6px;
   }
-  .learn-reading-grid {
-    grid-template-columns: 1fr;
-  }
   .learn-modal > header {
     padding: 13px;
   }
@@ -882,69 +857,45 @@
 .learn-track-tabs {
   padding-bottom: 6px;
 }
-.learn-track-tabs button {
+.learn-track-tabs .editable-tab {
   background: var(--paper);
   border-color: var(--ink);
   color: var(--ink);
   box-shadow: 2px 2px 0 var(--ink);
   font-weight: 750;
 }
-.learn-track-tabs button.active {
+.learn-track-tabs .editable-tab.active {
   background: var(--blue);
   color: #fff;
   border-color: var(--ink);
   box-shadow: 3px 3px 0 var(--ink);
 }
-.learn-track-tabs .sort-handle {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.learn-roadmap + .rich-document {
-  margin-top: 24px;
-}
-.learn-subject-heading {
+.selected-tab-actions {
   display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 18px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
+  justify-content: flex-end;
 }
-.learn-subject-heading > p {
-  flex: 1;
-  min-width: 240px;
-  color: var(--muted);
-  margin: 8px 0;
+.learn-page .selected-tab-actions {
+  padding-right: 8px;
+  margin: -12px 0 8px;
 }
-.learn-editable-topics {
-  display: grid;
-  gap: 25px;
-  margin: 23px 0;
+.selected-tab-actions .content-delete-control {
+  flex-wrap: nowrap;
+  gap: 6px;
 }
-.learn-editable-topics > .learn-reading-card {
-  min-width: 0;
-  padding: 2px 0;
-  border: 0;
-  background: transparent;
-  box-shadow: none;
+.selected-tab-actions .button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border-width: 1.5px;
+  font-size: 11px;
+  white-space: nowrap;
 }
-.learn-editable-topics .learn-reading-card > p {
-  color: var(--muted);
+.learn-roadmap + .rich-document,
+.learn-page > .rich-document {
+  margin-top: 24px;
 }
 .learn-context-bar > h2 {
   font-size: 18px;
   margin: 0;
-}
-@media (max-width: 600px) {
-  .learn-editable-topics > .learn-reading-card {
-    padding: 2px 0;
-  }
-  .learn-subject-heading {
-    gap: 8px;
-  }
 }
 
 .learn-calendar {

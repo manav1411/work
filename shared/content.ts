@@ -175,7 +175,14 @@ export function contentMatches(
   context: ContentContext,
 ): boolean {
   if (record.deletedAt || record.data.scope !== context.scope) return false;
-  const keys = ["topicId", "seedId", "tabId", "tabKey", "interviewId"] as const;
+  const keys = [
+    "track",
+    "topicId",
+    "seedId",
+    "tabId",
+    "tabKey",
+    "interviewId",
+  ] as const;
   return keys.every(
     (key) => (record.data[key] || undefined) === (context[key] || undefined),
   );

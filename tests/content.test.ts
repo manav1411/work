@@ -37,6 +37,22 @@ const record = (changes: Partial<WorkRecord> = {}): WorkRecord => ({
 
 describe("private scoped learning and preparation", () => {
   it("keeps generic imported notes and other parents out of a content panel", () => {
+    expect(
+      contentMatches(
+        record({
+          data: { scope: "learn", track: "backend" },
+        }),
+        { scope: "learn", track: "databases" },
+      ),
+    ).toBe(false);
+    expect(
+      contentMatches(
+        record({
+          data: { scope: "learn", track: "databases" },
+        }),
+        { scope: "learn", track: "databases" },
+      ),
+    ).toBe(true);
     const context = {
       scope: "interviews" as const,
       tabKey: "technical" as const,
@@ -73,6 +89,43 @@ describe("private scoped learning and preparation", () => {
     ).toBe(false);
   });
   it("validates context exclusivity, resource destinations, and record kinds without restricting unrelated old content", () => {
+    expect(
+      contentDataError("note", {
+        category: "content-document",
+        scope: "learn",
+        track: "databases",
+        migratedRecordIds: [],
+        richContent: {
+          version: 1,
+          document: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "PostgreSQL tutorial",
+                    marks: [
+                      {
+                        type: "link",
+                        attrs: {
+                          href: "https://www.postgresql.org/docs/current/tutorial.html",
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          class: null,
+                          title: null,
+                        },
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    ).toBeNull();
     expect(
       contentDataError("note", {
         category: "content-section",

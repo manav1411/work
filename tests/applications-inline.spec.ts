@@ -78,25 +78,24 @@ test("application status, process and scheduling stay inline and preserve each o
     .locator(".application-table .application-notes-preview")
     .first();
   await expect(notesPreview).toHaveAttribute("title", base.body);
-  const noteOverflow = await notesPreview
-    .locator("span")
-    .evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-      textOverflow: getComputedStyle(element).textOverflow,
-      boxWidth: element.getBoundingClientRect().width,
-      parentWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
-      parentScrollWidth: element.parentElement?.scrollWidth ?? 0,
-      parentClientWidth: element.parentElement?.clientWidth ?? 0,
-    }));
+  const noteOverflow = await notesPreview.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    textOverflow: getComputedStyle(element).textOverflow,
+    boxWidth: element.getBoundingClientRect().width,
+    lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+    height: element.getBoundingClientRect().height,
+    cellWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
+    cellScrollWidth: element.parentElement?.scrollWidth ?? 0,
+    cellClientWidth: element.parentElement?.clientWidth ?? 0,
+  }));
   expect(noteOverflow.textOverflow).toBe("ellipsis");
   expect(noteOverflow.scrollWidth).toBeGreaterThan(noteOverflow.clientWidth);
-  expect(noteOverflow.boxWidth).toBeLessThanOrEqual(
-    noteOverflow.parentWidth + 1,
+  expect(noteOverflow.boxWidth).toBeLessThanOrEqual(noteOverflow.cellWidth + 1);
+  expect(noteOverflow.cellScrollWidth).toBeLessThanOrEqual(
+    noteOverflow.cellClientWidth + 1,
   );
-  expect(noteOverflow.parentScrollWidth).toBeLessThanOrEqual(
-    noteOverflow.parentClientWidth + 1,
-  );
+  expect(noteOverflow.height).toBeLessThanOrEqual(noteOverflow.lineHeight + 1);
   await expect(
     page.locator(".application-table td[title*='Melbourne']").first(),
   ).toBeVisible();
@@ -106,21 +105,24 @@ test("application status, process and scheduling stay inline and preserve each o
     .locator(".application-mobile-cards .application-notes-preview")
     .first();
   await expect(mobileNotesPreview).toHaveAttribute("title", base.body);
-  const mobileOverflow = await mobileNotesPreview
-    .locator("span")
-    .evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-      textOverflow: getComputedStyle(element).textOverflow,
-      boxWidth: element.getBoundingClientRect().width,
-      parentWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
-    }));
+  const mobileOverflow = await mobileNotesPreview.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    textOverflow: getComputedStyle(element).textOverflow,
+    boxWidth: element.getBoundingClientRect().width,
+    lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+    height: element.getBoundingClientRect().height,
+    parentWidth: element.parentElement?.getBoundingClientRect().width ?? 0,
+  }));
   expect(mobileOverflow.textOverflow).toBe("ellipsis");
   expect(mobileOverflow.scrollWidth).toBeGreaterThan(
     mobileOverflow.clientWidth,
   );
   expect(mobileOverflow.boxWidth).toBeLessThanOrEqual(
     mobileOverflow.parentWidth + 1,
+  );
+  expect(mobileOverflow.height).toBeLessThanOrEqual(
+    mobileOverflow.lineHeight + 1,
   );
   await mobileNotesPreview.hover();
   await page.setViewportSize({ width: 1280, height: 900 });

@@ -65,6 +65,35 @@ test("six destinations and the account menu work with keyboard, pointer, and sig
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(account).toBeFocused();
   await account.click();
+  const accountMenu = page.getByRole("menu");
+  const settingsItem = accountMenu.getByRole("menuitem", {
+    name: "Settings",
+    exact: true,
+  });
+  const leaveDemoItem = accountMenu.getByRole("menuitem", {
+    name: "Leave demo",
+    exact: true,
+  });
+  const neutralHover = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = "var(--surface-tint)";
+    document.body.appendChild(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  });
+  await settingsItem.hover();
+  await expect
+    .poll(() =>
+      settingsItem.evaluate((item) => getComputedStyle(item).backgroundColor),
+    )
+    .toBe(neutralHover);
+  await leaveDemoItem.hover();
+  await expect
+    .poll(() =>
+      leaveDemoItem.evaluate((item) => getComputedStyle(item).backgroundColor),
+    )
+    .toBe(neutralHover);
   await page.locator("main h1").click();
   await expect(page.getByRole("menu")).toHaveCount(0);
   await page.keyboard.press("c");

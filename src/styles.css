@@ -741,7 +741,6 @@ kbd {
   font-size: 40px;
   line-height: 1;
   margin-left: 2px;
-  transform: translateY(-2px);
 }
 .brand-tag {
   font-size: 7px;

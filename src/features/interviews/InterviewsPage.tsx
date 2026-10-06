@@ -180,22 +180,23 @@ export function InterviewsPage() {
           id="interview-tab-content"
           aria-labelledby={tab ? `interview-tab-${tab.id}` : undefined}
         >
+          {editing && tab && tab.key !== "behavioural" && (
+            <div className="selected-tab-actions interview-tab-actions">
+              <DeleteControl
+                label="Delete tab"
+                actionVariant="danger"
+                onDelete={async () => {
+                  if (tab.key || tab.legacyPreparationId)
+                    await saveTab(tab, { hidden: true });
+                  else if (tab.record) await remove(tab.record.id);
+                  setParams({});
+                }}
+              />
+            </div>
+          )}
           {tab && (
             <>
               <section className="interview-intro">
-                {editing && tab.key !== "behavioural" && (
-                  <header className="content-section-heading interview-tab-actions">
-                    <DeleteControl
-                      label="Delete tab"
-                      onDelete={async () => {
-                        if (tab.key || tab.legacyPreparationId)
-                          await saveTab(tab, { hidden: true });
-                        else if (tab.record) await remove(tab.record.id);
-                        setParams({});
-                      }}
-                    />
-                  </header>
-                )}
                 {tab.legacyPreparationId ? (
                   <RichDocumentEditor
                     key={tab.id}

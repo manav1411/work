@@ -59,150 +59,164 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   await expect(popover.getByLabel("Solved")).toHaveCount(1);
   expect(sourceRequests).toEqual([]);
   await enterEditMode(page, "Learn");
-  const handle = page.locator(".learn-track-tabs .sort-handle").first();
-  const handleStyle = await handle.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return {
-      borderWidth: style.borderTopWidth,
-      background: style.backgroundColor,
-      shadow: style.boxShadow,
-      radius: style.borderTopLeftRadius,
-    };
-  });
-  expect(handleStyle).toEqual({
-    borderWidth: "0px",
-    background: "rgba(0, 0, 0, 0)",
-    shadow: "none",
-    radius: "0px",
-  });
+  await expect(page.locator(".learn-track-tabs .sort-handle")).toHaveCount(
+    await page.getByRole("tab").count(),
+  );
+  await expect(page.locator(".learn-page .rich-block-handle")).toHaveCount(0);
   await expect
     .poll(() =>
       selectedTrack.evaluate((tab) => tab.getBoundingClientRect().height),
     )
     .toBe(40);
+  const databasesTab = page.getByRole("tab", {
+    name: "Databases",
+    exact: true,
+  });
+  await databasesTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(databasesTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".learn-page .rich-block-handle")).toHaveCount(0);
+  const deleteTab = page.getByRole("button", {
+    name: "Delete tab",
+    exact: true,
+  });
+  await expect(deleteTab).toBeVisible();
+  const deleteStyle = await deleteTab.evaluate((button) => {
+    const rect = button.getBoundingClientRect();
+    const tabListRect = document
+      .querySelector('[role="tablist"][aria-label="Learning tabs"]')!
+      .getBoundingClientRect();
+    const style = getComputedStyle(button);
+    return {
+      background: style.backgroundColor,
+      borderColor: style.borderColor,
+      borderStyle: style.borderStyle,
+      belowTabBar: rect.top >= tabListRect.bottom,
+      rightAlignedToTabBox: Math.abs(rect.right - (tabListRect.right - 8)) < 1,
+    };
+  });
+  expect(deleteStyle).toEqual({
+    background: "rgb(255, 222, 220)",
+    borderColor: "rgb(133, 44, 38)",
+    borderStyle: "solid",
+    belowTabBar: true,
+    rightAlignedToTabBox: true,
+  });
 });
 
-test("Databases supports multiple readings and optional notes that persist after reload", async ({
+test("learning tabs are single notes pages and save independently", async ({
   page,
 }) => {
   await page.goto("/learn?track=databases");
+  await expect(page.locator(".learn-reading-card")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add section" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("button", { name: "Delete section" }),
+  ).toHaveCount(0);
+  await expect(page.locator(".learn-page .rich-document")).toHaveCount(1);
   await enterEditMode(page, "Learn");
-  const section = page.locator(".learn-reading-card").first();
-  for (const [name, url] of [
-    [
-      "PostgreSQL concurrency",
-      "https://www.postgresql.org/docs/current/mvcc.html",
-    ],
-    ["SQLite transactions", "https://www.sqlite.org/lang_transaction.html"],
-  ]) {
-    await section
-      .getByRole("button", { name: "Add resource", exact: true })
-      .click();
-    const form = page.getByRole("dialog", {
-      name: "Add resource",
-      exact: true,
-    });
-    await form.getByLabel("Name", { exact: true }).fill(name);
-    await form.getByLabel("Link", { exact: true }).fill(url);
-    await form.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(form).not.toBeVisible();
-  }
-  await section
-    .getByRole("button", { name: "Add notes section", exact: true })
-    .click();
-  const notes = page.getByRole("dialog", {
-    name: "Add notes section",
-    exact: true,
-  });
-  await notes.getByLabel("Name", { exact: true }).fill("Isolation notes");
-  await notes.getByRole("button", { name: "Save", exact: true }).click();
-  const noteCard = section
-    .locator(".content-section-card")
-    .filter({ hasText: "Isolation notes" });
-  await noteCard
-    .getByRole("button", { name: "Write notes", exact: true })
-    .click();
-  await noteCard
-    .getByLabel("Isolation notes", { exact: true })
-    .fill(
-      "## Read committed\n\n- [ ] Compare repeatable read\n\nKeep this personal example.",
-    );
+  const editor = page.locator(".learn-page .rich-document-prose");
+  await editor.fill("Compare isolation levels with a real transaction.");
   await expect
     .poll(() =>
       page.evaluate(
         () =>
           JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
-            (record: WorkRecord) => record.title === "Isolation notes",
+            (record: WorkRecord) =>
+              record.kind === "note" &&
+              record.data.category === "content-document" &&
+              record.data.track === "databases",
           )?.body,
       ),
     )
-    .toContain("Keep this personal example.");
+    .toContain("Compare isolation levels");
+  const databaseDocument = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+      (record: WorkRecord) =>
+        record.kind === "note" &&
+        record.data.category === "content-document" &&
+        record.data.track === "databases",
+    ),
+  );
+  expect(databaseDocument.data.scope).toBe("learn");
+  expect(databaseDocument.data.topicId).toBeUndefined();
+  expect(databaseDocument.data.seedId).toBeUndefined();
   await page.reload();
   await enterEditMode(page, "Learn");
+  await expect(page.locator(".learn-page .rich-document-prose")).toContainText(
+    "Compare isolation levels",
+  );
+  const databasesTab = page.getByRole("tab", {
+    name: "Databases",
+    exact: true,
+  });
+  const backendTab = page.getByRole("tab", {
+    name: "Backend engineering",
+    exact: true,
+  });
+  await backendTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(backendTab).toHaveAttribute("aria-selected", "true");
+  const backendEditor = page.locator(".learn-page .rich-document-prose");
+  await backendEditor.fill("Document API failure modes.");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+            (record: WorkRecord) =>
+              record.kind === "note" &&
+              record.data.category === "content-document" &&
+              record.data.track === "backend",
+          )?.body,
+      ),
+    )
+    .toContain("Document API failure modes");
+  await databasesTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(databasesTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".learn-page .rich-document-prose")).toContainText(
+    "Compare isolation levels",
+  );
   await expect(
-    section.getByRole("link", { name: "PostgreSQL concurrency", exact: true }),
-  ).toBeVisible();
-  await expect(
-    section.getByRole("link", { name: "SQLite transactions", exact: true }),
-  ).toBeVisible();
-  await expect(
-    noteCard.getByRole("heading", { name: "Read committed", exact: true }),
-  ).toBeVisible();
-  await section
-    .getByRole("button", { name: "Edit SQLite transactions", exact: true })
-    .click();
-  const edit = page.getByRole("dialog", { name: "Edit resource", exact: true });
-  await edit
-    .getByLabel("Name", { exact: true })
-    .fill("SQLite transaction reference");
-  await edit.getByRole("button", { name: "Save", exact: true }).click();
-  const resource = section
-    .locator(".content-resource-card")
-    .filter({ hasText: "SQLite transaction reference" });
-  await resource
-    .getByRole("button", { name: "Delete resource", exact: true })
-    .click();
-  await resource
-    .getByRole("button", { name: "Confirm delete resource", exact: true })
-    .click();
-  await expect(resource).toHaveCount(0);
-  await page.reload();
-  await expect(
-    section.getByRole("link", { name: "PostgreSQL concurrency", exact: true }),
-  ).toBeVisible();
-  await expect(
-    section.getByRole("link", {
-      name: "SQLite transaction reference",
-      exact: true,
-    }),
-  ).toHaveCount(0);
+    page.locator(".learn-page .rich-document-prose"),
+  ).not.toContainText("Document API failure modes");
 });
 
-test("deleting a built-in reading remains deleted after reload", async ({
+test("learning topic tabs can be reordered from their drag handles", async ({
   page,
 }) => {
   await page.goto("/learn");
-  await expect(
-    page.getByRole("button", { name: "Add resource", exact: true }),
-  ).toHaveCount(0);
   await enterEditMode(page, "Learn");
-  const resource = page
-    .locator(".content-resource-card")
-    .filter({ hasText: "Python tutorial" });
-  await resource
-    .getByRole("button", { name: "Delete resource", exact: true })
-    .click();
-  await resource
-    .getByRole("button", { name: "Confirm delete resource", exact: true })
-    .click();
-  await expect(resource).toHaveCount(0);
-  await page.reload();
-  await expect(
-    page.getByRole("link", { name: "Python tutorial", exact: true }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: /hide|restore default/i }),
-  ).toHaveCount(0);
+  const tabs = page.locator(".learn-track-tabs [role=tab]");
+  const order = () =>
+    tabs.evaluateAll((items) =>
+      items.map((item) => item.getAttribute("aria-label")),
+    );
+  const before = await order();
+  const handle = page.locator(".learn-track-tabs .sort-handle").first();
+  const start = await handle.boundingBox();
+  const target = await page
+    .locator(".learn-track-tabs > .sortable-item")
+    .nth(1)
+    .boundingBox();
+  expect(start).not.toBeNull();
+  expect(target).not.toBeNull();
+  await page.mouse.move(
+    start!.x + start!.width / 2,
+    start!.y + start!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    target!.x + target!.width / 2,
+    target!.y + target!.height / 2,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  await expect.poll(order).not.toEqual(before);
+  await expect(page.locator(".learn-page .rich-block-handle")).toHaveCount(0);
 });
 
 test("Pomodoro pauses, persists through reload, and settings remain usable", async ({
@@ -381,40 +395,43 @@ test("signed-in private learning notes use owned records and never write to publ
   });
   await page.goto("/learn");
   await expect(
-    page.getByText("synthetic-handle · Cached data", { exact: true }),
+    page.getByRole("link", { name: "@synthetic-handle", exact: true }),
   ).toBeVisible();
+  await expect(page.locator(".learn-calendar-freshness")).toContainText(
+    "Cached",
+  );
   await enterEditMode(page, "Learn");
-  await page.getByRole("tab", { name: "Databases", exact: true }).click();
-  const section = page.locator(".learn-reading-card").first();
-  await section
-    .getByRole("button", { name: "Add notes section", exact: true })
-    .click();
-  const form = page.getByRole("dialog", {
-    name: "Add notes section",
+  const databasesTab = page.getByRole("tab", {
+    name: "Databases",
     exact: true,
   });
-  await form
-    .getByLabel("Name", { exact: true })
-    .fill("Private learning context");
-  await form.getByRole("button", { name: "Save", exact: true }).click();
-  await section
-    .getByRole("button", { name: "Write notes", exact: true })
-    .click();
-  await section
-    .getByLabel("Private learning context", { exact: true })
-    .fill("Private notes must stay in Work.");
+  await databasesTab.focus();
+  await page.keyboard.press("Enter");
+  await expect(databasesTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".learn-page .rich-block-handle")).toHaveCount(0);
+  await expect(page.locator(".learn-reading-card")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add section" })).toHaveCount(
+    0,
+  );
+  await page
+    .locator(".learn-page .rich-document-prose")
+    .fill("Private database notes must stay in Work.");
   await expect
     .poll(
       () =>
-        records.find((record) => record.title === "Private learning context")
-          ?.body,
+        records.find(
+          (record) =>
+            record.data.category === "content-document" &&
+            record.data.scope === "learn" &&
+            record.data.track === "databases",
+        )?.body,
     )
-    .toBe("Private notes must stay in Work.");
-  expect(privateWrites.length).toBeGreaterThanOrEqual(2);
+    .toContain("Private database notes must stay in Work.");
+  expect(privateWrites.length).toBeGreaterThanOrEqual(1);
   expect(learningWrites).toEqual([]);
 });
 
-test("scoped notes retain conflicts through reload and retry only after an explicit decision", async ({
+test("track notes retain conflicts through reload until the draft is reviewed", async ({
   page,
 }) => {
   test.setTimeout(45_000);
@@ -490,66 +507,52 @@ test("scoped notes retain conflicts through reload and retry only after an expli
   });
   await page.goto("/learn?track=databases");
   await enterEditMode(page, "Learn");
-  const section = page.locator(".learn-reading-card").first();
-  await section
-    .getByRole("button", { name: "Add notes section", exact: true })
-    .click();
-  const form = page.getByRole("dialog", {
-    name: "Add notes section",
-    exact: true,
-  });
-  await form
-    .getByLabel("Name", { exact: true })
-    .fill("Conflict isolation notes");
-  await form.getByRole("button", { name: "Save", exact: true }).click();
-  const note = section
-    .locator(".content-section-card")
-    .filter({ hasText: "Conflict isolation notes" });
-  await note.getByRole("button", { name: "Write notes", exact: true }).click();
-  await note
-    .getByLabel("Conflict isolation notes", { exact: true })
-    .fill("Original saved notes.");
+  const editor = page.locator(".learn-page .rich-document-prose");
+  await editor.fill("Original saved notes.");
   await expect
     .poll(
       () =>
-        records.find((record) => record.title === "Conflict isolation notes")
-          ?.body,
+        records.find(
+          (record) =>
+            record.data.category === "content-document" &&
+            record.data.track === "databases",
+        )?.body,
     )
     .toBe("Original saved notes.");
   failWrites = true;
-  await note
-    .getByLabel("Conflict isolation notes", { exact: true })
-    .fill("Keep my unsaved transaction example.");
-  await expect(note.getByRole("alert")).toContainText(
+  await editor.fill("Keep my unsaved transaction example.");
+  await expect(page.getByRole("alert")).toContainText(
     "changed on another device",
   );
-  await expect(
-    note.getByLabel("Conflict isolation notes", { exact: true }),
-  ).toHaveValue("Keep my unsaved transaction example.");
+  await expect(editor).toHaveText("Keep my unsaved transaction example.");
   const attempts = writes;
   await page.reload();
-  await expect(note).toContainText("Keep my unsaved transaction example.");
+  await expect(editor).toContainText("Keep my unsaved transaction example.");
   await expect(
-    note.getByRole("button", { name: "Retry save", exact: true }),
+    page.getByRole("button", { name: "Keep reviewed draft", exact: true }),
   ).toBeVisible();
   // Wait beyond the normal autosave debounce to verify a restored conflict is paused.
   await page.waitForTimeout(1100);
   expect(writes).toBe(attempts);
-  await note.getByText("Compare with saved text", { exact: true }).click();
-  await expect(note).toContainText("Latest text saved on another device.");
+  await page.getByText("Compare saved content", { exact: true }).click();
   failWrites = false;
-  await note.getByRole("button", { name: "Retry save", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Keep reviewed draft", exact: true })
+    .click();
   await expect
     .poll(
       () =>
-        records.find((record) => record.title === "Conflict isolation notes")
-          ?.body,
+        records.find(
+          (record) =>
+            record.data.category === "content-document" &&
+            record.data.track === "databases",
+        )?.body,
     )
     .toBe("Keep my unsaved transaction example.");
   expect(writes).toBe(attempts + 1);
   await page.reload();
   await expect(
-    note.getByRole("button", { name: "Retry save", exact: true }),
+    page.getByRole("button", { name: "Keep reviewed draft", exact: true }),
   ).toHaveCount(0);
-  await expect(note).toContainText("Keep my unsaved transaction example.");
+  await expect(editor).toContainText("Keep my unsaved transaction example.");
 });

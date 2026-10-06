@@ -121,7 +121,7 @@
 .editable-tabs.editable-tabs {
   padding: 7px 8px 9px;
 }
-.editable-tabs.editable-tabs > .sortable-item > .editable-tab {
+.editable-tabs.editable-tabs .editable-tab {
   height: 40px;
   min-height: 40px;
   padding: 0 14px;
@@ -135,12 +135,11 @@
     box-shadow 140ms ease;
 }
 .editable-tabs.editable-tabs
-  > .sortable-item
-  > .editable-tab:not(.active):not([aria-selected="true"]):hover {
+  .editable-tab:not(.active):not([aria-selected="true"]):hover {
   transform: translate(-1px, -2px);
   box-shadow: 4px 5px 0 var(--shadow-colour);
 }
-.editable-tabs.editable-tabs > .sortable-item > .editable-tab:focus-visible {
+.editable-tabs.editable-tabs .editable-tab:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 3px;
 }
@@ -152,9 +151,6 @@
 }
 .page-header h1 {
   margin-bottom: 0;
-}
-.learn-subject-heading:empty {
-  display: none;
 }
 .page-stack > .page-header,
 .page-stack > .section-tabs {

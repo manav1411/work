@@ -13,7 +13,6 @@ import { roadmapTopics } from "../../content/problems";
 import {
   learningSubjects,
   learningTopics,
-  type EditableLearningTopic,
   type LearningSubject,
 } from "../learn/topics";
 import { ContentPanel } from "../content/ContentPanel";
@@ -35,7 +34,6 @@ export function LearnPage() {
   const track = subjects.some((item) => item.id === params.get("track"))
     ? params.get("track")!
     : "dsa";
-  const subject = subjects.find((item) => item.id === track)!;
   const topics = learningTopics(records, track);
   const problemTopic = roadmapTopics.find((topic) =>
     topic.problems.some((problem) => problem.slug === params.get("problem")),
@@ -55,15 +53,13 @@ export function LearnPage() {
     }
   };
   const saveItem = async (
-    type: "track" | "topic",
-    item: LearningSubject | EditableLearningTopic,
+    item: LearningSubject,
     patch: Record<string, unknown>,
     title = item.title,
   ) => {
     const data = {
       ...item.record?.data,
-      category: type === "track" ? "learn-track" : "learn-topic",
-      ...(type === "topic" ? { track } : {}),
+      category: "learn-track",
       ...(item.seedId ? { seedId: item.seedId } : {}),
       ...patch,
     };
@@ -72,38 +68,22 @@ export function LearnPage() {
       : create({
           kind: "topic",
           title,
-          body: "description" in item ? item.description : item.summary,
+          body: item.description,
           data,
         });
   };
-  const reorder = async (type: "track" | "topic", ids: string[]) => {
-    const ordered = [];
-    for (const [order, id] of ids.entries()) {
-      const item = (type === "track" ? subjects : topics).find(
-        (item) => item.id === id,
-      )!;
-      ordered.push(
-        item.record ??
-          (await saveItem(type, item, { order: item.order ?? order })),
-      );
-    }
-    await reorderRecords(ordered, workspace);
-  };
-  const add = async (type: "track" | "topic") => {
+  const addTrack = async () => {
     const record = await create({
       kind: "topic",
       title: "Untitled",
       data: {
-        category: type === "track" ? "learn-track" : "learn-topic",
-        ...(type === "topic" ? { track } : {}),
-        order: type === "track" ? subjects.length : topics.length,
+        category: "learn-track",
+        order: subjects.length,
       },
     });
     setNewId(record.id);
-    if (type === "track") {
-      continueCreation();
-      selectTrack(record.id);
-    }
+    continueCreation();
+    selectTrack(record.id);
   };
   return (
     <div className="page learn-page">
@@ -111,9 +91,9 @@ export function LearnPage() {
         title="Learn"
         action={
           editing && (
-            <Button onClick={() => void perform(() => add("track"))}>
+            <Button onClick={() => void perform(addTrack)}>
               <Plus size={16} />
-              Add topic
+              Add tab
             </Button>
           )
         }
@@ -121,9 +101,16 @@ export function LearnPage() {
       <SortableList
         className="section-tabs learn-track-tabs editable-tabs"
         horizontal
-        label="Learning topics"
+        label="Learning tabs"
         items={subjects}
-        onReorder={(ids) => reorder("track", ids)}
+        onReorder={async (ids) => {
+          const ordered = [];
+          for (const id of ids) {
+            const item = subjects.find((subject) => subject.id === id)!;
+            ordered.push(item.record ?? (await saveItem(item, {})));
+          }
+          await reorderRecords(ordered, workspace);
+        }}
       >
         {(item, handle) => (
           <div
@@ -169,28 +156,29 @@ export function LearnPage() {
               value={item.title}
               label="Topic name"
               autoFocus={newId === item.id}
-              onSave={(title) => saveItem("track", item, {}, title)}
+              onSave={(title) => saveItem(item, {}, title)}
             />
           </div>
         )}
       </SortableList>
-      {error && (
-        <p role="alert" className="content-save-error">
-          {error}
-        </p>
-      )}
       {editing && track !== "dsa" && (
-        <div className="content-item-actions">
+        <div className="selected-tab-actions">
           <DeleteControl
-            label="Delete topic"
+            label="Delete tab"
+            actionVariant="danger"
             onDelete={async () => {
-              if (subject.seedId)
-                await saveItem("track", subject, { hidden: true });
-              else if (subject.record) await remove(subject.record.id);
+              const item = subjects.find((subject) => subject.id === track);
+              if (item?.seedId) await saveItem(item, { hidden: true });
+              else if (item?.record) await remove(item.record.id);
               selectTrack("dsa");
             }}
           />
         </div>
+      )}
+      {error && (
+        <p role="alert" className="content-save-error">
+          {error}
+        </p>
       )}
       {track === "dsa" && (
         <>
@@ -218,6 +206,7 @@ export function LearnPage() {
           />
           <ContentPanel
             context={{ scope: "learn", track: "dsa", seedId: "dsa-resources" }}
+            allowBlockReordering={false}
             seeds={[
               {
                 id: "leetcode",
@@ -238,68 +227,32 @@ export function LearnPage() {
           />
         </>
       )}
-      {editing && track !== "dsa" && (
-        <Button
-          variant="secondary"
-          onClick={() => void perform(() => add("topic"))}
-        >
-          <Plus size={15} />
-          Add section
-        </Button>
+      {track !== "dsa" && (
+        <ContentPanel
+          context={{ scope: "learn", track }}
+          allowBlockReordering={false}
+          legacyContexts={topics.map((topic) => ({
+            context: {
+              scope: "learn" as const,
+              track,
+              ...(topic.seedId
+                ? { seedId: topic.seedId }
+                : { topicId: topic.id }),
+            },
+            title: topic.title,
+            initialBody: topic.record?.body ?? "",
+            resources: topic.url
+              ? [
+                  {
+                    id: `${topic.id}-reading`,
+                    title: topic.resource,
+                    url: topic.url,
+                  },
+                ]
+              : [],
+          }))}
+        />
       )}
-      <SortableList
-        className="learn-editable-topics"
-        items={topics}
-        onReorder={(ids) => reorder("topic", ids)}
-      >
-        {(topic, handle) => (
-          <section className="learn-reading-card">
-            <header className="content-section-heading">
-              <h2>
-                {handle}
-                <CompanyGlyph name={topic.title} />
-                <InlineTitle
-                  value={topic.title}
-                  autoFocus={newId === topic.id}
-                  label="Section name"
-                  onSave={(title) => saveItem("topic", topic, {}, title)}
-                />
-              </h2>
-              {editing && (
-                <DeleteControl
-                  label="Delete section"
-                  onDelete={async () => {
-                    if (topic.seedId)
-                      await saveItem("topic", topic, { hidden: true });
-                    else if (topic.record) await remove(topic.record.id);
-                  }}
-                />
-              )}
-            </header>
-            <ContentPanel
-              context={{
-                scope: "learn",
-                track,
-                ...(topic.seedId
-                  ? { seedId: topic.seedId }
-                  : { topicId: topic.id }),
-              }}
-              initialBody={topic.record?.body ?? ""}
-              seeds={
-                topic.url
-                  ? [
-                      {
-                        id: `${topic.id}-reading`,
-                        title: topic.resource,
-                        url: topic.url,
-                      },
-                    ]
-                  : []
-              }
-            />
-          </section>
-        )}
-      </SortableList>
     </div>
   );
 }
