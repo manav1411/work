@@ -1,3 +1,4 @@
+import { acceptWorkspaceEpoch } from "./device-storage";
 import { resumePendingSources, resumePendingSettings } from "./pending-source";
 import { editorDraftsFor, remapEditorDrafts } from "./device-drafts";
 import { flushAutosaves, mergeAutosaveValues } from "./autosave";
@@ -21,7 +22,13 @@ import {
   type WorkUser,
 } from "../../shared/model";
 import { STARTER_RECORDS } from "../content/starter";
-import { ApiError, jsonRequest, request, setApiAdapter } from "./api";
+import {
+  ApiError,
+  jsonRequest,
+  request,
+  setApiAdapter,
+  setWorkspaceEpoch,
+} from "./api";
 import { createDemoStore, makeRecord } from "./demo";
 import { remapReference } from "./outbox";
 
@@ -69,7 +76,6 @@ interface WorkspaceValue {
     expectedVersion?: number,
   ) => Promise<WorkRecord>;
   remove: (id: string) => Promise<void>;
-  restore: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
   notify: (message: string, tone?: Toast["tone"]) => void;
   dismissToast: (id: string) => void;
@@ -80,7 +86,6 @@ interface WorkspaceValue {
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
   syncOutbox: () => Promise<void>;
-  recoverDraft: (queueId: string) => Promise<void>;
   discardDraft: (queueId: string) => Promise<void>;
 }
 
@@ -175,16 +180,25 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           item.id === record.id ? record : item,
         )
       : [...recordsRef.current, record];
-    recordsRef.current = next.filter((item) => !item.deletedAt);
+    recordsRef.current = next;
     setRecords(recordsRef.current);
   }, []);
   const refresh = useCallback(async () => {
     const owner = userRef.current?.id;
     if (!owner || signingOutRef.current) return;
-    const response = await request<{ records: WorkRecord[] }>("/api/records");
+    const response = await request<{ records: WorkRecord[]; epoch: string }>(
+      "/api/records",
+    );
     if (userRef.current?.id !== owner || signingOutRef.current) return;
+    if (!acceptWorkspaceEpoch(owner, response.epoch)) {
+      outboxRef.current = [];
+      setWorkspaceEpoch(response.epoch);
+      window.location.reload();
+      return;
+    }
+    setWorkspaceEpoch(response.epoch);
     const queued = outboxRef.current;
-    const base = response.records.filter((item) => !item.deletedAt);
+    const base = response.records;
     for (const item of queued) {
       if (item.method === "create" && item.input) {
         const optimistic = recordsRef.current.find(
@@ -254,13 +268,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           setPending(outboxRef.current.length);
           setOutboxRevision((revision) => revision + 1);
           const [rows, prefs] = await Promise.all([
-            request<{ records: WorkRecord[] }>("/api/records"),
+            request<{ records: WorkRecord[]; epoch: string }>("/api/records"),
             request<{ preferences: UserPreferences }>("/api/preferences"),
           ]);
           if (!active) return;
-          recordsRef.current = rows.records.filter(
-            (record) => !record.deletedAt,
-          );
+          if (!acceptWorkspaceEpoch(session.user.id, rows.epoch)) {
+            outboxRef.current = [];
+            setPending(0);
+          }
+          setWorkspaceEpoch(rows.epoch);
+          recordsRef.current = rows.records;
           setRecords(recordsRef.current);
           setPreferences({ ...DEFAULT_PREFERENCES, ...prefs.preferences });
           for (const item of outboxRef.current)
@@ -291,13 +308,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } catch {
       /* Theme still applies to this session. */
     }
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const updateMotion = () => {
-      document.documentElement.dataset.reduceMotion = String(query.matches);
-    };
-    updateMotion();
-    query.addEventListener("change", updateMotion);
-    return () => query.removeEventListener("change", updateMotion);
   }, [preferences.theme, loading]);
 
   const create = useCallback(
@@ -484,15 +494,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [persistOutbox],
   );
-  const restore = useCallback(
-    async (id: string) => {
-      await request(`/api/records/${encodeURIComponent(id)}/restore`, {
-        method: "POST",
-      });
-      await refresh();
-    },
-    [refresh],
-  );
   const savePreferences = useCallback(
     async (patch: Partial<UserPreferences>) => {
       const owner = userRef.current?.id;
@@ -533,7 +534,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       "/api/records/batch",
       jsonRequest("POST", {
         records: STARTER_RECORDS,
-        idempotencyKey: "starter-workspace-v1",
+        idempotencyKey: "starter-current-workspace",
       }),
     );
     for (const record of response.records) put(record);
@@ -652,7 +653,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 (entry) => entry.id === item.id,
               );
               if (!latest) continue;
-              if (!item.base || remote.deletedAt) {
+              if (!item.base) {
                 latest.issue =
                   "This saved record also changed. Review your local changes before replacing it.";
                 persistOutbox();
@@ -871,43 +872,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // signed back into the automatically provisioned local account.
     if (!localSignOut) location.assign("/");
   }, [mode, syncOutbox]);
-  const recoverDraft = useCallback(
-    async (queueId: string) => {
-      if (syncRef.current)
-        throw new ApiError("Wait for the current sync to finish.", 409);
-      const item = outboxRef.current.find((draft) => draft.id === queueId);
-      if (!item) return;
-      const draft = recordsRef.current.find(
-        (record) => record.id === item.recordId,
-      );
-      if (!draft && !item.input)
-        throw new ApiError(
-          "Download your local changes first; the original record is no longer available.",
-          409,
-        );
-      const input: RecordInput = item.input ?? {
-        kind: draft!.kind,
-        title: `${draft!.title} (recovered changes)`,
-        body: draft!.body,
-        tags: draft!.tags,
-        links: draft!.links,
-        data: draft!.data,
-      };
-      const response = await request<{ record: WorkRecord }>("/api/records", {
-        ...jsonRequest("POST", input),
-        headers: { "Idempotency-Key": `recovery-${item.id}` },
-      });
-      outboxRef.current = outboxRef.current.filter(
-        (queued) => queued.id !== queueId,
-      );
-      persistOutbox();
-      put(response.record);
-      setError("");
-      await refresh();
-      notify("Your changes are saved as a separate record.");
-    },
-    [notify, persistOutbox, put, refresh],
-  );
   const discardDraft = useCallback(
     async (queueId: string) => {
       if (syncRef.current)
@@ -942,7 +906,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       create,
       update,
       remove,
-      restore,
       refresh,
       notify,
       dismissToast,
@@ -951,7 +914,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       signOut,
       initialize,
       syncOutbox,
-      recoverDraft,
       discardDraft,
     }),
     [
@@ -969,7 +931,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       create,
       update,
       remove,
-      restore,
       refresh,
       notify,
       dismissToast,
@@ -978,7 +939,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       signOut,
       initialize,
       syncOutbox,
-      recoverDraft,
       discardDraft,
     ],
   );

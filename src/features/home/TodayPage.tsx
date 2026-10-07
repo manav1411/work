@@ -7,10 +7,7 @@ import { Button, PageHeader } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useGoals } from "../../lib/goals";
 import { useLearningData } from "../learn/useLearningData";
-import {
-  observedProgress,
-  useGoalMeasurements,
-} from "../direction/goalMetrics";
+import { observedProgress } from "../direction/goalMetrics";
 import {
   dayDistance,
   timelineItems,
@@ -22,7 +19,7 @@ import {
 import "./timeline.css";
 
 export function TodayPage() {
-  const { records, preferences, user } = useWorkspace();
+  const { records, preferences } = useWorkspace();
   const navigate = useNavigate();
   const model = useGoals();
   const learning = useLearningData();
@@ -31,7 +28,6 @@ export function TodayPage() {
     [expanded, setExpanded] = useState(false);
   const [width, setWidth] = useState(800);
   const graphRef = useRef<HTMLDivElement>(null);
-  useGoalMeasurements(model, learning, user?.id ?? "");
   const span = expanded ? 90 : 42;
   const start = addDays(today, offset - (expanded ? 21 : 7)),
     end = addDays(start, span);
@@ -47,8 +43,7 @@ export function TodayPage() {
       goal.startDate &&
       goal.targetDate &&
       goal.startDate <= end &&
-      goal.targetDate >= start &&
-      !goal.deletedAt,
+      goal.targetDate >= start,
   );
   const chartItems = visible.filter(
     (item) =>

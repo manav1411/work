@@ -4,12 +4,12 @@ import {
   RadarCompanyDataSchema,
   InterviewAppointmentDataSchema,
 } from "./applications";
-import { contentDataError } from "./content";
+import { contentDataError, contentDataSchemaFor } from "./content";
 import { DIRECTION_KINDS, directionDataSchema } from "./direction";
 import { documentMetadataSchema, profileLinkDataSchema } from "./documents";
 import type { z } from "zod";
 
-/** New feature contracts are explicit; older imported metadata stays readable. */
+/** Accept only the current feature contracts. */
 export function recordDataError(
   kind: RecordKind,
   data: Record<string, unknown>,
@@ -17,34 +17,23 @@ export function recordDataError(
   const content = contentDataError(kind, data);
   if (content) return content;
   let schema: z.ZodType | undefined;
-  if (
-    kind === "application" &&
-    (data.applicationStatus !== undefined ||
-      data.recruitmentSteps !== undefined)
-  )
-    schema = ApplicationDataSchema;
-  if (kind === "company" && data.radar === true)
-    schema = RadarCompanyDataSchema;
-  if (kind === "interview" && (data.startsAt || data.stepId))
-    schema = InterviewAppointmentDataSchema;
+  if (kind === "application") schema = ApplicationDataSchema;
+  if (kind === "company") schema = RadarCompanyDataSchema;
+  if (kind === "interview") schema = InterviewAppointmentDataSchema;
   if (data.category === "direction") {
     if (!DIRECTION_KINDS.some((value) => value === kind))
       return "Direction must be a path, stream, or decision.";
     schema = directionDataSchema;
   }
-  if (
-    kind === "asset" &&
-    (["resume", "letter", "document", "cover-letter"].includes(
-      String(data.type),
-    ) ||
-      data.documentDefault === true)
-  )
-    schema = documentMetadataSchema;
+  if (kind === "asset") schema = documentMetadataSchema;
   if (data.category === "profile-link") {
     if (kind !== "resource") return "Profile links must be resources.";
     schema = profileLinkDataSchema;
   }
-  if (!schema) return null;
+  if (!schema) {
+    if (contentDataSchemaFor(kind, data)) return null;
+    return "Choose a current record category.";
+  }
   const result = schema.safeParse(data);
   return result.success
     ? null

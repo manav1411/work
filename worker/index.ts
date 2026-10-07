@@ -1,31 +1,26 @@
+import { epochDatabase } from "./workspace-epoch";
 import {
-  downloadBackup,
-  beginBackupRestore,
-  stageBackupFile,
-  commitBackupRestore,
-  cancelBackupRestore,
-  cleanupOwnerBackupStaging,
-} from "./backup";
+  exportWorkspace,
+  beginWorkspaceUpload,
+  stageWorkspaceFile,
+  commitWorkspaceUpload,
+  cancelWorkspaceUpload,
+  cleanupTransfers,
+  drainFileCleanup,
+  workspaceState,
+} from "./transfer";
+import { deletionStatements } from "./deletion";
 import { Hono } from "hono";
 import { z } from "zod";
-import {
-  DEFAULT_PREFERENCES,
-  type RecordRevision,
-  type WorkRecord,
-} from "../shared/model";
+import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
 import { authConfigured, createAuth, resolveSession } from "./auth";
 import { ApiError, now, type Env, type Variables } from "./env";
 import { recordContractStatements, validateRecordContract } from "./contracts";
 import { goalRoutes } from "./goals";
-import { goalMigrationRoutes } from "./goal-migration";
 import { learningRoutes } from "./learning";
 import { latexRoutes, resumePendingLatexJobs } from "./latex";
 import { documentPdfFilename } from "../shared/documents";
-import { applicationStatusLabel } from "../shared/applications";
-import { assertNativeInput, assertProviderPatch } from "./connectors/store";
-import { ProviderFailure } from "./connectors/providers";
 import {
-  applicationFileStatements,
   assertChanged,
   attachmentFromRow,
   bulkInsertLinks,
@@ -44,18 +39,7 @@ import {
   type AttachmentRow,
   type RecordRow,
 } from "./db/records";
-import {
-  assertFilesNotSubmitted,
-  assertRecordFilesNotSubmitted,
-  getAttachment,
-  saveAttachment,
-} from "./files";
-import {
-  exportWorkspace,
-  importRecords,
-  restoreWorkspace,
-  undoImport,
-} from "./import-export";
+import { getAttachment, saveAttachment } from "./files";
 import {
   checkIdempotency,
   idempotencyStatement,
@@ -99,12 +83,7 @@ app.use("*", async (context, next) => {
 });
 
 app.use("/api/*", async (context, next) => {
-  if (
-    !["GET", "HEAD", "OPTIONS"].includes(context.req.method) &&
-    !/^\/api\/connectors\/webhooks\/(?:github|notion)(?:\/[a-f0-9-]{36})?$/.test(
-      new URL(context.req.url).pathname,
-    )
-  ) {
+  if (!["GET", "HEAD", "OPTIONS"].includes(context.req.method)) {
     const origin = context.req.header("Origin");
     const expected = new URL(context.req.url).origin;
     if (origin && origin !== expected && origin !== context.env.APP_ORIGIN)
@@ -209,24 +188,11 @@ app.on(["GET", "POST"], "/api/auth/*", async (context) => {
   return createAuth(context.env).handler(context.req.raw);
 });
 
-// Retired collections are no longer refreshed by provider deliveries.
-app.all("/api/connectors/webhooks/*", (context) =>
-  context.json(
-    {
-      error: {
-        code: "RETIRED",
-        message: "Connector webhooks have been retired.",
-      },
-    },
-    410,
-  ),
-);
-
 // Every route below resolves identity from the request; clients never supply owner IDs.
 app.use("/api/*", async (context, next) => {
   const path = new URL(context.req.url).pathname;
   const known =
-    /^\/api\/(goals(?:\/legacy|\/[^/]+(?:\/checkpoint)?)?|learning(?:\/.*)?|latex\/[^/]+(?:\/(?:copy|compile|jobs\/[^/]+|submissions))?|connectors(?:\/.*)?|records(?:\/(?:batch|reorder)|\/[^/]+(?:\/(?:restore|permanent|revisions|related|attachments))?)?|search|preferences|attachments\/[^/]+|backup(?:\/restores(?:\/[^/]+(?:\/commit|\/files\/[^/]+)?)?)?|export|restore|import(?:\/[^/]+\/undo)?|account\/delete)$/.test(
+    /^\/api\/(goals(?:\/[^/]+)?|learning\/stats|latex\/[^/]+(?:\/(?:copy|compile|jobs\/[^/]+))?|records(?:\/(?:batch|reorder)|\/[^/]+(?:\/(?:related|attachments))?)?|search|preferences|attachments\/[^/]+|workspace(?:\/uploads(?:\/[^/]+(?:\/(?:commit|files\/[^/]+))?)?)?|account\/delete)$/.test(
       path,
     );
   if (!known)
@@ -240,28 +206,25 @@ app.use("/api/*", async (context, next) => {
     );
   context.set("user", session.user);
   context.set("local", session.local);
+  if (
+    !["GET", "HEAD", "OPTIONS"].includes(context.req.method) &&
+    !path.startsWith("/api/workspace/uploads")
+  ) {
+    const state = await workspaceState(context.env, session.user.id);
+    if (context.req.header("X-Workspace-Epoch") !== state.epoch)
+      throw new ApiError(
+        409,
+        "WORKSPACE_REPLACED",
+        "Reload this workspace before making changes.",
+      );
+    context.env = {
+      ...context.env,
+      DB: epochDatabase(context.env.DB, session.user.id, state.epoch),
+    };
+  }
   await next();
 });
 
-app.all("/api/connectors/*", (context) =>
-  context.json(
-    {
-      error: {
-        code: "RETIRED",
-        message:
-          "Connections have been retired. Existing imported records remain in your workspace and backups.",
-      },
-    },
-    410,
-  ),
-);
-app.all("/api/connectors", (context) =>
-  context.json(
-    { error: { code: "RETIRED", message: "Connections have been retired." } },
-    410,
-  ),
-);
-app.route("/api/goals/legacy", goalMigrationRoutes);
 app.route("/api/goals", goalRoutes);
 app.route("/api/learning", learningRoutes);
 app.route("/api/latex", latexRoutes);
@@ -283,6 +246,15 @@ function assertCurrentProductInput(record: {
   data?: Record<string, unknown>;
 }) {
   const data = record.data || {};
+  if (
+    record.kind === "asset" &&
+    (data.latexProject !== undefined || data.latexJobs !== undefined)
+  )
+    throw new ApiError(
+      400,
+      "MANAGED_SOURCE",
+      "Save native document source through its project API.",
+    );
   if (
     record.kind === "interview" &&
     (data.appointmentVersion !== 2 || !data.applicationId || !data.stepId)
@@ -347,7 +319,7 @@ app.post("/api/records/reorder", async (context) => {
   try {
     await context.env.DB.batch([
       context.env.DB.prepare(
-        "INSERT INTO write_guards(id,value) SELECT ?, count(*)=? FROM records r JOIN json_each(?) j ON r.id=json_extract(j.value,'$.id') AND r.version=json_extract(j.value,'$.version') WHERE r.owner_id=? AND r.deleted_at IS NULL",
+        "INSERT INTO write_guards(id,value) SELECT ?, count(*)=? FROM records r JOIN json_each(?) j ON r.id=json_extract(j.value,'$.id') AND r.version=json_extract(j.value,'$.version') WHERE r.owner_id=?",
       ).bind(guard, items.length, JSON.stringify(items), owner),
       ...records.map((record, i) =>
         updateRecord(context.env.DB, owner, record, items[i].version),
@@ -365,14 +337,16 @@ app.post("/api/records/reorder", async (context) => {
 });
 
 app.get("/api/records", async (context) => {
-  const includeDeleted = context.req.query("includeDeleted") === "true";
   const kind = context.req.query("kind");
   const rows = await context.env.DB.prepare(
-    `SELECT * FROM records WHERE owner_id=? AND COALESCE(json_extract(data,'$.connectorSource.available'),1)!=0 ${includeDeleted ? "" : "AND deleted_at IS NULL"} ${kind ? "AND kind=?" : ""} ORDER BY updated_at DESC`,
+    `SELECT * FROM records WHERE owner_id=? ${kind ? "AND kind=?" : ""} ORDER BY updated_at DESC`,
   )
     .bind(context.get("user").id, ...(kind ? [kind] : []))
     .all<RecordRow>();
-  return context.json({ records: rows.results.map(fromRow) });
+  return context.json({
+    records: rows.results.map(fromRow),
+    epoch: (await workspaceState(context.env, context.get("user").id)).epoch,
+  });
 });
 
 app.post("/api/records/batch", async (context) => {
@@ -395,7 +369,6 @@ app.post("/api/records/batch", async (context) => {
   if (state.response) return context.json(state.response);
   const records = payload.records.map((input) => newRecord(input));
   for (const record of records) assertCurrentProductInput(record);
-  for (const input of payload.records) assertNativeInput(input.data);
   for (const record of records)
     await validateRecordContract(context.env.DB, owner, record, records);
   const allLinks = [...new Set(records.flatMap((record) => record.links))];
@@ -414,7 +387,6 @@ app.post("/api/records/batch", async (context) => {
         { links: allLinks },
       ),
       ...bulkInsertLinks(context.env.DB, owner, records),
-      ...applicationFileStatements(context.env.DB, owner, records),
       ...recordContractStatements(context.env.DB, owner, records),
       ...idempotencyStatement(context.env.DB, owner, state, response),
     ]);
@@ -435,7 +407,6 @@ app.post("/api/records/batch", async (context) => {
 app.post("/api/records", async (context) => {
   const input = parse(recordSchema, await readJson(context.req.raw));
   assertCurrentProductInput(input);
-  assertNativeInput(input.data);
   const owner = context.get("user").id;
   const state = await checkIdempotency(
     context.env.DB,
@@ -456,7 +427,6 @@ app.post("/api/records", async (context) => {
         links: record.links,
       }),
       ...insertLinks(context.env.DB, owner, record),
-      ...applicationFileStatements(context.env.DB, owner, [record]),
       ...recordContractStatements(context.env.DB, owner, [record]),
       ...idempotencyStatement(context.env.DB, owner, state, response),
     ]);
@@ -480,7 +450,6 @@ app.get("/api/records/:id", async (context) =>
       context.env.DB,
       context.get("user").id,
       context.req.param("id"),
-      context.req.query("includeDeleted") === "true",
     ),
   }),
 );
@@ -527,56 +496,44 @@ app.patch("/api/records/:id", async (context) => {
     );
   // Source/build state is owned by the native project API, not stale metadata forms.
   if (before.kind === "asset") {
-    for (const key of ["latexProject", "latexJobs", "submissions"]) {
+    for (const key of ["latexProject", "latexJobs"]) {
       if (before.data[key] === undefined) delete record.data[key];
       else record.data[key] = before.data[key];
     }
   }
-  assertProviderPatch(before, patch);
-  // A recorded stage move is historical evidence, not just the current label.
-  if (
-    record.kind === "application" &&
-    typeof record.data.stage === "string" &&
-    before.data.stage !== record.data.stage
-  ) {
-    const history = Array.isArray(before.data.history)
-      ? before.data.history.slice(-99)
-      : [];
-    record.data = {
-      ...record.data,
-      history: [
-        ...history,
-        {
-          previous: before.data.stage || "Saved",
-          stage: record.data.stage,
-          at: record.updatedAt,
-        },
-      ],
-    };
-  }
-  if (
-    record.kind === "application" &&
-    ["applicationStatus", "selectedStepId", "terminalOutcome"].some(
-      (key) => record.data[key] !== before.data[key],
+  const removedSteps =
+    before.kind === "application"
+      ? new Set(
+          (before.data.recruitmentSteps as { id: string }[])
+            .map((step) => step.id)
+            .filter(
+              (stepId) =>
+                !(record.data.recruitmentSteps as { id: string }[]).some(
+                  (step) => step.id === stepId,
+                ),
+            ),
+        )
+      : new Set<string>();
+  const appointments = removedSteps.size
+    ? await context.env.DB.prepare(
+        "SELECT id,data FROM records WHERE owner_id=? AND kind='interview' AND json_extract(data,'$.applicationId')=?",
+      )
+        .bind(owner, before.id)
+        .all<{ id: string; data: string }>()
+    : { results: [] };
+  const deletedAppointments = appointments.results
+    .filter((appointment) =>
+      removedSteps.has(JSON.parse(appointment.data).stepId),
     )
-  ) {
-    record.data = {
-      ...record.data,
-      stageHistory: [
-        ...(Array.isArray(before.data.stageHistory)
-          ? before.data.stageHistory
-          : []
-        ).slice(-99),
-        {
-          from: applicationStatusLabel(before),
-          to: applicationStatusLabel(record),
-          at: record.updatedAt,
-          fromStepId: before.data.selectedStepId || "",
-          toStepId: record.data.selectedStepId || "",
-        },
-      ],
-    };
-  }
+    .map((appointment) => appointment.id);
+  const beforeStatements = deletedAppointments.length
+    ? await deletionStatements(
+        context.env,
+        owner,
+        deletedAppointments,
+        before.id,
+      )
+    : [];
   const response = { record };
   try {
     await writeRecord(
@@ -585,6 +542,7 @@ app.patch("/api/records/:id", async (context) => {
       record,
       before.version,
       idempotencyStatement(context.env.DB, owner, state, response),
+      beforeStatements,
     );
   } catch (error) {
     const raced = await raceResponse(context.env.DB, owner, state);
@@ -595,142 +553,24 @@ app.patch("/api/records/:id", async (context) => {
 });
 
 app.delete("/api/records/:id", async (context) => {
-  const owner = context.get("user").id;
-  const before = await getRecord(
-    context.env.DB,
-    owner,
-    context.req.param("id"),
-    true,
-  );
-  if (before.deletedAt) return context.json({ record: before });
-  assertBehaviouralProtected(before);
-  await assertRecordFilesNotSubmitted(context.env.DB, owner, before.id);
-  const record = {
-    ...before,
-    deletedAt: now(),
-    updatedAt: now(),
-    version: before.version + 1,
-  };
-  // Deleting a parent never deletes another record; attachments remain recoverable.
-  const detachLiveDocumentLinks =
-    before.kind === "application"
-      ? [
-          context.env.DB.prepare(
-            "UPDATE records SET data=json_set(data,'$.applicationIds',json((SELECT json_group_array(value) FROM json_each(records.data,'$.applicationIds') WHERE value!=?))),version=version+1,updated_at=? WHERE owner_id=? AND kind='asset' AND EXISTS(SELECT 1 FROM json_each(records.data,'$.applicationIds') WHERE value=?)",
-          ).bind(before.id, now(), owner, before.id),
-        ]
-      : [];
-  await writeRecord(
-    context.env.DB,
-    owner,
-    record,
-    before.version,
-    detachLiveDocumentLinks,
-  );
-  return context.json({ record });
-});
-app.post("/api/records/:id/restore", async (context) => {
-  const owner = context.get("user").id;
-  const before = await getRecord(
-    context.env.DB,
-    owner,
-    context.req.param("id"),
-    true,
-  );
-  if (!before.deletedAt) return context.json({ record: before });
-  const record = {
-    ...before,
-    deletedAt: null,
-    updatedAt: now(),
-    version: before.version + 1,
-  };
-  await writeRecord(context.env.DB, owner, record, before.version);
-  return context.json({ record });
-});
-app.delete("/api/records/:id/permanent", async (context) => {
-  const owner = context.get("user").id;
-  const recordId = context.req.param("id");
-  const record = await getRecord(context.env.DB, owner, recordId, true);
+  const owner = context.get("user").id,
+    record = await getRecord(context.env.DB, owner, context.req.param("id"));
   assertBehaviouralProtected(record);
-  if (!record.deletedAt)
-    throw new ApiError(
-      409,
-      "TRASH_FIRST",
-      "Move the record to trash before deleting it permanently.",
-    );
-  await assertRecordFilesNotSubmitted(context.env.DB, owner, recordId, true);
-  const files = await context.env.DB.prepare(
-    "SELECT id,object_key FROM attachments WHERE owner_id=? AND record_id=?",
-  )
-    .bind(owner, recordId)
-    .all<{ id: string; object_key: string }>();
-  const detaches = await detachReferenceStatements(
-    context.env.DB,
-    owner,
-    [recordId],
-    files.results.map((file) => file.id),
-    recordId,
-  );
   try {
-    await context.env.DB.batch([
-      ...detaches,
-      context.env.DB.prepare(
-        "DELETE FROM records WHERE id=? AND owner_id=? AND deleted_at IS NOT NULL AND version=?",
-      ).bind(recordId, owner, record.version),
-      ...assertChanged(context.env.DB),
-    ]);
+    await context.env.DB.batch(
+      await deletionStatements(context.env, owner, [record.id]),
+    );
   } catch (error) {
     if (String(error).includes("CHECK constraint failed"))
       throw new ApiError(
         409,
         "VERSION_CONFLICT",
-        "This record or a related record changed while deletion was running. Nothing was permanently deleted. Try again with the latest versions.",
-      );
-    if (String(error).includes("FOREIGN KEY constraint failed"))
-      throw new ApiError(
-        409,
-        "FILE_IN_USE",
-        "A document from this record was captured in an application. Remove that captured version before deleting the record permanently.",
+        "The workspace changed during deletion. Try again.",
       );
     throw error;
   }
-  if (files.results.length)
-    await context.env.FILES.delete(
-      files.results.map((file) => file.object_key),
-    );
+  await drainFileCleanup(context.env).catch(() => {});
   return context.json({ deleted: true });
-});
-
-app.get("/api/records/:id/revisions", async (context) => {
-  const owner = context.get("user").id;
-  await getRecord(context.env.DB, owner, context.req.param("id"), true);
-  const rows = await context.env.DB.prepare(
-    "SELECT * FROM record_revisions WHERE owner_id=? AND record_id=? ORDER BY version DESC LIMIT 100",
-  )
-    .bind(owner, context.req.param("id"))
-    .all<{
-      id: string;
-      record_id: string;
-      version: number;
-      title: string;
-      body: string;
-      tags: string;
-      links: string;
-      data: string;
-      created_at: string;
-    }>();
-  const revisions: RecordRevision[] = rows.results.map((row) => ({
-    id: row.id,
-    recordId: row.record_id,
-    version: row.version,
-    title: row.title,
-    body: row.body,
-    tags: JSON.parse(row.tags),
-    links: JSON.parse(row.links),
-    data: JSON.parse(row.data),
-    createdAt: row.created_at,
-  }));
-  return context.json({ revisions });
 });
 
 app.get("/api/search", async (context) => {
@@ -738,7 +578,7 @@ app.get("/api/search", async (context) => {
   const expression = searchExpression(query);
   if (!expression) return context.json({ records: [] });
   const rows = await context.env.DB.prepare(
-    "SELECT r.* FROM records_fts JOIN records r ON r.id=records_fts.id WHERE records_fts MATCH ? AND r.owner_id=? AND records_fts.owner_id=? AND r.deleted_at IS NULL AND COALESCE(json_extract(r.data,'$.connectorSource.available'),1)!=0 ORDER BY bm25(records_fts),r.updated_at DESC LIMIT 60",
+    "SELECT r.* FROM records_fts JOIN records r ON r.id=records_fts.id WHERE records_fts MATCH ? AND r.owner_id=? AND records_fts.owner_id=? ORDER BY bm25(records_fts),r.updated_at DESC LIMIT 60",
   )
     .bind(expression, context.get("user").id, context.get("user").id)
     .all<RecordRow>();
@@ -748,7 +588,7 @@ app.get("/api/records/:id/related", async (context) => {
   const owner = context.get("user").id;
   await getRecord(context.env.DB, owner, context.req.param("id"));
   const rows = await context.env.DB.prepare(
-    "SELECT DISTINCT r.* FROM records r JOIN record_links l ON (r.id=l.target_id OR r.id=l.source_id) AND r.owner_id=l.owner_id WHERE l.owner_id=? AND (l.source_id=? OR l.target_id=?) AND r.id!=? AND r.deleted_at IS NULL AND COALESCE(json_extract(r.data,'$.connectorSource.available'),1)!=0",
+    "SELECT DISTINCT r.* FROM records r JOIN record_links l ON (r.id=l.target_id OR r.id=l.source_id) AND r.owner_id=l.owner_id WHERE l.owner_id=? AND (l.source_id=? OR l.target_id=?) AND r.id!=?",
   )
     .bind(
       owner,
@@ -766,12 +606,15 @@ app.get("/api/preferences", async (context) => {
   )
     .bind(context.get("user").id)
     .first<{ data: string }>();
+  const parsed = preferencesSchema.safeParse({
+    ...DEFAULT_PREFERENCES,
+    displayName: context.get("user").name,
+    ...(row ? JSON.parse(row.data) : {}),
+  });
   return context.json({
-    preferences: {
-      ...DEFAULT_PREFERENCES,
-      displayName: context.get("user").name,
-      ...(row ? JSON.parse(row.data) : {}),
-    },
+    preferences: parsed.success
+      ? parsed.data
+      : { ...DEFAULT_PREFERENCES, displayName: context.get("user").name },
   });
 });
 app.put("/api/preferences", async (context) => {
@@ -803,7 +646,7 @@ app.post("/api/records/:id/attachments", async (context) => {
   );
   if (
     document.kind === "asset" &&
-    ["resume", "letter", "cover-letter"].includes(String(document.data.type))
+    ["resume", "letter"].includes(String(document.data.type))
   )
     throw new ApiError(
       400,
@@ -864,8 +707,6 @@ app.get("/api/attachments/:id", async (context) => {
             context.env.DB,
             context.get("user").id,
             row.record_id,
-            // Attachment access above already checks preserved submitted files.
-            true,
           ),
           row.filename,
         )
@@ -889,7 +730,13 @@ app.get("/api/attachments/:id", async (context) => {
 app.delete("/api/attachments/:id", async (context) => {
   const owner = context.get("user").id;
   const row = await getAttachment(context.env, owner, context.req.param("id"));
-  await assertFilesNotSubmitted(context.env.DB, owner, [row.id]);
+  const document = await getRecord(context.env.DB, owner, row.record_id);
+  if (document.data.latexProject)
+    throw new ApiError(
+      400,
+      "MANAGED_FILE",
+      "Native document files are managed with the project. Delete the document to remove them.",
+    );
   const detaches = await detachReferenceStatements(
     context.env.DB,
     owner,
@@ -899,6 +746,9 @@ app.delete("/api/attachments/:id", async (context) => {
   try {
     await context.env.DB.batch([
       ...detaches,
+      context.env.DB.prepare(
+        "INSERT OR IGNORE INTO file_cleanup(object_key,owner_id) VALUES(?,?)",
+      ).bind(row.object_key, owner),
       context.env.DB.prepare(
         "DELETE FROM attachments WHERE id=? AND owner_id=?",
       ).bind(row.id, owner),
@@ -911,24 +761,18 @@ app.delete("/api/attachments/:id", async (context) => {
         "VERSION_CONFLICT",
         "A related record changed while deletion was running. The file was not deleted. Try again with the latest versions.",
       );
-    if (String(error).includes("FOREIGN KEY constraint failed"))
-      throw new ApiError(
-        409,
-        "FILE_IN_USE",
-        "This document was captured in an application before deletion finished. Remove that captured version first.",
-      );
     throw error;
   }
-  await context.env.FILES.delete(row.object_key);
+  await drainFileCleanup(context.env).catch(() => {});
   return context.json({ deleted: true });
 });
 
-app.get("/api/backup", async (context) =>
-  downloadBackup(context.env, context.get("user").id),
+app.get("/api/workspace", (context) =>
+  exportWorkspace(context.env, context.get("user").id),
 );
-app.post("/api/backup/restores", async (context) =>
+app.post("/api/workspace/uploads", async (context) =>
   context.json(
-    await beginBackupRestore(
+    await beginWorkspaceUpload(
       context.env,
       context.get("user").id,
       await readJson(context.req.raw),
@@ -936,86 +780,36 @@ app.post("/api/backup/restores", async (context) =>
     201,
   ),
 );
-app.put("/api/backup/restores/:restoreId/files/:fileId", async (context) =>
+app.put("/api/workspace/uploads/:uploadId/files/:fileId", async (context) =>
   context.json(
-    await stageBackupFile(
+    await stageWorkspaceFile(
       context.env,
       context.get("user").id,
-      context.req.param("restoreId"),
+      context.req.param("uploadId"),
       context.req.param("fileId"),
       context.req.raw,
     ),
   ),
 );
-app.post("/api/backup/restores/:restoreId/commit", async (context) =>
+app.post("/api/workspace/uploads/:uploadId/commit", async (context) =>
   context.json(
-    await commitBackupRestore(
+    await commitWorkspaceUpload(
       context.env,
       context.get("user").id,
-      context.req.param("restoreId"),
+      context.req.param("uploadId"),
     ),
-    201,
   ),
 );
-app.delete("/api/backup/restores/:restoreId", async (context) =>
+app.delete("/api/workspace/uploads/:uploadId", async (context) =>
   context.json(
-    await cancelBackupRestore(
+    await cancelWorkspaceUpload(
       context.env,
       context.get("user").id,
-      context.req.param("restoreId"),
+      context.req.param("uploadId"),
     ),
   ),
 );
 
-app.get("/api/export", async (context) => {
-  const result = await exportWorkspace(
-    context.env,
-    context.get("user").id,
-    context.req.query("files") !== "false",
-  );
-  context.header(
-    "Content-Disposition",
-    `attachment; filename="work-backup-${now().slice(0, 10)}.json"`,
-  );
-  return context.json(result);
-});
-app.post("/api/restore", async (context) =>
-  context.json(
-    await restoreWorkspace(
-      context.env,
-      context.get("user").id,
-      await readJson(context.req.raw),
-    ),
-    201,
-  ),
-);
-app.post("/api/import", async (context) =>
-  context.json(
-    await importRecords(
-      context.env,
-      context.get("user").id,
-      await readJson(context.req.raw),
-    ),
-    201,
-  ),
-);
-app.get("/api/import", async (context) => {
-  const batches = await context.env.DB.prepare(
-    "SELECT id,source,created_at AS createdAt,undone_at AS undoneAt,created_count AS created,updated_count AS updated,skipped_count AS skipped FROM import_batches WHERE owner_id=? ORDER BY created_at DESC LIMIT 100",
-  )
-    .bind(context.get("user").id)
-    .all();
-  return context.json({ batches: batches.results });
-});
-app.post("/api/import/:id/undo", async (context) =>
-  context.json(
-    await undoImport(
-      context.env,
-      context.get("user").id,
-      context.req.param("id"),
-    ),
-  ),
-);
 app.post("/api/account/delete", async (context) => {
   const input = parse(
     z.object({ confirmation: z.literal("DELETE MY WORKSPACE") }).strict(),
@@ -1023,17 +817,19 @@ app.post("/api/account/delete", async (context) => {
   );
   void input;
   const owner = context.get("user").id;
-  const files = await context.env.DB.prepare(
-    "SELECT object_key FROM attachments WHERE owner_id=?",
+  const uploads = await context.env.DB.prepare(
+    "SELECT id FROM workspace_uploads WHERE owner_id=? AND committed_at IS NULL",
   )
     .bind(owner)
-    .all<{ object_key: string }>();
-  if (files.results.length)
-    await context.env.FILES.delete(
-      files.results.map((file) => file.object_key),
-    );
-  await cleanupOwnerBackupStaging(context.env, owner);
-  await context.env.DB.prepare("DELETE FROM user WHERE id=?").bind(owner).run();
+    .all<{ id: string }>();
+  for (const upload of uploads.results)
+    await cancelWorkspaceUpload(context.env, owner, upload.id);
+  await context.env.DB.batch([
+    context.env.DB.prepare(
+      "INSERT OR IGNORE INTO file_cleanup(object_key,owner_id) SELECT object_key,owner_id FROM attachments WHERE owner_id=?",
+    ).bind(owner),
+    context.env.DB.prepare("DELETE FROM user WHERE id=?").bind(owner),
+  ]);
   return context.json({ deleted: true });
 });
 
@@ -1052,14 +848,6 @@ app.notFound(async (context) => {
   return context.text("Work assets are built with Vite.", 404);
 });
 app.onError((error, context) => {
-  if (error instanceof ProviderFailure) {
-    if (error.status === 429)
-      context.header("Retry-After", String(error.retryAfterSeconds));
-    return context.json(
-      { error: { code: "PROVIDER_UNAVAILABLE", message: error.message } },
-      error.status as 400,
-    );
-  }
   if (error instanceof ApiError)
     return context.json(
       {
@@ -1098,6 +886,8 @@ export { app };
 export default {
   fetch: app.fetch,
   scheduled(_event: ScheduledController, env: Env, context: ExecutionContext) {
-    context.waitUntil(resumePendingLatexJobs(env));
+    context.waitUntil(
+      Promise.all([resumePendingLatexJobs(env), cleanupTransfers(env)]),
+    );
   },
 };

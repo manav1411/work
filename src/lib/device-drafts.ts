@@ -6,12 +6,10 @@ export interface EditorDraft {
   value: string;
   title: string;
   url: string;
-  archived?: boolean;
 }
 export function editorDraftsFor(
   owner: string,
   records: WorkRecord[] = [],
-  includeArchives = false,
 ): EditorDraft[] {
   if (!owner) return [];
   const prefixes = [
@@ -30,11 +28,7 @@ export function editorDraftsFor(
     for (let i = 0; i < localStorage.length; i++) {
       const storageKey = localStorage.key(i);
       if (!storageKey) continue;
-      const archived = storageKey.startsWith("work:autosave-recovery:");
-      if (archived && !includeArchives) continue;
-      const key = archived
-        ? decodeURIComponent(storageKey.slice("work:autosave-recovery:".length))
-        : storageKey;
+      const key = storageKey;
       if (!prefixes.some((prefix) => key.startsWith(prefix))) continue;
       const value = localStorage.getItem(storageKey);
       if (value === null) continue;
@@ -92,9 +86,8 @@ export function editorDraftsFor(
       drafts.push({
         key: storageKey,
         value,
-        title: archived ? `${title} · previous copy` : title,
+        title,
         url,
-        archived,
       });
     }
   } catch {
@@ -113,7 +106,7 @@ export function remapEditorDrafts(owner: string, from: string, to: string) {
     try {
       value = JSON.stringify(remapReference(JSON.parse(value), from, to));
     } catch {
-      /* Legacy text is unchanged. */
+      /* Invalid drafts are ignored. */
     }
     try {
       localStorage.setItem(key, value);

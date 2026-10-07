@@ -25,15 +25,7 @@ let profile = {
   email: "owner@example.invalid",
   avatar_url: "https://avatars.example.invalid/owner",
 };
-const migration = [
-  "0001_workspace.sql",
-  "0002_submitted_files.sql",
-  "0003_connectors.sql",
-  "0004_simplification.sql",
-  "0005_workspace_improvements.sql",
-  "0006_backup_staging.sql",
-  "0007_native_latex.sql",
-]
+const migration = ["0001_workspace.sql", "0009_current_workspace.sql"]
   .map((filename) =>
     readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
   )
@@ -101,8 +93,7 @@ beforeAll(async () => {
     DB: (await miniflare.getD1Database("DB")) as unknown as D1Database,
     FILES: (await miniflare.getR2Bucket("FILES")) as unknown as R2Bucket,
     ENVIRONMENT: "production",
-    OWNER_GITHUB_LOGIN: "synthetic-owner",
-    OWNER_GITHUB_ID: "12345",
+    ALLOWED_GITHUB_USERS: '[{"login":"synthetic-owner","id":"12345"}]',
     APP_ORIGIN: "https://work-callback.example.invalid",
     BETTER_AUTH_SECRET: "synthetic-callback-secret-with-at-least-32-characters",
     GITHUB_CLIENT_ID: "synthetic-callback-client",
@@ -112,6 +103,7 @@ beforeAll(async () => {
 }, 30_000);
 
 beforeEach(async () => {
+  env.ALLOWED_GITHUB_USERS = '[{"login":"synthetic-owner","id":"12345"}]';
   await env.DB.batch([
     env.DB.prepare("DELETE FROM user"),
     env.DB.prepare("DELETE FROM verification"),
@@ -261,6 +253,63 @@ describe("verified GitHub OAuth callbacks", () => {
         await request("/api/session", "GET", undefined, cookies(completed))
       ).json(),
     ).toMatchObject({ user: expect.any(Object) });
+  });
+
+  it("allows a second listed account and rejects an unlisted account before creating any auth rows", async () => {
+    env.ALLOWED_GITHUB_USERS = JSON.stringify([
+      { login: "synthetic-owner", id: "12345" },
+      { login: "synthetic-invitee", id: "67890" },
+    ]);
+    profile = {
+      ...profile,
+      id: 67890,
+      login: "synthetic-invitee",
+      email: "invitee@example.invalid",
+    };
+    const accepted = await callback();
+    expect(accepted.headers.get("Location")).toBe(`${env.APP_ORIGIN}/today`);
+    expect(
+      (await request("/api/records", "GET", undefined, cookies(accepted)))
+        .status,
+    ).toBe(200);
+
+    profile = {
+      ...profile,
+      id: 99999,
+      login: "unlisted-user",
+      email: "unlisted@example.invalid",
+    };
+    const rejected = await callback();
+    expect(rejected.headers.get("Location")).not.toBe(
+      `${env.APP_ORIGIN}/today`,
+    );
+    for (const table of ["user", "account", "session"]) {
+      expect(
+        await env.DB.prepare(`SELECT count(*) AS count FROM ${table}`).first(),
+      ).toEqual({ count: 1 });
+    }
+  });
+
+  it("revokes existing sessions and repeat sign-in after removal from the list", async () => {
+    const accepted = await callback();
+    expect(accepted.headers.get("Location")).toBe(`${env.APP_ORIGIN}/today`);
+    env.ALLOWED_GITHUB_USERS = '[{"login":"another-user","id":"67890"}]';
+    expect(
+      await (
+        await request("/api/session", "GET", undefined, cookies(accepted))
+      ).json(),
+    ).toMatchObject({ user: null });
+    expect(
+      (await request("/api/records", "GET", undefined, cookies(accepted)))
+        .status,
+    ).toBe(401);
+    const rejected = await callback();
+    expect(rejected.headers.get("Location")).not.toBe(
+      `${env.APP_ORIGIN}/today`,
+    );
+    expect(
+      await env.DB.prepare("SELECT count(*) AS count FROM session").first(),
+    ).toEqual({ count: 1 });
   });
 
   it("reuses the same owner account on repeat sign-in after a GitHub login rename", async () => {

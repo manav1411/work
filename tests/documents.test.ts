@@ -1,7 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { DEFAULT_PREFERENCES } from "../shared/model";
-import { preferencesSchema } from "../worker/validation";
-import { connectorBackupSchema } from "../worker/connectors/backup";
 import type { Attachment, WorkRecord } from "../shared/model";
 import {
   DOCX_TYPE,
@@ -15,46 +12,19 @@ import {
   saveDocumentFile,
 } from "../shared/documents";
 import { validateFile } from "../worker/files";
-import { changedLines } from "../src/features/assets/DocumentPreview";
-
-describe("retired editor-link compatibility", () => {
-  it("discards old integration preferences without weakening other preference validation", () => {
-    expect(
-      preferencesSchema.parse({
-        ...DEFAULT_PREFERENCES,
-        overleaf: "https://example.com/old-source",
-      }),
-    ).toEqual(DEFAULT_PREFERENCES);
-    expect(
-      preferencesSchema.safeParse({
-        ...DEFAULT_PREFERENCES,
-        unknownPreference: true,
-      }).success,
-    ).toBe(false);
-  });
-  it("accepts old connector archives while dropping retired bookkeeping", () => {
-    expect(
-      connectorBackupSchema.parse({
-        connections: [{ id: "retired-editor", provider: "overleaf" }],
-        sources: [{ connectionId: "retired-editor" }],
-        activities: [{ connectionId: "retired-editor", provider: "overleaf" }],
-      }),
-    ).toEqual({ connections: [], sources: [], activities: [] });
-  });
-});
+import { getDocumentLinks } from "../src/features/assets/documentLinks";
 
 const record = (id: string, data: WorkRecord["data"] = {}): WorkRecord => ({
   id,
   kind: "asset",
   title: id,
-  body: "Preserved historical text",
+  body: "Current authored text",
   tags: [],
   links: [],
   data,
   version: 1,
   createdAt: "2026-10-01T00:00:00Z",
   updatedAt: "2026-10-01T00:00:00Z",
-  deletedAt: null,
 });
 const file = (
   id: string,
@@ -123,7 +93,7 @@ function docx(
 }
 
 describe("independent document library", () => {
-  it("includes uploaded named and legacy documents without application binding", () => {
+  it("includes uploaded named documents without application binding", () => {
     const variant = record("Resume for Google", {
       primaryAttachmentId: "variant-file",
     });
@@ -131,12 +101,11 @@ describe("independent document library", () => {
     expect(
       documentRecords([
         variant,
-        { ...record("deleted"), deletedAt: "2026-10-02" },
         resume,
         { ...record("application"), kind: "application" },
       ]),
     ).toEqual([resume, variant]);
-    expect(variant.body).toBe("Preserved historical text");
+    expect(variant.body).toBe("Current authored text");
   });
   it("resolves primary files only within the selected asset and does not revive a missing pointer", () => {
     const own = file("old");
@@ -153,7 +122,24 @@ describe("independent document library", () => {
         other,
       ]),
     ).toEqual(own);
-    expect(primaryDocumentFile(record("resume"), [other, own])).toEqual(own);
+    expect(primaryDocumentFile(record("resume"), [other, own])).toBeUndefined();
+  });
+  it("does not offer empty resume or cover-letter records as document links", () => {
+    const emptyResume = record("empty-resume", {
+      type: "resume",
+      nativeDocument: true,
+    });
+    const linkedResume = record("linked-resume", {
+      type: "resume",
+      primaryAttachmentId: "resume-file",
+    });
+    expect(getDocumentLinks([emptyResume])).toEqual({
+      resume: {},
+      coverLetter: {},
+    });
+    expect(getDocumentLinks([emptyResume, linkedResume]).resume).toEqual({
+      record: linkedResume,
+    });
   });
   it("previews only safe image/PDF formats and offers other files as downloads", () => {
     expect(documentPreviewKind(file("pdf"))).toBe("pdf");
@@ -183,12 +169,14 @@ describe("independent document library", () => {
   it("preserves generic source URLs and safe profile destinations, rejecting active or credential-bearing URLs", () => {
     expect(
       documentMetadataSchema.safeParse({
+        type: "document",
         sourceUrl: "https://example.com/source/resume",
         primaryAttachmentId: "own-file",
       }).success,
     ).toBe(true);
     expect(
       documentMetadataSchema.safeParse({
+        type: "document",
         sourceUrl: "https://user:secret@example.com/source",
       }).success,
     ).toBe(false);
@@ -206,27 +194,6 @@ describe("independent document library", () => {
         url: "https://user:password@example.com/",
       }).success,
     ).toBe(false);
-  });
-});
-
-describe("document differences", () => {
-  it("preserves repeated unchanged lines while highlighting changed wording", () => {
-    const diff = changedLines(
-      "Experience\nPython\nPython\nEducation",
-      "Experience\nPython\nSecurity\nEducation",
-    );
-    expect([...diff.removed]).toEqual([2]);
-    expect([...diff.added]).toEqual([2]);
-    expect(diff.truncated).toBe(false);
-  });
-  it("bounds comparison work and reports truncation", () => {
-    const text = Array.from({ length: 501 }, (_, index) => `${index}`).join(
-      "\n",
-    );
-    const diff = changedLines(text, text);
-    expect(diff.before).toHaveLength(500);
-    expect(diff.truncated).toBe(true);
-    expect(diff.added.size).toBe(0);
   });
 });
 

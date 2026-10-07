@@ -1,19 +1,14 @@
+import { NoteInput } from "../content/NoteInput";
 import { useRef } from "react";
 import { field, type WorkRecord } from "../../../shared/model";
 import { RadarCompanyDataSchema } from "../../../shared/applications";
-import { Button, Input, Textarea } from "../../components/ui";
+import { Button, Input } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useAutosave } from "../../lib/autosave";
 import { normalizeWebUrl } from "../../../shared/urls";
 
 export function radarNotes(record: WorkRecord) {
-  return [
-    record.body,
-    field(record, "reason"),
-    field(record, "website") ? `Website: ${field(record, "website")}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  return record.body;
 }
 export function InlineRadarFields({ record }: { record: WorkRecord }) {
   const { user, update, isPending, refresh } = useWorkspace();
@@ -23,7 +18,7 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
     title: record.title === "Untitled" ? "" : record.title,
     careersUrl: field(record, "careersUrl"),
     location: field(record, "location"),
-    body: record.data.radarNotesMigrated ? record.body : radarNotes(record),
+    body: record.body,
   };
   const draft = useAutosave({
     initial,
@@ -35,7 +30,6 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
         ...current.current.data,
         careersUrl: value.careersUrl,
         location: value.location,
-        radarNotesMigrated: true,
       });
       const saved = await update(
         record.id,
@@ -104,7 +98,7 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
         }
         onBlur={draft.flush}
       />
-      <Textarea
+      <NoteInput
         aria-label="Company notes"
         placeholder="Notes"
         value={draft.value.body}

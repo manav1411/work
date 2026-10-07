@@ -4,49 +4,8 @@ import { z } from "zod";
 // Stable task IDs and problem slugs are shared with the public learning source.
 export const LEARNING_SOURCE = "https://manavdodia.com";
 export const LEARNING_USERNAME = /^[A-Za-z0-9_-]{1,40}$/;
-export const LEARNING_TASK_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const slug = z.string().regex(/^[a-z0-9-]{1,200}$/);
-export const problemSchema = z.object({
-  name: z.string().min(1).max(4000),
-  slug,
-  difficulty: z.enum(["Easy", "Medium", "Hard"]),
-});
-const topicSchema = z.object({ homework: z.array(problemSchema).max(200) });
-export const weekSchema = z.object({
-  week: z.number().int().min(1).max(200),
-  title: z.string().min(1).max(4000),
-  accessible: z.boolean(),
-  slides: z.array(z.object({ content: z.string().max(20000) })).max(200),
-  topic2SlideStart: z.number().int().min(0).max(200),
-  topics: z.tuple([topicSchema, topicSchema]),
-  tasks: z
-    .array(
-      z.object({
-        id: z.string().regex(LEARNING_TASK_ID),
-        label: z.string().min(1).max(4000),
-      }),
-    )
-    .max(200)
-    .optional(),
-});
-export const learningContentSchema = z
-  .object({
-    weeks: z.array(weekSchema).min(1).max(200),
-  })
-  .superRefine(({ weeks }, context) => {
-    const weekIds = new Set<number>();
-    const taskIds = new Set<string>();
-    for (const week of weeks) {
-      if (weekIds.has(week.week))
-        context.addIssue({ code: "custom", message: "Duplicate week number" });
-      weekIds.add(week.week);
-      for (const task of week.tasks ?? []) {
-        if (taskIds.has(task.id))
-          context.addIssue({ code: "custom", message: "Duplicate task ID" });
-        taskIds.add(task.id);
-      }
-    }
-  });
+export type ProblemDifficulty = "Easy" | "Medium" | "Hard";
 export const difficultyCountSchema = z.object({
   difficulty: z.enum(["All", "Easy", "Medium", "Hard"]),
   count: z.number().int().nonnegative(),
@@ -76,24 +35,6 @@ export const learningStatsSchema = z.object({
     .record(z.string().regex(/^\d+$/), z.array(solvedProblemSchema).max(10000))
     .optional(),
 });
-export const learningProgressSchema = z
-  .object({
-    tasks: z.record(z.string().regex(LEARNING_TASK_ID), z.boolean()),
-  })
-  .refine(({ tasks }) => Object.keys(tasks).length <= 500, "Too many tasks");
-export const learningToggleSchema = z
-  .object({
-    taskId: z.string().regex(LEARNING_TASK_ID),
-    done: z.boolean(),
-  })
-  .strict();
-
-export type Week = z.infer<typeof weekSchema>;
-export type Slide = Week["slides"][number];
-export type HomeworkProblem = z.infer<typeof problemSchema>;
-export type ProblemDifficulty = HomeworkProblem["difficulty"];
-export type WeekTask = NonNullable<Week["tasks"]>[number];
-export type WeekTopic = Week["topics"][number];
 export type LeetCodeStats = z.infer<typeof learningStatsSchema>;
 export type DifficultyCount = z.infer<typeof difficultyCountSchema>;
 export type Difficulty = DifficultyCount["difficulty"];

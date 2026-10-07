@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import LinkExtension from "@tiptap/extension-link";
@@ -10,7 +10,14 @@ import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import Placeholder from "@tiptap/extension-placeholder";
-import { GripVertical } from "lucide-react";
+import {
+  GripVertical,
+  Check,
+  CloudOff,
+  LoaderCircle,
+  X,
+  Link2,
+} from "lucide-react";
 import { normalizeWebUrl } from "../../../shared/urls";
 import type {
   RecordInput,
@@ -26,34 +33,57 @@ import {
 } from "../../../shared/rich-content";
 import { useWorkspace } from "../../lib/workspace";
 import { useAutosave } from "../../lib/autosave";
-import { getRevisions } from "../../lib/api";
-import type { RecordRevision } from "../../../shared/model";
 import { useEditMode } from "../../lib/edit-mode";
-import { Button, Select, Input } from "../../components/ui";
+import { Button, Input } from "../../components/ui";
 import { markdownDocument } from "./markdownDocument";
 import { contentRecordWriter } from "./recordWriter";
+import { Indentation, indentEditor } from "./Indentation";
+import { EditorToolbar } from "./EditorToolbar";
+import { applyEditorBlock, matchingBlocks } from "./editorCommands";
 import "./content.css";
+import "./editor.css";
 
-function commands(editor: Editor) {
-  return [
-    ["Text", () => editor.chain().focus().setParagraph().run()],
-    ["Heading", () => editor.chain().focus().toggleHeading({ level: 2 }).run()],
-    ["Bullet list", () => editor.chain().focus().toggleBulletList().run()],
-    ["Numbered list", () => editor.chain().focus().toggleOrderedList().run()],
-    ["Task list", () => editor.chain().focus().toggleTaskList().run()],
-    ["Code", () => editor.chain().focus().toggleCodeBlock().run()],
-    ["Quote", () => editor.chain().focus().toggleBlockquote().run()],
-    ["Divider", () => editor.chain().focus().setHorizontalRule().run()],
-    [
-      "Table",
-      () =>
-        editor
-          .chain()
-          .focus()
-          .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-          .run(),
-    ],
-  ] as const;
+type SlashMenu = {
+  from: number;
+  to: number;
+  query: string;
+  left: number;
+  top: number;
+};
+
+function slashMenu(
+  editor: Editor,
+  container: HTMLElement | null,
+): SlashMenu | null {
+  const { $from, empty } = editor.state.selection;
+  if (
+    !empty ||
+    !["paragraph", "heading"].includes($from.parent.type.name) ||
+    !container
+  )
+    return null;
+  const before = $from.parent.textBetween(0, $from.parentOffset);
+  const match = /^\/([\w -]{0,40})$/.exec(before);
+  if (!match) return null;
+  const caret = editor.view.coordsAtPos($from.pos);
+  const rect = container.getBoundingClientRect();
+  const availableHeight = Math.min(360, window.innerHeight * 0.45);
+  const below = window.innerHeight - caret.bottom;
+  return {
+    from: $from.start(),
+    to: $from.pos,
+    query: match[1],
+    left: Math.max(
+      8,
+      Math.min(caret.left - rect.left + container.scrollLeft, rect.width - 288),
+    ),
+    top:
+      (below < availableHeight && caret.top > availableHeight
+        ? caret.top - availableHeight - 8
+        : caret.bottom + 8) -
+      rect.top +
+      container.scrollTop,
+  };
 }
 
 export function RichDocumentEditor({
@@ -65,6 +95,8 @@ export function RichDocumentEditor({
   initialDocument,
   persist,
   allowBlockReordering = true,
+  placeholder = "Write something, or type / for blocks…",
+  compact = false,
 }: {
   record?: WorkRecord;
   input: RecordInput;
@@ -73,6 +105,8 @@ export function RichDocumentEditor({
   initialBody?: string;
   initialDocument?: RichNode;
   allowBlockReordering?: boolean;
+  placeholder?: string;
+  compact?: boolean;
   persist?: (
     patch: RecordPatch,
     expectedVersion?: number,
@@ -86,7 +120,7 @@ export function RichDocumentEditor({
   const server =
     storedRichDocument(record?.data) ??
     initialDocument ??
-    markdownDocument(initialBody || record?.body || "");
+    markdownDocument(initialBody);
   const recordRef = useRef(record);
   recordRef.current = record;
   const inputRef = useRef(input);
@@ -111,22 +145,6 @@ export function RichDocumentEditor({
     storageKey,
     enabled: true,
     pending: record ? isPending(record.id) : false,
-    decodeLegacy: (raw) => {
-      if (!raw || typeof raw !== "object" || Array.isArray(raw))
-        return undefined;
-      const draft = raw as { document?: unknown; version?: unknown };
-      if (!draft.document || typeof draft.document !== "object")
-        return undefined;
-      const document = validRichDocument(draft.document)
-        ? draft.document
-        : markdownDocument(richPlainText(draft.document as RichNode));
-      return {
-        value: document,
-        ...(typeof draft.version === "number"
-          ? { version: draft.version }
-          : {}),
-      };
-    },
     refresh: async () => {
       await refresh();
     },
@@ -137,9 +155,6 @@ export function RichDocumentEditor({
         data: {
           ...inputRef.current.data,
           ...recordRef.current?.data,
-          ...(recordRef.current?.data.richContent
-            ? {}
-            : { legacyBody: recordRef.current?.body ?? initialBody }),
           richContent: { version: 1, document },
         },
       };
@@ -154,7 +169,11 @@ export function RichDocumentEditor({
     },
   });
   const [linkError, setLinkError] = useState("");
-  const [slash, setSlash] = useState<number | null>(null);
+  const [slash, setSlash] = useState<SlashMenu | null>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const slashIndexRef = useRef(slashIndex);
+  slashIndexRef.current = slashIndex;
+  const menuId = useId();
   const slashRef = useRef(slash);
   slashRef.current = slash;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -163,17 +182,15 @@ export function RichDocumentEditor({
   const [picked, setPicked] = useState(false);
   const grabbedDocument = useRef<RichNode | null>(null);
   const dragCleanup = useRef<(() => void) | undefined>(undefined);
-  const [showHistory, setShowHistory] = useState(false);
-  const [history, setHistory] = useState<RecordRevision[] | null>(null);
-  const [historyError, setHistoryError] = useState("");
-  const [historyBusy, setHistoryBusy] = useState(false);
-  const editor = useEditor(
+
+  const activeEditor = useRef<Editor | null>(null);
+  const editor: Editor | null = useEditor(
     {
       extensions: [
         StarterKit.configure({ link: false, underline: false }),
         LinkExtension.configure({
           openOnClick: false,
-          autolink: false,
+          autolink: true,
           defaultProtocol: "https",
           protocols: ["http", "https"],
           isAllowedUri: (url) => {
@@ -191,6 +208,7 @@ export function RichDocumentEditor({
           },
         }),
         Underline,
+        Indentation,
         TaskList,
         TaskItem.configure({ nested: true }),
         Table.configure({ resizable: true }),
@@ -198,14 +216,20 @@ export function RichDocumentEditor({
         TableCell,
         TableHeader,
         Placeholder.configure({
-          placeholder: "Write, paste a link, or type / for blocks…",
+          placeholder,
         }),
       ],
       content: autosave.value,
       editable: editing,
+      immediatelyRender: false,
       shouldRerenderOnTransaction: true,
       editorProps: {
-        attributes: { "aria-label": label, class: "rich-document-prose" },
+        attributes: {
+          "aria-label": label,
+          role: "textbox",
+          "aria-multiline": "true",
+          class: "rich-document-prose",
+        },
         handleClick: (_view, _pos, event) => {
           const anchor = (event.target as HTMLElement).closest("a");
           if (anchor && !editingRef.current && anchor.href) {
@@ -214,36 +238,144 @@ export function RichDocumentEditor({
           }
           return false;
         },
-        handleKeyDown: (_view, event) => {
-          if (event.key === "ArrowDown" && slashRef.current !== null) {
-            containerRef.current
-              ?.querySelector<HTMLButtonElement>(".rich-slash-menu button")
-              ?.focus();
+        handlePaste: (_view, event) => {
+          const editor = activeEditor.current;
+          if (!editingRef.current || editor?.isActive("codeBlock"))
+            return false;
+          const clipboard = event.clipboardData;
+          const text = clipboard?.getData("text/plain") ?? "";
+          // Let Tiptap preserve formatted HTML; recognize Markdown from plain-text sources.
+          if (
+            clipboard?.getData("text/html") ||
+            !/^(?:#{1,6} |[-*+] |\d+\. |```|> )/m.test(text)
+          )
+            return false;
+          const document = markdownDocument(text);
+          if (!editor || !validRichDocument(document)) return false;
+          event.preventDefault();
+          editor.commands.insertContent(document.content ?? []);
+          return true;
+        },
+        handleKeyDown: (_view, event): boolean => {
+          const editor = activeEditor.current;
+          if (!editingRef.current) return false;
+          if (
+            event.key === "Tab" &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            editor
+          ) {
+            setSlash(null);
+            return indentEditor(editor, event.shiftKey ? -1 : 1);
+          }
+          const shortcut =
+            (event.metaKey || event.ctrlKey) &&
+            !event.altKey &&
+            !event.shiftKey;
+          if (
+            shortcut &&
+            ["b", "i", "u"].includes(event.key.toLowerCase()) &&
+            editor
+          ) {
+            event.preventDefault();
+            const chain = editor.chain().focus();
+            if (event.key.toLowerCase() === "b") chain.toggleBold().run();
+            else if (event.key.toLowerCase() === "i")
+              chain.toggleItalic().run();
+            else chain.toggleUnderline().run();
             return true;
           }
-          if (event.key === "Escape") {
-            setSlash(null);
-            setLink(null);
+          if (shortcut && event.key.toLowerCase() === "k") {
+            event.preventDefault();
+            setLink(String(editor?.getAttributes("link").href ?? ""));
+            setLinkError("");
+            return true;
+          }
+          if (shortcut && event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            void autosave.flush();
+            return true;
+          }
+          const menu = slashRef.current;
+          if (menu) {
+            const blocks = matchingBlocks(menu.query);
+            if (["ArrowDown", "ArrowUp"].includes(event.key) && blocks.length) {
+              setSlashIndex(
+                (current) =>
+                  (current +
+                    (event.key === "ArrowDown" ? 1 : -1) +
+                    blocks.length) %
+                  blocks.length,
+              );
+              return true;
+            }
+            if (event.key === "Enter" && blocks.length) {
+              const block = blocks[slashIndexRef.current] ?? blocks[0];
+              if (editor)
+                applyEditorBlock(
+                  editor.chain().focus().deleteRange(menu),
+                  block.id,
+                );
+              setSlash(null);
+              return true;
+            }
+            if (event.key === "Escape") {
+              setSlash(null);
+              return true;
+            }
           }
           return false;
         },
       },
       onUpdate: ({ editor: next }) => {
         autosave.setValue(next.getJSON() as RichNode);
-        const { $from } = next.state.selection;
-        const before = $from.parent.textBetween(0, $from.parentOffset);
-        setSlash(before.endsWith("/") ? $from.pos - 1 : null);
+        const menu = slashMenu(next, containerRef.current);
+        if (menu?.query !== slashRef.current?.query) setSlashIndex(0);
+        setSlash(menu);
       },
-      onSelectionUpdate: ({ editor: next }) =>
-        setBlock(next.state.selection.$from.index(0)),
+      onSelectionUpdate: ({ editor: next }) => {
+        setBlock(next.state.selection.$from.index(0));
+        const menu = slashMenu(next, containerRef.current);
+        if (menu?.query !== slashRef.current?.query) setSlashIndex(0);
+        setSlash(menu);
+      },
+      onBlur: () => {
+        void autosave.flush();
+      },
     },
     [storageKey],
   );
+  activeEditor.current = editor;
   useEffect(() => {
-    editor?.setEditable(editing);
+    if (editor && !editor.isDestroyed) editor.setEditable(editing, false);
+    if (!editing) {
+      setSlash(null);
+      setLink(null);
+    }
   }, [editing, editor]);
   useEffect(() => {
-    if (!editor) return;
+    const dom = containerRef.current?.querySelector<HTMLElement>(".tiptap");
+    if (!dom) return;
+    if (slash) {
+      dom.setAttribute("aria-controls", menuId);
+      const blocks = matchingBlocks(slash.query);
+      if (blocks[slashIndex])
+        dom.setAttribute(
+          "aria-activedescendant",
+          `${menuId}-${blocks[slashIndex].id}`,
+        );
+      else dom.removeAttribute("aria-activedescendant");
+    } else {
+      dom.removeAttribute("aria-controls");
+      dom.removeAttribute("aria-activedescendant");
+    }
+    containerRef.current
+      ?.querySelector('[role="option"][aria-selected="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [editor, slash, slashIndex, menuId]);
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
     const currentDocument = editor.getJSON() as RichNode;
     if (JSON.stringify(currentDocument) !== JSON.stringify(autosave.value))
       editor.commands.setContent(autosave.value, { emitUpdate: false });
@@ -253,7 +385,7 @@ export function RichDocumentEditor({
       dragCleanup.current?.();
     };
   }, []);
-  if (!editor) return null;
+  if (!editor || editor.isDestroyed) return null;
   const moveBlock = (from: number, to: number) => {
     const json = editor.getJSON() as RichNode;
     if (!json.content || from === to || to < 0 || to >= json.content.length)
@@ -264,144 +396,38 @@ export function RichDocumentEditor({
     editor.commands.setContent({ ...json, content: next });
     setBlock(to);
   };
+  const text = richPlainText(autosave.value).trim();
+  const words = text ? text.split(/\s+/u).length : 0;
+  const blocks = slash ? matchingBlocks(slash.query) : [];
+  const openLink = () => {
+    setLink(String(editor.getAttributes("link").href ?? ""));
+    setLinkError("");
+    setSlash(null);
+  };
   return (
     <div
       ref={containerRef}
-      className={`rich-document ${editing ? "is-editing" : "is-reading"} ${allowBlockReordering ? "" : "rich-document-no-block-reordering"}`}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.defaultPrevented) {
+          if (link !== null) {
+            setLink(null);
+            editor.commands.focus();
+          }
+        }
+      }}
+      className={`rich-document ${compact ? "is-compact" : ""} ${editing ? "is-editing" : "is-reading"} ${allowBlockReordering ? "" : "rich-document-no-block-reordering"}`}
     >
-      {editing &&
-        (!editor.state.selection.empty ||
-          editor.isActive("codeBlock") ||
-          editor.isActive("table")) && (
-          <div
-            className="rich-selection-toolbar"
-            role="toolbar"
-            aria-label="Text formatting"
-          >
-            {(["Bold", "Italic", "Underline"] as const).map((name) => (
-              <button
-                key={name}
-                type="button"
-                aria-pressed={editor.isActive(name.toLowerCase())}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  const chain = editor.chain().focus();
-                  if (name === "Bold") chain.toggleBold().run();
-                  else if (name === "Italic") chain.toggleItalic().run();
-                  else chain.toggleUnderline().run();
-                }}
-              >
-                {name[0]}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={() =>
-                setLink(String(editor.getAttributes("link").href ?? ""))
-              }
-            >
-              Link
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                editor
-                  .chain()
-                  .focus()
-                  .sinkListItem(
-                    editor.isActive("taskItem") ? "taskItem" : "listItem",
-                  )
-                  .run()
-              }
-            >
-              Indent
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                editor
-                  .chain()
-                  .focus()
-                  .liftListItem(
-                    editor.isActive("taskItem") ? "taskItem" : "listItem",
-                  )
-                  .run()
-              }
-            >
-              Outdent
-            </button>
-            <button
-              type="button"
-              aria-label="Undo"
-              onClick={() => editor.chain().focus().undo().run()}
-            >
-              ↶
-            </button>
-            <button
-              type="button"
-              aria-label="Redo"
-              onClick={() => editor.chain().focus().redo().run()}
-            >
-              ↷
-            </button>
-            {editor.isActive("codeBlock") && (
-              <Select
-                aria-label="Code language"
-                value={String(editor.getAttributes("codeBlock").language ?? "")}
-                onChange={(event) =>
-                  editor
-                    .chain()
-                    .focus()
-                    .updateAttributes("codeBlock", {
-                      language: event.target.value,
-                    })
-                    .run()
-                }
-              >
-                {[
-                  "",
-                  "python",
-                  "javascript",
-                  "typescript",
-                  "sql",
-                  "bash",
-                  "java",
-                  "cpp",
-                  "text",
-                ].map((value) => (
-                  <option key={value} value={value}>
-                    {value || "Plain text"}
-                  </option>
-                ))}
-              </Select>
-            )}
-            {editor.isActive("table") && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => editor.chain().focus().addRowAfter().run()}
-                >
-                  + Row
-                </button>
-                <button
-                  type="button"
-                  onClick={() => editor.chain().focus().addColumnAfter().run()}
-                >
-                  + Column
-                </button>
-                <button
-                  type="button"
-                  onClick={() => editor.chain().focus().deleteTable().run()}
-                >
-                  Delete table
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      {link !== null && (
+      {editing && (
+        <EditorToolbar
+          editor={editor}
+          onLink={openLink}
+          container={containerRef.current}
+        />
+      )}
+      {editing && link !== null && (
         <form
           className="rich-link-editor"
+          aria-label="Edit link"
           onSubmit={(event) => {
             event.preventDefault();
             try {
@@ -428,8 +454,10 @@ export function RichDocumentEditor({
             }
           }}
         >
+          <Link2 size={16} />
           <Input
             aria-label="Link address"
+            aria-invalid={Boolean(linkError)}
             autoFocus
             placeholder="example.com"
             value={link}
@@ -440,6 +468,17 @@ export function RichDocumentEditor({
           />
           {linkError && <span role="alert">{linkError}</span>}
           <Button type="submit">Apply</Button>
+          <button
+            className="rich-tool"
+            type="button"
+            aria-label="Cancel link"
+            onClick={() => {
+              setLink(null);
+              editor.commands.focus();
+            }}
+          >
+            <X size={16} />
+          </button>
           <Button
             type="button"
             variant="ghost"
@@ -454,6 +493,7 @@ export function RichDocumentEditor({
       )}
       <div
         className="rich-document-canvas"
+        onScroll={() => setSlash(null)}
         onPointerDown={(event) => {
           if (editing && allowBlockReordering && !picked) {
             const child = (event.target as HTMLElement).closest(".tiptap > *");
@@ -475,8 +515,11 @@ export function RichDocumentEditor({
             aria-label="Arrange block: drag, or Space then arrow keys"
             style={{
               top:
-                (editor.view.dom.children[block] as HTMLElement | undefined)
-                  ?.offsetTop ?? 8,
+                (
+                  containerRef.current?.querySelector(".tiptap")?.children[
+                    block
+                  ] as HTMLElement | undefined
+                )?.offsetTop ?? 8,
             }}
             onPointerDown={(event) => {
               event.preventDefault();
@@ -534,109 +577,98 @@ export function RichDocumentEditor({
       {editing && slash !== null && (
         <div
           className="rich-slash-menu"
-          role="menu"
+          id={menuId}
+          role="listbox"
           aria-label="Insert block"
-          onKeyDown={(event) => {
-            const buttons = Array.from(
-              event.currentTarget.querySelectorAll<HTMLButtonElement>("button"),
-            );
-            const index = buttons.indexOf(event.target as HTMLButtonElement);
-            if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? buttons.length - 1
-                    : (index +
-                        (event.key === "ArrowDown" ? 1 : -1) +
-                        buttons.length) %
-                      buttons.length;
-              buttons[next]?.focus();
-            } else if (event.key === "Escape") {
-              setSlash(null);
-              editor.commands.focus();
-            }
-          }}
+          style={{ left: slash.left, top: slash.top }}
         >
-          {commands(editor).map(([name, action]) => (
+          <p className="rich-menu-caption">
+            {slash.query ? `Blocks matching “${slash.query}”` : "Turn into"}
+          </p>
+          {blocks.map(({ id, name, description, icon: Icon }, index) => (
             <button
-              key={name}
-              role="menuitem"
+              key={id}
+              id={`${menuId}-${id}`}
+              role="option"
+              aria-selected={index === slashIndex}
               type="button"
+              className="rich-block-option"
+              tabIndex={-1}
               onMouseDown={(event) => event.preventDefault()}
+              onPointerMove={() => setSlashIndex(index)}
               onClick={() => {
-                editor
-                  .chain()
-                  .focus()
-                  .deleteRange({ from: slash, to: slash + 1 })
-                  .run();
-                action();
+                applyEditorBlock(editor.chain().focus().deleteRange(slash), id);
                 setSlash(null);
               }}
             >
-              {name}
+              <span className="rich-block-icon">
+                <Icon size={18} />
+              </span>
+              <span>
+                <strong>{name}</strong>
+                <small>{description}</small>
+              </span>
             </button>
           ))}
-        </div>
-      )}
-      {editing && record && (
-        <div className="rich-history-tools">
-          <Button
-            variant="ghost"
-            onClick={() => {
-              const next = !showHistory;
-              setShowHistory(next);
-              if (!next || history !== null || historyBusy) return;
-              setHistoryBusy(true);
-              setHistoryError("");
-              void getRevisions(record.id)
-                .then(setHistory)
-                .catch((failure: unknown) =>
-                  setHistoryError(
-                    failure instanceof Error
-                      ? failure.message
-                      : "Earlier content could not be loaded.",
-                  ),
-                )
-                .finally(() => setHistoryBusy(false));
-            }}
-          >
-            {showHistory ? "Hide earlier content" : "Restore earlier content"}
-          </Button>
-          {showHistory && (
-            <div className="rich-history-list">
-              {historyBusy && <span>Loading saved content…</span>}
-              {historyError && <span role="alert">{historyError}</span>}
-              {history?.length === 0 && (
-                <span>No earlier content is available.</span>
-              )}
-              {history?.slice(0, 12).map((revision) => (
-                <Button
-                  key={revision.id}
-                  variant="ghost"
-                  onClick={() => {
-                    const document =
-                      storedRichDocument(revision.data) ??
-                      markdownDocument(revision.body);
-                    editor.commands.setContent(document);
-                    setShowHistory(false);
-                  }}
-                >
-                  Restore from {new Date(revision.createdAt).toLocaleString()}
-                </Button>
-              ))}
-            </div>
+          {!blocks.length && (
+            <p className="rich-menu-empty">
+              No blocks found. Try “code” or “list”.
+            </p>
           )}
+          <div className="rich-menu-help">
+            <span>↑↓ navigate</span>
+            <span>↵ select</span>
+            <span>esc close</span>
+          </div>
         </div>
       )}
       {(editing ||
         autosave.error ||
         autosave.conflict ||
         autosave.state === "Offline—will sync") && (
-        <div className="rich-save-state" role="status">
-          {autosave.state}
-          {autosave.error && <span role="alert">{autosave.error}</span>}
+        <footer className="rich-document-footer">
+          <div className="rich-footer-status">
+            {(editing ||
+              autosave.error ||
+              autosave.conflict ||
+              autosave.state === "Offline—will sync") && (
+              <span
+                className={`rich-save-state ${autosave.error ? "has-error" : ""}`}
+                role="status"
+              >
+                {autosave.error ? (
+                  <X size={13} />
+                ) : autosave.state === "Offline—will sync" ? (
+                  <CloudOff size={13} />
+                ) : autosave.state === "Saving…" ? (
+                  <LoaderCircle size={13} className="rich-save-spinner" />
+                ) : (
+                  <Check size={13} />
+                )}
+                {autosave.state}
+              </span>
+            )}
+            {editing && (
+              <span className="rich-writing-hint">
+                <kbd>/</kbd> for blocks · <kbd>Tab</kbd> to indent
+              </span>
+            )}
+          </div>
+          {editing && (
+            <span className="rich-word-count">
+              {words.toLocaleString()} {words === 1 ? "word" : "words"}
+            </span>
+          )}
+        </footer>
+      )}
+      {autosave.error && (
+        <div className="rich-save-error" role="alert">
+          {autosave.error}
+          {!autosave.conflict && (
+            <Button variant="ghost" onClick={() => void autosave.flush()}>
+              Retry save
+            </Button>
+          )}
         </div>
       )}
       {autosave.conflict && (

@@ -220,13 +220,7 @@
   gap: 0.7rem;
   font-size: 0.85rem;
 }
-.snapshot-note {
-  font-size: 0.8rem;
-  line-height: 1.5;
-  border: 1px dashed currentColor;
-  border-radius: 0.5rem;
-  padding: 0.7rem;
-}
+
 .contact-card {
   display: grid;
   gap: 0.7rem;

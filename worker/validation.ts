@@ -3,6 +3,7 @@ import { RECORD_KINDS } from "../shared/model";
 import { ApiError } from "./env";
 import { recordDataError } from "../shared/record-contract";
 import { normalizeDestinationFields } from "../shared/urls";
+import { learningUsername } from "../shared/learning";
 
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -113,7 +114,7 @@ export const patchSchema = z
     version: z.number().int().positive(),
   })
   .strict();
-const currentPreferencesSchema = z
+export const preferencesSchema = z
   .object({
     timezone: z
       .string()
@@ -128,69 +129,20 @@ const currentPreferencesSchema = z
       }, "Unknown timezone."),
     theme: z.enum(["light", "dark"]),
     displayName: z.string().max(100),
-    github: webUrl,
-    linkedin: webUrl,
-    website: webUrl,
-    leetcode: webUrl,
-    currentCompany: z.string().max(200),
-    stack: z.string().max(1000),
-    weeklyHours: z.number().min(0).max(168),
-    weeklyApplications: z.number().int().min(0).max(1000),
-    weeklyPractice: z.number().int().min(0).max(1000),
-    customStages: z
-      .array(z.string().trim().min(1).max(80))
-      .min(1)
-      .max(30)
-      .transform((items) => [...new Set(items)]),
-    reducedMotion: z.boolean(),
-  })
-  .strict();
-// Retired integration preferences from older backups are accepted and discarded.
-// Other unknown preference fields still fail the strict current schema.
-export const preferencesSchema = z.preprocess((value) => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
-  const current = { ...value } as Record<string, unknown>;
-  delete current.overleaf;
-  return current;
-}, currentPreferencesSchema);
+    leetcode: z
+      .string()
+      .max(2048)
+      .refine(
+        (value) => !value.trim() || Boolean(learningUsername(value)),
+        "Enter a LeetCode username.",
+      )
+      .transform(learningUsername),
+  });
 export const idempotencyKeySchema = z
   .string()
   .min(8)
   .max(160)
   .regex(/^[a-zA-Z0-9._:-]+$/);
-export const importSchema = z
-  .object({
-    source: z.string().trim().min(1).max(200),
-    mode: z.enum(["keep", "replace", "merge"]).default("keep"),
-    idempotencyKey: idempotencyKeySchema.optional(),
-    records: z
-      .array(
-        z
-          .object({
-            sourceId: z.string().min(1).max(1000),
-            hash: z.string().min(1).max(200),
-            record: recordSchema,
-            attachments: z
-              .array(
-                z
-                  .object({
-                    filename: z.string().min(1).max(240),
-                    contentType: z.string().max(100),
-                    base64: z.string().max(14_000_000),
-                  })
-                  .strict(),
-              )
-              .max(20)
-              .default([]),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(100),
-  })
-  .strict();
-export type ImportPayload = z.infer<typeof importSchema>;
-
 export function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success)
@@ -215,7 +167,9 @@ export async function readJson(request: Request): Promise<unknown> {
     );
   const text = await readLimitedBody(request, MAX_REQUEST_BYTES);
   try {
-    return normalizeDestinationFields(JSON.parse(new TextDecoder().decode(text)));
+    return normalizeDestinationFields(
+      JSON.parse(new TextDecoder().decode(text)),
+    );
   } catch {
     throw new ApiError(
       400,

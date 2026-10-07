@@ -24,7 +24,6 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
     version: 1,
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-01T00:00:00Z",
-    deletedAt: null,
   };
   await page.addInitScript(() => sessionStorage.removeItem("work-demo-active"));
   await page.route("**/api/**", async (route) => {
@@ -48,7 +47,9 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
       return route.fulfill({ json: { preferences } });
     }
     if (path === "/api/records")
-      return route.fulfill({ json: { records: [direction] } });
+      return route.fulfill({
+        json: { epoch: "test-current", records: [direction] },
+      });
     if (path === `/api/records/${direction.id}` && method === "PATCH") {
       const patch = route.request().postDataJSON();
       if (patch.version !== direction.version)
@@ -59,11 +60,42 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
     if (path === "/api/goals") return route.fulfill({ json: { goals: [] } });
     return route.fulfill({ json: { events: [], records: [] } });
   });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/settings");
+  await expect(
+    page.getByLabel("LeetCode username", { exact: true }),
+  ).toHaveAttribute("placeholder", "username");
+  await expect(page.getByText("Reduce motion", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("GitHub profile", { exact: true })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByLabel("LinkedIn profile", { exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Website", { exact: true })).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollHeight <= window.innerHeight,
+    ),
+  ).toBe(true);
   await page.getByLabel("Display name", { exact: true }).fill("Chosen name");
+  await page
+    .getByLabel("LeetCode username", { exact: true })
+    .fill("chosen-handle");
   await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await expect(page.locator(".appearance-switch")).toHaveAttribute(
+    "data-mode",
+    "dark",
+  );
+  await expect(
+    page.getByRole("button", { name: "Dark", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByRole("button", { name: "Light", exact: true }),
+  ).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator(".settings-save-status")).toHaveText("Saved");
+  expect(preferences.leetcode).toBe("chosen-handle");
   await expect(
     page
       .locator(".sidebar")
@@ -80,6 +112,15 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
     "https://thundergolfer.com/blog/get-to-the-states#fnref:1",
   );
   await enterEditMode(page, "Your Direction");
+  await expect(
+    page.getByRole("heading", { name: "Notes", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Links", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".direction-card .rich-block-handle")).toHaveCount(
+    0,
+  );
   const status = page.getByRole("combobox", { name: "Direction status" });
   await status.focus();
   await page.keyboard.press("Enter");
@@ -112,4 +153,20 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(start).toHaveValue("");
   await expect.poll(() => direction.data.startDate).toBe("");
+
+  const addLink = page.getByRole("button", { name: "Add link", exact: true });
+  await addLink.click();
+  await expect(page.getByLabel("New link", { exact: true })).toBeVisible();
+  await page.waitForTimeout(800);
+  await expect(page.getByLabel("New link", { exact: true })).toBeVisible();
+  await page
+    .getByLabel("New link title", { exact: true })
+    .fill("Research notes");
+  await page
+    .getByLabel("New link", { exact: true })
+    .fill("https://example.com/research");
+  await addLink.click();
+  await expect
+    .poll(() => direction.data.researchLinks)
+    .toContain("https://example.com/research");
 });

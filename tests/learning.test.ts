@@ -84,18 +84,10 @@ beforeAll(async () => {
     FILES: (await miniflare.getR2Bucket("FILES")) as unknown as R2Bucket,
     ENVIRONMENT: "local",
     LOCAL_DEV_AUTH: "true",
-    OWNER_GITHUB_LOGIN: "synthetic-owner",
+    ALLOWED_GITHUB_USERS: '[{"login":"synthetic-owner","id":"12345"}]',
     APP_ORIGIN: "http://localhost",
   };
-  const migrations = [
-    "0001_workspace.sql",
-    "0002_submitted_files.sql",
-    "0003_connectors.sql",
-    "0004_simplification.sql",
-    "0005_workspace_improvements.sql",
-    "0006_backup_staging.sql",
-    "0007_native_latex.sql",
-  ]
+  const migrations = ["0001_workspace.sql", "0009_current_workspace.sql"]
     .map((name) =>
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"),
     )
@@ -115,56 +107,16 @@ afterAll(async () => {
   await miniflare?.dispose();
 }, 30_000);
 
-describe("roadmap statistics source and retired curriculum", () => {
-  it("requires authentication before statistics or retired curriculum routes", async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal("fetch", fetch);
-    for (const path of ["content", "stats", "progress", "tasks", "refresh"])
-      expect(
-        (
-          await request(`/api/learning/${path}`, "GET", undefined, {
-            ...env,
-            LOCAL_DEV_AUTH: "false",
-          })
-        ).status,
-      ).toBe(401);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-  it("retires reads and writes without upstream traffic or deleting retained private progress", async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal("fetch", fetch);
-    const inserted = await request("/api/records", "POST", {
-      kind: "progress",
-      title: "Retained learning task",
-      data: { category: "task", taskId: "source-task", done: true },
-    });
-    expect(inserted.status).toBe(201);
-    const saved = (await inserted.json()) as { record: { id: string } };
-    for (const path of ["content", "progress", "tasks", "refresh"])
-      for (const method of ["GET", "POST"])
-        expect(
-          (
-            await request(
-              `/api/learning/${path}`,
-              method,
-              method === "POST"
-                ? { taskId: "source-task", done: false }
-                : undefined,
-            )
-          ).status,
-        ).toBe(410);
-    expect(fetch).not.toHaveBeenCalled();
+describe("roadmap statistics source", () => {
+  it("requires authentication before statistics", async () => {
     expect(
-      await env.DB.prepare("SELECT data FROM records WHERE id=? AND owner_id=?")
-        .bind(saved.record.id, owner)
-        .first(),
-    ).toMatchObject({
-      data: JSON.stringify({
-        category: "task",
-        taskId: "source-task",
-        done: true,
-      }),
-    });
+      (
+        await request("/api/learning/stats", "GET", undefined, {
+          ...env,
+          LOCAL_DEV_AUTH: "false",
+        })
+      ).status,
+    ).toBe(401);
   });
   it("fetches live statistics once within the cache window and preserves last success during an outage", async () => {
     await setHandle("synthetic-handle");

@@ -5,6 +5,7 @@ import {
   type WorkRecord,
   type RecordPatch,
 } from "../../../shared/model";
+import { NoteInput } from "../content/NoteInput";
 import { contentRecordWriter } from "../content/recordWriter";
 import {
   Badge,
@@ -37,15 +38,7 @@ function StoryField({
 }) {
   const { editing } = useEditMode();
   const { user, isPending, refresh } = useWorkspace();
-  const initial =
-    name === "lessons"
-      ? [
-          field(story, "lessons") || field(story, "reflection"),
-          story.data.otherNotesMigrated ? "" : story.body,
-        ]
-          .filter(Boolean)
-          .join("\n\n")
-      : field(story, name);
+  const initial = field(story, name);
   const draftKey = `work-content-draft:${user?.id ?? "anonymous"}:story:${story.id}:${name}`;
   const draft = useAutosave({
     initial,
@@ -53,23 +46,17 @@ function StoryField({
     storageKey: draftKey,
     pending: isPending(story.id),
     refresh,
-    decodeLegacy: (raw) =>
-      typeof raw === "string" ? { value: raw } : undefined,
     persist: async (text) => {
       // The writer serializes the five STAR fields on one record and rebases
       // each partial field patch on the latest captured record version.
       const saved = await write({
         data: {
           [name]: text,
-          ...(name === "lessons" ? { otherNotesMigrated: true } : {}),
         },
       });
       return {
         version: saved.version,
-        value:
-          name === "lessons"
-            ? field(saved, "lessons") || field(saved, "reflection")
-            : field(saved, name),
+        value: field(saved, name),
         offline: isPending(saved.id),
       };
     },
@@ -80,9 +67,8 @@ function StoryField({
       <h4>{name[0].toUpperCase() + name.slice(1)}</h4>
       <div className="inline-star-field-content" hidden={!expanded}>
         {editing ? (
-          <textarea
+          <NoteInput
             aria-label={name[0].toUpperCase() + name.slice(1)}
-            className="inline-star-text"
             rows={Math.min(12, Math.max(2, text.split("\n").length))}
             value={text}
             placeholder={
@@ -383,12 +369,7 @@ export function StoryContent({
       {["situation", "task", "action", "result", "lessons"].map((key) => (
         <section key={key}>
           <h4>{key[0].toUpperCase() + key.slice(1)}</h4>
-          <Markdown
-            content={
-              field(story, key) ||
-              (key === "lessons" ? field(story, "reflection") : "")
-            }
-          />
+          <Markdown content={field(story, key)} />
         </section>
       ))}
       {story.body && <Markdown content={story.body} />}

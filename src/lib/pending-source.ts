@@ -14,6 +14,7 @@ import { jsonRequest, request } from "./api";
 import { isAutosaveActive, mergeAutosaveValues } from "./autosave";
 import { mergeLatexProjects } from "./latex-autosave";
 import { editorDraftsFor } from "./device-drafts";
+import { learningUsername } from "../../shared/learning";
 
 const sourceOf = (project: LatexProject): LatexSource => ({
   files: project.files,
@@ -37,7 +38,8 @@ export async function resumePendingSources(
     try {
       const raw = JSON.parse(draft.value);
       if (raw.conflict === true) continue;
-      const value: LatexProject | null = raw.__autosave === 1 ? raw.value : raw;
+      if (raw.__autosave !== 1 || !Object.hasOwn(raw, "baseValue")) continue;
+      const value: LatexProject | null = raw.value;
       if (!value) continue;
       const local = latexSourceSchema.safeParse(sourceOf(value));
       if (!local.success) continue;
@@ -118,7 +120,7 @@ export async function resumePendingSettings(
         const id = draft.key.split(":").at(-1)!;
         const { goals } = await request<{ goals: Goal[] }>("/api/goals");
         const remote = goals.find((goal) => goal.id === id);
-        if (!remote || remote.deletedAt) continue;
+        if (!remote) continue;
         const remoteInput = Object.fromEntries(
           Object.keys(EMPTY_GOAL).map((key) => [
             key,
@@ -131,11 +133,6 @@ export async function resumePendingSettings(
           remoteInput,
         );
         if (merged.conflict) continue;
-        if (
-          merged.value.measure === remote.measure &&
-          merged.value.scope === remote.scope
-        )
-          merged.value.value = remote.value;
         const parsed = goalInputSchema.safeParse({
           ...merged.value,
           title: merged.value.title.trim() || "Untitled goal",
@@ -166,14 +163,10 @@ export async function resumePendingSettings(
         value.displayName = value.displayName.trim();
         value.timezone = value.timezone.trim();
         new Intl.DateTimeFormat("en", { timeZone: value.timezone }).format();
-        const handle = value.leetcode
-          .trim()
-          .replace(/^https?:\/\/(?:www\.)?leetcode\.com\/(?:u\/)?/i, "")
-          .replace(/\/$/, "");
-        if (handle && !/^[A-Za-z0-9_-]{1,40}$/.test(handle)) continue;
-        value.leetcode = handle
-          ? `https://leetcode.com/u/${encodeURIComponent(handle)}/`
-          : "";
+        const rawHandle = value.leetcode.trim();
+        const handle = learningUsername(rawHandle);
+        if (rawHandle && !handle) continue;
+        value.leetcode = handle;
         if (
           !canSave() ||
           isAutosaveActive(draft.key) ||

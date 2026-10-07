@@ -1,0 +1,52 @@
+.work-note-input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  transition:
+    border-color 150ms,
+    box-shadow 150ms;
+}
+.work-note-input:focus-within {
+  border-color: color-mix(in srgb, var(--blue) 45%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 6%, transparent);
+}
+.work-note-input .work-note-text {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  max-height: 320px;
+  padding: 14px 16px;
+  resize: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.75;
+}
+.work-note-input .work-note-text:focus {
+  outline: 0;
+  box-shadow: none;
+}
+.work-note-input-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 16px 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.inline-star-field .work-note-input {
+  background: var(--canvas);
+}
+.inline-star-field .work-note-input .work-note-text {
+  padding: 10px 12px;
+  font-size: 13px;
+  min-height: 68px;
+}
+.inline-star-field .work-note-input-footer {
+  padding-inline: 12px;
+}

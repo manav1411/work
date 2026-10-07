@@ -14,15 +14,13 @@
   },
   "vars": {
     "ENVIRONMENT": "production",
-    "OWNER_GITHUB_LOGIN": "manav1411",
-    "OWNER_GITHUB_ID": "41612145",
     "APP_ORIGIN": "https://work.manavdodia.com",
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "work-prod",
-      "database_id": "a36c8c5c-420d-4699-b358-746c9640faae",
+      "database_name": "work-prod-current",
+      "database_id": "9fe1b5fe-24fe-4b43-9667-ad7967b739e1",
       "migrations_dir": "migrations",
     },
   ],
@@ -35,15 +33,13 @@
       "routes": [],
       "vars": {
         "ENVIRONMENT": "staging",
-        "OWNER_GITHUB_LOGIN": "manav1411",
-        "OWNER_GITHUB_ID": "41612145",
         "APP_ORIGIN": "https://work-staging.manavbdodia.workers.dev",
       },
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "work-staging",
-          "database_id": "07d0cb9a-99ab-4197-b856-e6ef19d46dd8",
+          "database_name": "work-staging-current",
+          "database_id": "e7b6920e-f704-499f-be7c-539263cc78b7",
           "migrations_dir": "migrations",
         },
       ],

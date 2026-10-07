@@ -17,7 +17,6 @@ export interface RecordRow {
   version: number;
   created_at: string;
   updated_at: string;
-  deleted_at: string | null;
 }
 export interface AttachmentRow {
   id: string;
@@ -40,7 +39,6 @@ export const fromRow = (row: RecordRow): WorkRecord => ({
   version: row.version,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
-  deletedAt: row.deleted_at,
 });
 export const attachmentFromRow = (row: AttachmentRow): Attachment => ({
   id: row.id,
@@ -55,21 +53,12 @@ export async function getRecord(
   db: D1Database,
   owner: string,
   recordId: string,
-  includeDeleted = false,
-  includeUnavailable = false,
 ): Promise<WorkRecord> {
   const row = await db
-    .prepare(
-      `SELECT * FROM records WHERE id=? AND owner_id=? ${includeDeleted ? "" : "AND deleted_at IS NULL"}`,
-    )
+    .prepare("SELECT * FROM records WHERE id=? AND owner_id=?")
     .bind(recordId, owner)
     .first<RecordRow>();
-  if (
-    !row ||
-    (!includeUnavailable &&
-      JSON.parse(row.data).connectorSource?.available === false)
-  )
-    throw new ApiError(404, "NOT_FOUND", "This record was not found.");
+  if (!row) throw new ApiError(404, "NOT_FOUND", "This record was not found.");
   return fromRow(row);
 }
 
@@ -83,7 +72,7 @@ export async function validateLinks(
   if (!check.length) return;
   const rows = await db
     .prepare(
-      "SELECT id FROM records WHERE owner_id=? AND deleted_at IS NULL AND id IN (SELECT value FROM json_each(?))",
+      "SELECT id FROM records WHERE owner_id=? AND id IN (SELECT value FROM json_each(?))",
     )
     .bind(owner, JSON.stringify(check))
     .all<{ id: string }>();
@@ -165,7 +154,7 @@ export function referencePresenceStatements(
   return [
     db
       .prepare(
-        "INSERT INTO write_guards(id,value) SELECT ?, (SELECT count(*) FROM records WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)))=? AND (SELECT count(*) FROM attachments WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)))=? AND (SELECT count(*) FROM records WHERE owner_id=? AND deleted_at IS NULL AND id IN (SELECT value FROM json_each(?)))=?",
+        "INSERT INTO write_guards(id,value) SELECT ?, (SELECT count(*) FROM records WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)))=? AND (SELECT count(*) FROM attachments WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)))=? AND (SELECT count(*) FROM records WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)))=?",
       )
       .bind(
         guardId,
@@ -195,7 +184,6 @@ export function newRecord(input: RecordInput, recordId = id()): WorkRecord {
     version: 1,
     createdAt: timestamp,
     updatedAt: timestamp,
-    deletedAt: null,
   };
 }
 export function insertRecord(
@@ -205,7 +193,7 @@ export function insertRecord(
 ): D1PreparedStatement {
   return db
     .prepare(
-      "INSERT INTO records(id,owner_id,kind,title,body,tags,links,data,version,created_at,updated_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO records(id,owner_id,kind,title,body,tags,links,data,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(
       record.id,
@@ -219,7 +207,6 @@ export function insertRecord(
       record.version,
       record.createdAt,
       record.updatedAt,
-      record.deletedAt,
     );
 }
 export function updateRecord(
@@ -230,7 +217,7 @@ export function updateRecord(
 ): D1PreparedStatement {
   return db
     .prepare(
-      "UPDATE records SET title=?,body=?,tags=?,links=?,data=CASE WHEN kind='asset' AND json_type(data,'$.latexProject')='object' THEN json_set(?, '$.latexJobs', json(COALESCE(json_extract(data,'$.latexJobs'),'[]')), '$.primaryAttachmentId', COALESCE(json_extract(data,'$.primaryAttachmentId'),'')) ELSE ? END,version=?,updated_at=?,deleted_at=? WHERE id=? AND owner_id=? AND version=? RETURNING data",
+      "UPDATE records SET title=?,body=?,tags=?,links=?,data=CASE WHEN kind='asset' AND json_type(data,'$.latexProject')='object' THEN json_set(?, '$.latexJobs', json(COALESCE(json_extract(data,'$.latexJobs'),'[]')), '$.primaryAttachmentId', COALESCE(json_extract(data,'$.primaryAttachmentId'),'')) ELSE ? END,version=?,updated_at=? WHERE id=? AND owner_id=? AND version=? RETURNING data",
     )
     .bind(
       record.title,
@@ -241,7 +228,6 @@ export function updateRecord(
       JSON.stringify(record.data),
       record.version,
       record.updatedAt,
-      record.deletedAt,
       record.id,
       owner,
       expectedVersion,
@@ -318,8 +304,8 @@ export function bulkInsertRecords(
   return jsonChunks(records).map((chunk) =>
     db
       .prepare(
-        `INSERT INTO records(id,owner_id,kind,title,body,tags,links,data,version,created_at,updated_at,deleted_at)
-    SELECT json_extract(value,'$.id'),?,json_extract(value,'$.kind'),json_extract(value,'$.title'),json_extract(value,'$.body'),json_extract(value,'$.tags'),json_extract(value,'$.links'),json_extract(value,'$.data'),json_extract(value,'$.version'),json_extract(value,'$.createdAt'),json_extract(value,'$.updatedAt'),json_extract(value,'$.deletedAt') FROM json_each(?)`,
+        `INSERT INTO records(id,owner_id,kind,title,body,tags,links,data,version,created_at,updated_at)
+    SELECT json_extract(value,'$.id'),?,json_extract(value,'$.kind'),json_extract(value,'$.title'),json_extract(value,'$.body'),json_extract(value,'$.tags'),json_extract(value,'$.links'),json_extract(value,'$.data'),json_extract(value,'$.version'),json_extract(value,'$.createdAt'),json_extract(value,'$.updatedAt') FROM json_each(?)`,
       )
       .bind(owner, chunk),
   );
@@ -358,7 +344,7 @@ export function bulkUpdateRecords(
     statements.push(
       db
         .prepare(
-          `UPDATE records SET title=json_extract(item.value,'$.title'),body=json_extract(item.value,'$.body'),tags=json_extract(item.value,'$.tags'),links=json_extract(item.value,'$.links'),data=CASE WHEN records.kind='asset' AND json_type(records.data,'$.latexProject')='object' THEN json_set(json_extract(item.value,'$.data'),'$.latexJobs',json(COALESCE(json_extract(records.data,'$.latexJobs'),'[]')),'$.primaryAttachmentId',COALESCE(json_extract(records.data,'$.primaryAttachmentId'),'')) ELSE json_extract(item.value,'$.data') END,version=json_extract(item.value,'$.version'),updated_at=json_extract(item.value,'$.updatedAt'),deleted_at=json_extract(item.value,'$.deletedAt') FROM json_each(?) item WHERE records.id=json_extract(item.value,'$.id') AND records.owner_id=? AND records.version=json_extract(item.value,'$.expectedVersion')`,
+          `UPDATE records SET title=json_extract(item.value,'$.title'),body=json_extract(item.value,'$.body'),tags=json_extract(item.value,'$.tags'),links=json_extract(item.value,'$.links'),data=CASE WHEN records.kind='asset' AND json_type(records.data,'$.latexProject')='object' THEN json_set(json_extract(item.value,'$.data'),'$.latexJobs',json(COALESCE(json_extract(records.data,'$.latexJobs'),'[]')),'$.primaryAttachmentId',COALESCE(json_extract(records.data,'$.primaryAttachmentId'),'')) ELSE json_extract(item.value,'$.data') END,version=json_extract(item.value,'$.version'),updated_at=json_extract(item.value,'$.updatedAt') FROM json_each(?) item WHERE records.id=json_extract(item.value,'$.id') AND records.owner_id=? AND records.version=json_extract(item.value,'$.expectedVersion')`,
         )
         .bind(chunk, owner),
       db
@@ -415,11 +401,7 @@ export async function detachReferenceStatements(
     const data = detachDataReferences(
       before.data,
       removedRecords,
-      // A capture can arrive after the early FILE_IN_USE check. Never detach
-      // submitted-file references; their FK must still abort this deletion.
-      before.kind === "application" || Array.isArray(before.data.submissions)
-        ? new Set<string>()
-        : removedFiles,
+      removedFiles,
     );
     if (
       links.length === before.links.length &&
@@ -460,88 +442,19 @@ export async function detachReferenceStatements(
     db.prepare("DELETE FROM write_guards WHERE id=?").bind(guardId),
     ...bulkUpdateRecords(db, owner, updates),
     ...bulkReplaceLinks(db, owner, records),
-    ...applicationFileStatements(db, owner, records),
   ];
 }
-export function applicationFileStatements(
-  db: D1Database,
-  owner: string,
-  records: WorkRecord[],
-): D1PreparedStatement[] {
-  const applications = records.filter(
-    (record) =>
-      record.kind === "application" ||
-      (record.kind === "asset" &&
-        (Array.isArray(record.data.submissions) || record.data.forkRevisionId)),
-  );
-  if (!applications.length) return [];
-  return [
-    db
-      .prepare(
-        "DELETE FROM record_file_links WHERE owner_id=? AND source_id IN (SELECT value FROM json_each(?))",
-      )
-      .bind(owner, JSON.stringify(applications.map((record) => record.id))),
-    ...jsonChunks(
-      applications
-        .filter((record) => dataReferences(record.data).files.length)
-        .map((record) => ({
-          id: record.id,
-          files:
-            record.kind === "application"
-              ? dataReferences(record.data).files
-              : [
-                  ...new Set([
-                    ...(record.data.forkRevisionId
-                      ? [String(record.data.forkRevisionId)]
-                      : []),
-                    ...(Array.isArray(record.data.submissions)
-                      ? record.data.submissions.flatMap((value) => {
-                          const submission = value as Record<string, unknown>;
-                          return [
-                            submission.revisionId,
-                            submission.pdfAttachmentId,
-                          ].filter(
-                            (value): value is string =>
-                              typeof value === "string" && Boolean(value),
-                          );
-                        })
-                      : []),
-                  ]),
-                ],
-        })),
-    ).map((chunk) =>
-      db
-        .prepare(
-          "INSERT INTO record_file_links(owner_id,source_id,attachment_id) SELECT ?,json_extract(r.value,'$.id'),f.value FROM json_each(?) r JOIN json_each(json_extract(r.value,'$.files')) f",
-        )
-        .bind(owner, chunk),
-    ),
-  ];
-}
-
 export async function writeRecord(
   db: D1Database,
   owner: string,
   record: WorkRecord,
   expectedVersion?: number,
   additionalStatements: D1PreparedStatement[] = [],
+  beforeStatements: D1PreparedStatement[] = [],
 ) {
   await validateRecordContract(db, owner, record);
-  const original =
-    expectedVersion === undefined
-      ? null
-      : await getRecord(db, owner, record.id, true, true);
-  const originalReferences = original
-    ? dataReferences(original.data)
-    : { records: [], files: [] };
-  await validateLinks(db, owner, record.links, new Set(original?.links || []));
-  await validateDataReferences(
-    db,
-    owner,
-    record.data,
-    new Set(originalReferences.records),
-    new Set(originalReferences.files),
-  );
+  await validateLinks(db, owner, record.links);
+  await validateDataReferences(db, owner, record.data);
   const statements =
     expectedVersion === undefined
       ? [insertRecord(db, owner, record)]
@@ -551,19 +464,17 @@ export async function writeRecord(
         ];
   try {
     const results = await db.batch([
+      ...beforeStatements,
       ...statements,
       ...referencePresenceStatements(db, owner, record.data, {
         links: record.links,
-        allowedRecords: new Set(originalReferences.records),
-        allowedFiles: new Set(originalReferences.files),
-        allowedLinks: new Set(original?.links || []),
       }),
       ...linkStatements(db, owner, record),
-      ...applicationFileStatements(db, owner, [record]),
       ...recordContractStatements(db, owner, [record]),
       ...additionalStatements,
     ]);
-    const returned = results[0]?.results?.[0] as { data?: string } | undefined;
+    const returned = results[beforeStatements.length]?.results?.[0] as
+      { data?: string } | undefined;
     if (typeof returned?.data === "string")
       record.data = JSON.parse(returned.data);
   } catch (error) {
@@ -575,7 +486,7 @@ export async function writeRecord(
         409,
         "VERSION_CONFLICT",
         "This record changed in another session. Your draft has been preserved.",
-        { record: await getRecord(db, owner, record.id, true) },
+        { record: await getRecord(db, owner, record.id) },
       );
     if (String(error).includes("CHECK constraint failed"))
       throw new ApiError(

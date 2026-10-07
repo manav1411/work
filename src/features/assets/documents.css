@@ -78,23 +78,28 @@
 }
 .document-family-tabs {
   min-width: 0;
+  overflow: visible;
 }
-.document-family-heading .document-viewer-close {
+.document-family-actions {
   grid-column: 3;
-  justify-self: end;
-  margin-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  min-width: max-content;
 }
 .document-tabs.section-tabs.section-tabs {
   min-width: 0;
-  /* Leave room for the shared hover lift without shifting the title row. */
-  margin: -4px 0 0 -3px;
-  padding: 4px 0 9px 3px;
+  /* Keep lifted tabs, shadows, and focus outlines inside the scrollport. */
+  margin: 0;
+  padding: 6px 8px 12px;
   display: flex;
   gap: 10px;
   align-items: flex-start;
   overflow-x: auto;
   overscroll-behavior-x: none;
   scrollbar-width: none;
+  scroll-padding: 6px 8px 12px;
 }
 .document-tabs > .sortable-item {
   flex: 0 0 auto;
@@ -295,27 +300,107 @@
   overflow: auto;
 }
 .latex-pdf-preview {
+  position: relative;
   min-width: 0;
-  height: auto;
-  overflow: visible;
+  min-height: 320px;
+  height: min(72dvh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  touch-action: pan-x pan-y;
   background: var(--surface-tint);
-  padding: 0.6rem;
+  padding: 0;
 }
 .latex-pdf-page {
   display: grid;
   place-items: center;
-  margin-bottom: 0.7rem;
   min-width: 0;
+  flex: none;
 }
 .latex-pdf-sheet {
   position: relative;
-  max-width: 100%;
   background: white;
   box-shadow: 0 2px 8px #0003;
 }
 .latex-pdf-sheet canvas {
   display: block;
-  max-width: 100%;
+}
+.latex-pdf-document-spacer {
+  position: relative;
+  min-width: 100%;
+  flex: none;
+}
+.latex-pdf-document {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  box-sizing: border-box;
+  transform-origin: top left;
+}
+.latex-pdf-zoom-controls {
+  position: absolute;
+  z-index: 5;
+  top: 8px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  box-shadow: 0 2px 8px #0002;
+}
+.latex-pdf-zoom-dock {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  pointer-events: none;
+}
+.latex-pdf-zoom-dock .latex-pdf-zoom-controls {
+  pointer-events: auto;
+}
+.latex-pdf-zoom-controls .button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 4px;
+}
+.latex-pdf-zoom-controls output {
+  min-width: 3.1rem;
+  color: var(--ink);
+  text-align: center;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+.latex-pdf-preview.latex-pdf-preview {
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) var(--surface-tint);
+}
+.latex-pdf-preview.latex-pdf-preview::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+.latex-pdf-preview.latex-pdf-preview::-webkit-scrollbar-track {
+  background: var(--surface-tint);
+}
+.latex-pdf-preview.latex-pdf-preview::-webkit-scrollbar-thumb {
+  border: 2px solid var(--surface-tint);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+.latex-pdf-preview.latex-pdf-preview::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
 .latex-pdf-sheet .textLayer {
   position: absolute;
@@ -354,11 +439,9 @@
     border-right: 0;
   }
 }
-@media (prefers-reduced-motion: no-preference) {
-  .document-family-content,
-  .document-more-expanded .document-viewer {
-    animation: document-reveal 0.16s ease-out;
-  }
+.document-family-content,
+.document-more-expanded .document-viewer {
+  animation: document-reveal 0.16s ease-out;
 }
 @keyframes document-reveal {
   from {
@@ -438,6 +521,19 @@
   overflow: hidden;
   background: transparent;
 }
+.document-thumbnail .latex-pdf-document-spacer {
+  position: static;
+  width: 100%;
+  height: 100%;
+}
+.document-thumbnail .latex-pdf-document {
+  position: static;
+  width: 100%;
+  height: 100%;
+  gap: 0;
+  padding: 0;
+  transform: none;
+}
 .document-thumbnail .latex-pdf-page {
   height: 100%;
   margin: 0;
@@ -493,8 +589,7 @@
 .document-variant-open:hover {
   text-decoration: underline;
 }
-.document-preview-text,
-.document-diff {
+.document-preview-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 0;
@@ -504,41 +599,6 @@
   max-height: 70dvh;
   overflow: auto;
   font-size: 0.85rem;
-}
-.document-comparison-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-.document-comparison-grid > section {
-  min-width: 0;
-}
-.document-comparison-grid iframe {
-  width: 100%;
-  height: 45dvh;
-  border: 1px solid var(--line);
-}
-.document-comparison-grid img {
-  max-width: 100%;
-  max-height: 45dvh;
-  object-fit: contain;
-}
-.document-diff span {
-  display: block;
-  min-height: 1em;
-}
-.diff-added {
-  background: var(--lime);
-  color: #202128;
-}
-.diff-removed {
-  background: var(--pink);
-  color: #202128;
-}
-@media (max-width: 650px) {
-  .document-comparison-grid {
-    grid-template-columns: 1fr;
-  }
 }
 .document-letter .document-art {
   background: var(--pink);
@@ -669,40 +729,7 @@
   font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
-.document-version-history {
-  padding-top: 1rem;
-  border-top: 1px solid var(--line);
-}
-.document-version-history summary {
-  font-weight: 750;
-  margin-bottom: 0.6rem;
-}
-.document-version {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.8rem;
-  padding: 0.85rem 0;
-  border-bottom: 1px solid var(--line);
-  overflow-wrap: anywhere;
-}
-.document-version > div:first-child {
-  display: grid;
-  gap: 0.25rem;
-}
-.document-version small {
-  color: var(--muted);
-}
-.document-version:last-child {
-  border-bottom: 0;
-}
-.document-recovery-notice {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.85rem;
-}
+
 .document-viewer {
   display: flex;
   flex-direction: column;
@@ -777,9 +804,10 @@
 }
 .document-viewer-inline .latex-pdf-preview {
   flex: none;
-  min-height: 0;
-  height: auto;
-  overflow: visible;
+  min-height: 280px;
+  height: min(52dvh, 460px);
+  max-height: 460px;
+  overflow: auto;
 }
 .document-viewer:fullscreen .document-preview-frame {
   min-height: calc(100dvh - 110px);
@@ -858,6 +886,9 @@
   }
   .document-viewer-toolbar > .inline-actions {
     width: 100%;
+  }
+  .document-viewer-toolbar.document-family-heading {
+    gap: 0.5rem;
   }
   .document-viewer-toolbar .button {
     padding: 10px 12px;

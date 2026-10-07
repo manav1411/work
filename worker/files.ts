@@ -229,88 +229,14 @@ export async function getAttachment(
   env: Env,
   owner: string,
   attachmentId: string,
-  includeDeleted = false,
 ): Promise<AttachmentRow> {
   const row = await env.DB.prepare(
-    "SELECT a.* FROM attachments a JOIN records r ON r.id=a.record_id AND r.owner_id=a.owner_id WHERE a.id=? AND a.owner_id=? AND (? OR r.deleted_at IS NULL OR EXISTS(SELECT 1 FROM records s JOIN json_tree(s.data,'$.submissions') j ON j.key IN ('revisionId','pdfAttachmentId') AND j.value=a.id WHERE s.owner_id=a.owner_id AND s.kind='asset')) AND COALESCE(json_extract(r.data,'$.connectorSource.available'),1)!=0",
+    "SELECT a.* FROM attachments a JOIN records r ON r.id=a.record_id AND r.owner_id=a.owner_id WHERE a.id=? AND a.owner_id=?",
   )
-    .bind(attachmentId, owner, includeDeleted ? 1 : 0)
+    .bind(attachmentId, owner)
     .first<AttachmentRow>();
-  if (!row)
-    throw new ApiError(404, "NOT_FOUND", "This attachment was not found.");
+  if (!row) throw new ApiError(404, "NOT_FOUND", "This file was not found.");
   return row;
-}
-export async function assertFilesNotSubmitted(
-  db: D1Database,
-  owner: string,
-  attachmentIds: string[],
-  options: { archivingRecordId?: string; permanent?: boolean } = {},
-) {
-  if (!attachmentIds.length) return;
-  const references = await db
-    .prepare(
-      "SELECT DISTINCT r.id,r.title FROM records r JOIN json_tree(r.data) j ON j.key='attachmentId' AND j.value IN (SELECT value FROM json_each(?)) WHERE r.owner_id=? AND r.kind='application'",
-    )
-    .bind(JSON.stringify(attachmentIds), owner)
-    .all<{ id: string; title: string }>();
-  if (references.results.length)
-    throw new ApiError(
-      409,
-      "FILE_IN_USE",
-      "This file was captured as an application document. Remove the captured version from those applications before deleting it.",
-      { applications: references.results },
-    );
-  // Archiving a variant keeps its immutable artifacts; only physical removal
-  // must reject submitted snapshots and another variant's fork baseline.
-  if (options.archivingRecordId && !options.permanent) return;
-  const protectedFiles = await db
-    .prepare(
-      "SELECT DISTINCT r.id FROM records r JOIN json_tree(r.data) j ON j.value IN (SELECT value FROM json_each(?)) WHERE r.owner_id=? AND r.kind='asset' AND ((j.fullkey LIKE '$.submissions[%' AND j.key IN ('revisionId','pdfAttachmentId')) OR (j.key='forkRevisionId' AND r.id!=?))",
-    )
-    .bind(JSON.stringify(attachmentIds), owner, options.archivingRecordId ?? "")
-    .all<{ id: string }>();
-  if (protectedFiles.results.length)
-    throw new ApiError(
-      409,
-      "FILE_IN_USE",
-      "Keep source and PDF files used by submitted versions or independent document forks.",
-    );
-  if (!options.archivingRecordId) {
-    const native = await db
-      .prepare(
-        "SELECT id FROM attachments WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)) AND filename LIKE 'latex-source-%.json' UNION SELECT j.value FROM records r JOIN json_tree(r.data) j ON j.key IN ('revisionId','pdfAttachmentId','textAttachmentId','logAttachmentId','synctexAttachmentId') WHERE r.owner_id=? AND r.kind='asset' AND j.value IN (SELECT value FROM json_each(?)) LIMIT 1",
-      )
-      .bind(
-        owner,
-        JSON.stringify(attachmentIds),
-        owner,
-        JSON.stringify(attachmentIds),
-      )
-      .first<{ id: string }>();
-    if (native)
-      throw new ApiError(
-        409,
-        "IMMUTABLE_PROJECT_FILE",
-        "Native project revisions and build artifacts are immutable. Delete the document variant instead.",
-      );
-  }
-}
-export async function assertRecordFilesNotSubmitted(
-  db: D1Database,
-  owner: string,
-  recordId: string,
-  permanent = false,
-) {
-  const files = await db
-    .prepare("SELECT id FROM attachments WHERE owner_id=? AND record_id=?")
-    .bind(owner, recordId)
-    .all<{ id: string }>();
-  await assertFilesNotSubmitted(
-    db,
-    owner,
-    files.results.map((file) => file.id),
-    { archivingRecordId: recordId, permanent },
-  );
 }
 export function toBase64(bytes: Uint8Array): string {
   const chunks: string[] = [];

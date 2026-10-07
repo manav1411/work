@@ -4,7 +4,6 @@ import {
   type LearningFreshness,
   type LearningSourceResponse,
   type LeetCodeStats,
-  type Week,
 } from "../../../shared/learning";
 import { request } from "../../lib/api";
 import { useWorkspace } from "../../lib/workspace";
@@ -18,11 +17,7 @@ export interface LearningData {
   configured: boolean;
   loading: boolean;
   error: string | null;
-  source: Record<"content" | "stats" | "progress", LearningFreshness>;
-  /** Retired curriculum remains separate from roadmap statistics. */
-  weeks: Week[];
-  tasks: Record<string, boolean>;
-  pendingTasks: Set<string>;
+  source: Record<"stats", LearningFreshness>;
 }
 interface LearningStore {
   value: LearningData;
@@ -53,13 +48,8 @@ function getStore(key: string, username: string, demo: boolean): LearningStore {
       loading: !demo,
       error: null,
       source: {
-        content: freshness(),
         stats: freshness(),
-        progress: freshness(),
       },
-      weeks: [],
-      tasks: {},
-      pendingTasks: new Set(),
     },
     listeners: new Set(),
     started: demo,

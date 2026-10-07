@@ -18,13 +18,13 @@ test("application status, process and scheduling stay inline and preserve each o
     links: [],
     version: 1,
     data: {
+      processVersion: 2,
       company: "Google",
       location: "Melbourne, Australia — hybrid with occasional travel",
       recruitmentSteps: commonRecruitmentProcess(),
     },
     createdAt: "2026-10-01T00:00:00Z",
     updatedAt: "2026-10-01T00:00:00Z",
-    deletedAt: null,
   };
   base.data = selectApplicationStatus(base, "Applied", "2026-10-05");
   const records = [base];
@@ -47,7 +47,7 @@ test("application status, process and scheduling stay inline and preserve each o
     if (path === "/api/preferences")
       return route.fulfill({ json: { preferences: DEFAULT_PREFERENCES } });
     if (path === "/api/records" && method === "GET")
-      return route.fulfill({ json: { records } });
+      return route.fulfill({ json: { records, epoch: "test-current" } });
     if (path === "/api/records" && method === "POST") {
       const input = route.request().postDataJSON();
       const record = {

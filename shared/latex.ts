@@ -97,54 +97,72 @@ export const latexSaveSchema = z
   })
   .strict();
 
-export interface LatexJob {
-  environment?: string;
-  id: string;
-  revisionId: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-  createdAt: string;
-  finishedAt?: string;
-  log: string;
-  logAttachmentId?: string;
-  pdfAttachmentId?: string;
-  textAttachmentId?: string;
-  synctexAttachmentId?: string;
+export const compilerMetadataSchema = z
+  .object({
+    texEnvironment: z.string().max(120).optional(),
+    compilerFingerprint: z.string().max(128).optional(),
+    texLiveRelease: z.string().max(80).optional(),
+    engine: latexEngineSchema.optional(),
+    inputHash: z.string().max(128).optional(),
+    configuration: z
+      .object({
+        latexmkVersion: z.string().max(200),
+        shellEscape: z.boolean(),
+        customLatexmkrc: z.boolean(),
+        synctex: z.boolean(),
+        network: z.boolean(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export const latexJobSchema = z
+  .object({
+    environment: z.string().max(120).optional(),
+    id: z.string().min(1).max(120),
+    sourceId: z.string().max(160),
+    status: z.enum(["queued", "running", "succeeded", "failed", "cancelled"]),
+    createdAt: z.string().datetime(),
+    finishedAt: z.string().datetime().optional(),
+    log: z.string().max(1800),
+    logAttachmentId: z.string().max(160).optional(),
+    pdfAttachmentId: z.string().max(160).optional(),
+    textAttachmentId: z.string().max(160).optional(),
+    synctexAttachmentId: z.string().max(160).optional(),
+    diagnostics: z
+      .array(
+        z
+          .object({
+            file: z.string().max(240).optional(),
+            line: z.number().int().positive().optional(),
+            severity: z.string().max(20),
+            message: z.string().max(200),
+          })
+          .strict(),
+      )
+      .max(8)
+      .optional(),
+    metadata: compilerMetadataSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (job) => !["queued", "running"].includes(job.status) || !!job.sourceId,
+    "Active builds need their source input.",
+  );
+export type LatexJob = z.infer<typeof latexJobSchema> & {
   pdfUrl?: string;
   textUrl?: string;
-  diagnostics?: {
-    file?: string;
-    line?: number;
-    severity: string;
-    message: string;
-  }[];
-  metadata?: {
-    texEnvironment?: string;
-    imageDigest?: string;
-    compilerFingerprint?: string;
-    texLiveRelease?: string;
-    engine?: string;
-    inputHash?: string;
-    configuration?:
-      | string
-      | {
-          latexmkVersion?: string;
-          shellEscape?: boolean;
-          customLatexmkrc?: boolean;
-          synctex?: boolean;
-          network?: boolean;
-        };
-  };
-}
+};
 export interface LatexProject extends LatexSource {
   version: number;
-  revisionId: string;
-  /** Most recent build for this exact saved source revision, in any status. */
+  sourceId: string;
+  /** Most recent build for this exact saved source input, in any status. */
   latestJob?: LatexJob;
   /** Keeps the last rendered PDF visible in the editor while a new build runs. */
   latestSuccessfulJob?: LatexJob;
 }
 export interface LatexProjectMetadata {
-  revisionId: string;
+  sourceId: string;
   mainFile: string;
   engine: LatexEngine;
   inputHash: string;
@@ -157,7 +175,7 @@ export function latexMetadata(
   data: Record<string, unknown>,
 ): LatexProjectMetadata | undefined {
   const value = data.latexProject as LatexProjectMetadata | undefined;
-  return value?.revisionId && latexEngineSchema.safeParse(value.engine).success
+  return value?.sourceId && latexEngineSchema.safeParse(value.engine).success
     ? value
     : undefined;
 }

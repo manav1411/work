@@ -39,12 +39,7 @@ export function GoalEditor({
 }) {
   const { editing } = useEditMode();
   const current = useRef(goal);
-  if (
-    goal.version > current.current.version &&
-    JSON.stringify({ ...goalInput(goal), value: 0 }) ===
-      JSON.stringify({ ...goalInput(current.current), value: 0 })
-  )
-    current.current = goal;
+  if (goal.version > current.current.version) current.current = goal;
   const initial = goalInput(goal);
   const {
     value: form,
@@ -64,10 +59,6 @@ export function GoalEditor({
       const parsed = goalInputSchema.parse({
         ...value,
         title: value.title.trim() || "Untitled goal",
-        ...(value.measure === current.current.measure &&
-        value.scope === current.current.scope
-          ? { value: current.current.value }
-          : {}),
       });
       const base =
         expectedVersion === undefined || goal.version === expectedVersion
@@ -90,7 +81,6 @@ export function GoalEditor({
   const set = (patch: Partial<GoalInput>) =>
     setValue((previous) => ({ ...previous, ...patch }));
   const progress = goalProgress({ ...goal, ...form }, observed);
-  const legacy = !["completion", "leetcode"].includes(form.measure);
   return (
     <Card
       className={`stack goal-inline-card ${progress.complete ? "goal-complete" : ""}`}
@@ -167,29 +157,14 @@ export function GoalEditor({
               value={form.measure}
               onChange={(event) => {
                 const measure = event.target.value as GoalInput["measure"];
-                if (
-                  legacy &&
-                  !window.confirm(
-                    "Convert this goal's measure? Recorded checkpoints remain in history; the new measure starts using its own source.",
-                  )
-                )
-                  return;
                 set({
                   measure,
-                  scope: "",
                   target: measure === "completion" ? 1 : form.target,
-                  unit: measure === "leetcode" ? "problems" : "",
-                  value: 0,
                 });
               }}
             >
               <option value="completion">Complete / incomplete</option>
               <option value="leetcode">LeetCode problems</option>
-              {legacy && (
-                <option value={form.measure}>
-                  Recorded {form.measure} measure
-                </option>
-              )}
             </Select>
           </Field>
           {form.measure === "leetcode" && (
@@ -217,37 +192,17 @@ export function GoalEditor({
           </p>
         </>
       )}
-      {legacy && editing && (
-        <details className="muted">
-          <summary>Previous progress measure</summary>
-          <p>
-            Existing progress is kept. Changing the measure starts a new
-            progress count.
-          </p>
-        </details>
-      )}
-      <div
-        className="goal-progress"
-        role="progressbar"
-        aria-label={`${form.title} progress`}
-        aria-valuenow={Math.round(progress.percent)}
-        aria-valuemin={0}
-        aria-valuemax={100}
-      >
-        <span style={{ width: `${progress.percent}%` }} />
-      </div>
       <p>
         {form.measure === "completion"
           ? progress.complete
             ? "Complete"
             : "In progress"
-          : `${progress.value} / ${progress.target} ${form.unit}`}
+          : `${progress.value} / ${progress.target} problems`}
       </p>
       {form.measure === "leetcode" && (
         <small className="muted">
           Total unique LeetCode problems solved: {progress.value}. Target:{" "}
-          {progress.target}. Existing recorded checkpoints retain their original
-          measure.
+          {progress.target}.
         </small>
       )}
       <Button
@@ -299,23 +254,6 @@ export function GoalEditor({
             Retry
           </Button>
         </p>
-      )}
-      {goal.checkpoints.length > 0 && (
-        <div className="goal-checkpoints">
-          <h4>Progress history</h4>
-          {goal.checkpoints
-            .slice()
-            .reverse()
-            .map((point, index) => (
-              <div key={`${point.at}:${index}`}>
-                <time>{new Date(point.at).toLocaleDateString()}</time>
-                <strong>
-                  {point.value} {point.unit ?? goal.unit}
-                </strong>
-                <small>{point.measure ?? goal.measure}</small>
-              </div>
-            ))}
-        </div>
       )}
     </Card>
   );

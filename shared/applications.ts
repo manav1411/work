@@ -12,13 +12,6 @@ export const APPLICATION_STATUSES = [
   "Withdrawn",
 ] as const;
 export const STEP_STATES = ["Planned", "Completed"] as const;
-const LEGACY_STEP_STATES = [
-  "Planned",
-  "Current",
-  "Completed",
-  "Skipped",
-  "Cancelled",
-] as const;
 export const STEP_KINDS = [
   "submission",
   "assessment",
@@ -33,7 +26,7 @@ export const APPOINTMENT_STATUSES = [
   "Rescheduling",
 ] as const;
 export type ApplicationStatus = (typeof APPLICATION_STATUSES)[number];
-export type StepState = (typeof LEGACY_STEP_STATES)[number];
+export type StepState = (typeof STEP_STATES)[number];
 
 export function validDateOnly(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -72,9 +65,8 @@ export const RecruitmentStepSchema = z.object({
   id: z.string().min(1).max(120),
   title: z.string().trim().min(1).max(240),
   kind: z.enum(STEP_KINDS),
-  state: z.enum(LEGACY_STEP_STATES),
-  date: optionalDate.default(""),
-  archived: z.boolean().optional(),
+  state: z.enum(STEP_STATES),
+  date: z.literal("").default(""),
 });
 export type RecruitmentStep = z.infer<typeof RecruitmentStepSchema>;
 export const RecruitmentStepsSchema = z
@@ -86,21 +78,13 @@ export const RecruitmentStepsSchema = z
         code: "custom",
         message: "Recruitment step IDs must be unique.",
       });
-    if (
-      steps.filter((step) => !step.archived && step.state === "Current")
-        .length > 1
-    )
-      context.addIssue({
-        code: "custom",
-        message: "Choose only one current recruitment step.",
-      });
   });
 export const ApplicationDataSchema = z
   .object({
-    applicationStatus: z.enum(APPLICATION_STATUSES).optional(),
+    applicationStatus: z.enum(APPLICATION_STATUSES),
     applicationDate: optionalDate.optional(),
-    recruitmentSteps: RecruitmentStepsSchema.optional(),
-    processVersion: z.literal(2).optional(),
+    recruitmentSteps: RecruitmentStepsSchema,
+    processVersion: z.literal(2),
     selectedStepId: z.string().max(120).optional(),
     terminalOutcome: z.enum(["Accepted", "Rejected", ""]).optional(),
     company: z.string().max(240).optional(),
@@ -110,133 +94,87 @@ export const ApplicationDataSchema = z
     deadline: optionalDate.optional(),
     followUp: optionalDate.optional(),
   })
-  .passthrough()
+  .strict()
   .superRefine((data, context) => {
-    if (data.processVersion === 2) {
-      const steps = (data.recruitmentSteps || []).filter(
-        (step) => !step.archived,
-      );
+    const steps = data.recruitmentSteps || [];
+    if (
+      steps.length < 2 ||
+      steps[0]?.kind !== "submission" ||
+      steps.at(-1)?.kind !== "offer" ||
+      steps.filter((step) => step.kind === "submission").length !== 1 ||
+      steps.filter((step) => step.kind === "offer").length !== 1
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Keep Application and Offer as the fixed process endpoints.",
+      });
+    let planned = false;
+    for (const step of steps) {
       if (
-        steps.length < 2 ||
-        steps[0]?.kind !== "submission" ||
-        steps.at(-1)?.kind !== "offer" ||
-        steps.filter((step) => step.kind === "submission").length !== 1 ||
-        steps.filter((step) => step.kind === "offer").length !== 1
-      )
-        context.addIssue({
-          code: "custom",
-          message: "Keep Application and Offer as the fixed process endpoints.",
-        });
-      let planned = false;
-      for (const step of steps) {
-        if (
-          !STEP_STATES.includes(step.state as (typeof STEP_STATES)[number]) ||
-          step.date
-        )
-          context.addIssue({
-            code: "custom",
-            message:
-              "Steps use only Planned or Completed, without milestone dates.",
-          });
-        if (step.state === "Planned") planned = true;
-        else if (planned)
-          context.addIssue({
-            code: "custom",
-            message: "Complete recruitment steps in process order.",
-          });
-      }
-      const selected = steps.find((step) => step.id === data.selectedStepId);
-      if (
-        data.selectedStepId &&
-        (!selected ||
-          selected.kind === "submission" ||
-          selected.kind === "offer" ||
-          selected.state !== "Planned" ||
-          steps.find((step) => step.state === "Planned")?.id !== selected.id)
-      )
-        context.addIssue({
-          code: "custom",
-          message: "Choose the first planned assessment or interview step.",
-        });
-      if (
-        ["Offer", "Accepted"].includes(data.applicationStatus || "") &&
-        steps.some((step) => step.state !== "Completed")
-      )
-        context.addIssue({
-          code: "custom",
-          message: "An offer completes the recruitment process.",
-        });
-      if (data.applicationStatus === "Saved" && data.applicationDate)
-        context.addIssue({
-          code: "custom",
-          message: "Choose Applied before recording an application date.",
-        });
-      if (
-        data.applicationStatus === "Applied" &&
-        (steps[0]?.state !== "Completed" ||
-          steps.slice(1).some((step) => step.state !== "Planned") ||
-          data.selectedStepId)
-      )
-        context.addIssue({
-          code: "custom",
-          message: "Applied completes only the Application step.",
-        });
-      if (
-        ["Accepted", "Rejected"].includes(data.applicationStatus || "") &&
-        data.terminalOutcome !== data.applicationStatus
-      )
-        context.addIssue({
-          code: "custom",
-          message: "Keep the terminal outcome aligned with application status.",
-        });
-      if (
-        data.terminalOutcome &&
-        data.terminalOutcome !== data.applicationStatus
+        !STEP_STATES.includes(step.state as (typeof STEP_STATES)[number]) ||
+        step.date
       )
         context.addIssue({
           code: "custom",
           message:
-            "Change terminal outcomes explicitly using application status.",
+            "Steps use only Planned or Completed, without milestone dates.",
         });
-      return;
+      if (step.state === "Planned") planned = true;
+      else if (planned)
+        context.addIssue({
+          code: "custom",
+          message: "Complete recruitment steps in process order.",
+        });
     }
-    if (data.applicationStatus === "Saved" && data.applicationDate)
-      context.addIssue({
-        code: "custom",
-        message: "A submitted application must use Applied or a later status.",
-      });
-    if (!data.applicationStatus || !data.recruitmentSteps) return;
-    const current = data.recruitmentSteps.find(
-      (step) => !step.archived && step.state === "Current",
-    );
-    const hasProcess = data.recruitmentSteps.some((step) => !step.archived);
-    const completedRound = data.recruitmentSteps.some(
-      (step) =>
-        !step.archived &&
-        !["submission", "offer"].includes(step.kind) &&
-        step.state === "Completed",
-    );
-    if (["Saved", "Applied"].includes(data.applicationStatus) && completedRound)
-      context.addIssue({
-        code: "custom",
-        message:
-          "Completed recruitment rounds use In progress. Reset those rounds before moving the application back.",
-      });
+    const selected = steps.find((step) => step.id === data.selectedStepId);
     if (
-      (["Saved", "Applied"].includes(data.applicationStatus) &&
-        current &&
-        current.kind !== "submission") ||
-      (data.applicationStatus === "In progress" &&
-        hasProcess &&
-        ((!current && !completedRound) ||
-          (current && ["submission", "offer"].includes(current.kind)))) ||
-      (data.applicationStatus === "Offer" &&
-        hasProcess &&
-        current?.kind !== "offer")
+      data.selectedStepId &&
+      (!selected ||
+        selected.kind === "submission" ||
+        selected.kind === "offer" ||
+        selected.state !== "Planned" ||
+        steps.find((step) => step.state === "Planned")?.id !== selected.id)
     )
       context.addIssue({
         code: "custom",
-        message: "Choose a current step that matches the application status.",
+        message: "Choose the first planned assessment or interview step.",
+      });
+    if (
+      ["Offer", "Accepted"].includes(data.applicationStatus || "") &&
+      steps.some((step) => step.state !== "Completed")
+    )
+      context.addIssue({
+        code: "custom",
+        message: "An offer completes the recruitment process.",
+      });
+    if (data.applicationStatus === "Saved" && data.applicationDate)
+      context.addIssue({
+        code: "custom",
+        message: "Choose Applied before recording an application date.",
+      });
+    if (
+      data.applicationStatus === "Applied" &&
+      (steps[0]?.state !== "Completed" ||
+        steps.slice(1).some((step) => step.state !== "Planned") ||
+        data.selectedStepId)
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Applied completes only the Application step.",
+      });
+    if (
+      ["Accepted", "Rejected"].includes(data.applicationStatus || "") &&
+      data.terminalOutcome !== data.applicationStatus
+    )
+      context.addIssue({
+        code: "custom",
+        message: "Keep the terminal outcome aligned with application status.",
+      });
+    if (data.terminalOutcome && data.terminalOutcome !== data.applicationStatus)
+      context.addIssue({
+        code: "custom",
+        message:
+          "Change terminal outcomes explicitly using application status.",
       });
   });
 export const RadarCompanyDataSchema = z
@@ -245,13 +183,12 @@ export const RadarCompanyDataSchema = z
     website: optionalUrl.optional(),
     careersUrl: optionalUrl.optional(),
     location: z.string().max(1000).optional(),
-    reason: z.string().max(10000).optional(),
     reviewDate: optionalDate.optional(),
   })
-  .passthrough();
+  .strict();
 export const InterviewAppointmentDataSchema = z
   .object({
-    appointmentVersion: z.literal(2).optional(),
+    appointmentVersion: z.literal(2),
     applicationId: z.string().max(120).optional(),
     stepId: z.string().max(120).optional(),
     startsAt: z.iso.datetime({ offset: true }).optional(),
@@ -271,7 +208,7 @@ export const InterviewAppointmentDataSchema = z
     meetingUrl: optionalUrl.optional(),
     sourceUrl: optionalUrl.optional(),
   })
-  .passthrough()
+  .strict()
   .superRefine((data, context) => {
     if (
       data.appointmentVersion === 2 &&
@@ -288,62 +225,27 @@ export const InterviewAppointmentDataSchema = z
       });
   });
 
-/** Old history and stage labels are preserved. Only unambiguous labels map to a broad status. */
 export function applicationStatus(record: WorkRecord): ApplicationStatus {
-  const explicit = field(record, "applicationStatus");
-  if (APPLICATION_STATUSES.includes(explicit as ApplicationStatus))
-    return explicit as ApplicationStatus;
-  const stage = field(record, "stage", "Saved");
-  if (APPLICATION_STATUSES.includes(stage as ApplicationStatus))
-    return stage as ApplicationStatus;
-  if (["Assessment", "Interview"].includes(stage)) return "In progress";
-  return field(record, "submittedAt") || field(record, "applicationDate")
-    ? "Applied"
-    : "Saved";
-}
-export function legacyApplicationStage(record: WorkRecord): string {
-  const stage = field(record, "stage");
-  return stage && !APPLICATION_STATUSES.includes(stage as ApplicationStatus)
-    ? stage
-    : "";
+  return record.data.applicationStatus as ApplicationStatus;
 }
 export function applicationDate(record: WorkRecord): string {
-  return typeof record.data.applicationDate === "string"
-    ? record.data.applicationDate
-    : field(record, "submittedAt");
+  return field(record, "applicationDate");
 }
-export function recruitmentSteps(
-  data: RecordData,
-  includeArchived = false,
-): RecruitmentStep[] {
+export function recruitmentSteps(data: RecordData): RecruitmentStep[] {
   if (!Array.isArray(data.recruitmentSteps)) return [];
   return data.recruitmentSteps.flatMap((value) => {
     const result = RecruitmentStepSchema.safeParse(value);
-    return result.success && (includeArchived || !result.data.archived)
-      ? [result.data]
-      : [];
+    return result.success ? [result.data] : [];
   });
 }
 export function currentRecruitmentStep(
   record: WorkRecord,
 ): RecruitmentStep | undefined {
-  if (record.data.processVersion === 2)
-    return recruitmentSteps(record.data).find(
-      (step) => step.state === "Planned",
-    );
-  return recruitmentSteps(record.data).find((step) => step.state === "Current");
+  return recruitmentSteps(record.data).find((step) => step.state === "Planned");
 }
 export function applicationStatusLabel(record: WorkRecord): string {
-  if (
-    typeof record.data.legacyStatusLabel === "string" &&
-    record.data.legacyStatusLabel
-  )
-    return record.data.legacyStatusLabel;
   const status = applicationStatus(record);
-  if (
-    record.data.processVersion !== 2 ||
-    ["Accepted", "Rejected", "Withdrawn", "Saved"].includes(status)
-  )
+  if (["Accepted", "Rejected", "Withdrawn", "Saved"].includes(status))
     return status;
   if (status === "Offer") return "Offer";
   const selected = recruitmentSteps(record.data).find(
@@ -354,10 +256,7 @@ export function applicationStatusLabel(record: WorkRecord): string {
   );
 }
 export function applicationStatusSelection(record: WorkRecord): string {
-  if (record.data.legacyStatusLabel) return applicationStatus(record);
-  return record.data.processVersion === 2 &&
-    record.data.selectedStepId &&
-    !record.data.terminalOutcome
+  return record.data.selectedStepId && !record.data.terminalOutcome
     ? `step:${String(record.data.selectedStepId)}`
     : applicationStatus(record);
 }
@@ -376,76 +275,14 @@ export function applicationStatusOptions(
   ];
 }
 
-/** Opt-in conversion: preserve every legacy state/date before adopting the new process. */
-export function editableApplicationData(record: WorkRecord): RecordData {
-  if (record.data.processVersion === 2) return record.data;
-  const previous = recruitmentSteps(record.data, true);
-  const previousStatus = applicationStatus(record);
-  const active = previous.filter((step) => !step.archived);
-  const submission = {
-    ...(active.find((step) => step.kind === "submission") ||
-      commonRecruitmentProcess()[0]),
-    title: "Application",
-  };
-  const offer = {
-    ...(active.find((step) => step.kind === "offer") ||
-      commonRecruitmentProcess()[1]),
-    title: "Offer",
-  };
-  let planned = false;
-  const steps = [
-    submission,
-    ...active.filter((step) => !["submission", "offer"].includes(step.kind)),
-    offer,
-  ].map((step) => {
-    if (
-      step.kind === "submission" &&
-      !["Saved", "Withdrawn"].includes(previousStatus)
-    )
-      step = { ...step, state: "Completed" };
-    if (["Offer", "Accepted"].includes(previousStatus))
-      step = { ...step, state: "Completed" };
-    if (step.state !== "Completed") planned = true;
-    return {
-      ...step,
-      state: planned ? ("Planned" as const) : ("Completed" as const),
-      date: "",
-    };
-  });
-  const next = steps.find((step) => step.state === "Planned");
-  return {
-    ...record.data,
-    processVersion: 2,
-    recruitmentSteps: [...steps, ...previous.filter((step) => step.archived)],
-    selectedStepId:
-      previousStatus === "In progress" &&
-      next &&
-      !["submission", "offer"].includes(next.kind)
-        ? next.id
-        : "",
-    terminalOutcome: ["Accepted", "Rejected"].includes(previousStatus)
-      ? previousStatus
-      : "",
-    legacyStatusLabel:
-      previousStatus === "In progress"
-        ? legacyApplicationStage(record) || previousStatus
-        : "",
-    legacyProcess: {
-      status: previousStatus,
-      steps: previous,
-      capturedAt: new Date().toISOString(),
-    },
-  };
-}
-
 export function selectApplicationStatus(
   record: WorkRecord,
   selection: string,
   day = new Date().toISOString().slice(0, 10),
 ): RecordData {
-  const data = editableApplicationData(record);
-  const steps = recruitmentSteps(data, true);
-  const active = steps.filter((step) => !step.archived);
+  const data = record.data;
+  const steps = recruitmentSteps(data);
+  const active = steps;
   const targetId = selection.startsWith("step:") ? selection.slice(5) : "";
   const index = targetId
     ? active.findIndex(
@@ -469,7 +306,7 @@ export function selectApplicationStatus(
           ? index
           : 1;
   const nextSteps = steps.map((step) =>
-    step.archived || reached === null
+    reached === null
       ? step
       : {
           ...step,
@@ -482,7 +319,6 @@ export function selectApplicationStatus(
   );
   return {
     ...data,
-    legacyStatusLabel: "",
     recruitmentSteps: nextSteps,
     applicationStatus: targetId ? "In progress" : selection,
     selectedStepId:
@@ -496,81 +332,6 @@ export function selectApplicationStatus(
         : applicationDate(record),
   };
 }
-const terminal = (status: ApplicationStatus) =>
-  ["Accepted", "Rejected", "Withdrawn"].includes(status);
-
-export function setApplicationStatus(
-  record: WorkRecord,
-  status: ApplicationStatus,
-  currentStepId = "",
-  day = new Date().toISOString().slice(0, 10),
-): RecordData {
-  if (record.data.processVersion === 2)
-    return selectApplicationStatus(
-      record,
-      status === "In progress" ? `step:${currentStepId}` : status,
-      day,
-    );
-  let steps = recruitmentSteps(record.data, true);
-  if (!terminal(status))
-    steps = steps.map((step) => ({
-      ...step,
-      state:
-        !step.archived && step.state === "Current" ? "Planned" : step.state,
-    }));
-  const active = steps.filter((step) => !step.archived);
-  if (["In progress", "Offer"].includes(status) && active.length) {
-    const chosen = active.find((step) => step.id === currentStepId);
-    const awaitingNext =
-      status === "In progress" &&
-      !currentStepId &&
-      active.some(
-        (step) =>
-          !["submission", "offer"].includes(step.kind) &&
-          step.state === "Completed",
-      );
-    if (
-      !awaitingNext &&
-      (!chosen ||
-        (status === "Offer"
-          ? chosen.kind !== "offer"
-          : ["submission", "offer"].includes(chosen.kind)))
-    )
-      throw new Error(
-        status === "Offer"
-          ? "Choose an offer step or add one to the process."
-          : "Choose a current assessment, interview, or other step.",
-      );
-    if (chosen)
-      steps = steps.map((step) =>
-        step.id === chosen.id ? { ...step, state: "Current" } : step,
-      );
-  }
-  if (status === "Applied")
-    steps = steps.map((step) =>
-      !step.archived && step.kind === "submission"
-        ? { ...step, state: "Completed" }
-        : step,
-    );
-  if (status === "Saved")
-    steps = steps.map((step) =>
-      !step.archived && step.kind === "submission" && step.state === "Completed"
-        ? { ...step, state: "Planned" }
-        : step,
-    );
-  return {
-    ...record.data,
-    applicationStatus: status,
-    applicationDate:
-      status === "Saved"
-        ? ""
-        : status === "Applied"
-          ? applicationDate(record) || day
-          : applicationDate(record),
-    recruitmentSteps: steps,
-  };
-}
-
 /** Changing a round is explicit. Neither appointment creation nor completion calls this. */
 export function changeRecruitmentStep(
   record: WorkRecord,
@@ -578,147 +339,79 @@ export function changeRecruitmentStep(
   state: StepState,
   day = new Date().toISOString().slice(0, 10),
 ): RecordData {
-  if (record.data.processVersion === 2) {
-    if (!STEP_STATES.includes(state as (typeof STEP_STATES)[number]))
-      throw new Error("Choose Planned or Completed.");
-    const steps = recruitmentSteps(record.data);
-    const index = steps.findIndex((step) => step.id === stepId);
-    if (index < 0) throw new Error("This recruitment step no longer exists.");
-    if (
-      steps[index].kind === "submission" &&
-      state === "Planned" &&
-      applicationStatus(record) !== "Saved"
-    )
-      throw new Error(
-        "An applied submission remains completed. Use an explicit application status to move the process back.",
-      );
-    const cutoff = index + (state === "Completed" ? 1 : 0);
-    const all = recruitmentSteps(record.data, true).map((step) =>
-      step.archived
-        ? step
-        : {
-            ...step,
-            state:
-              steps.findIndex((item) => item.id === step.id) < cutoff
-                ? ("Completed" as const)
-                : ("Planned" as const),
-          },
+  if (!STEP_STATES.includes(state as (typeof STEP_STATES)[number]))
+    throw new Error("Choose Planned or Completed.");
+  const steps = recruitmentSteps(record.data);
+  const index = steps.findIndex((step) => step.id === stepId);
+  if (index < 0) throw new Error("This recruitment step no longer exists.");
+  if (
+    steps[index].kind === "submission" &&
+    state === "Planned" &&
+    applicationStatus(record) !== "Saved"
+  )
+    throw new Error(
+      "An applied submission remains completed. Use an explicit application status to move the process back.",
     );
-    const next = all.find((step) => !step.archived && step.state === "Planned");
-    const terminalStatus = ["Accepted", "Rejected"].includes(
-      applicationStatus(record),
-    );
-    if (applicationStatus(record) === "Accepted" && next)
-      throw new Error("Change Accepted status before reopening process steps.");
-    const submission = steps[index].kind === "submission";
-    return {
-      ...record.data,
-      legacyStatusLabel: "",
-      recruitmentSteps: all,
-      selectedStepId:
-        !submission && next && !["submission", "offer"].includes(next.kind)
-          ? next.id
-          : "",
-      applicationStatus: terminalStatus
-        ? applicationStatus(record)
-        : !next
-          ? "Offer"
-          : submission
-            ? state === "Completed"
-              ? "Applied"
-              : "Saved"
-            : "In progress",
-      applicationDate:
-        state === "Completed" && submission
-          ? applicationDate(record) || day
-          : applicationDate(record),
-    };
-  }
-  const existing = recruitmentSteps(record.data, true);
-  const target = existing.find((step) => step.id === stepId && !step.archived);
-  if (!target) throw new Error("This recruitment step no longer exists.");
-  const steps = existing.map((step) =>
-    step.id === stepId
-      ? { ...step, state }
-      : state === "Current" && !step.archived && step.state === "Current"
-        ? { ...step, state: "Planned" as const }
-        : step,
+  const cutoff = index + (state === "Completed" ? 1 : 0);
+  const all = recruitmentSteps(record.data).map((step) => ({
+    ...step,
+    state:
+      steps.findIndex((item) => item.id === step.id) < cutoff
+        ? ("Completed" as const)
+        : ("Planned" as const),
+  }));
+  const next = all.find((step) => step.state === "Planned");
+  const terminalStatus = ["Accepted", "Rejected"].includes(
+    applicationStatus(record),
   );
-  const current = steps.find(
-    (step) => !step.archived && step.state === "Current",
-  );
-  const previous = applicationStatus(record);
-  let status: ApplicationStatus = previous;
-  if (!terminal(previous)) {
-    if (current && current.kind !== "submission")
-      status = current.kind === "offer" ? "Offer" : "In progress";
-    else if (
-      steps.some(
-        (step) =>
-          !step.archived &&
-          !["submission", "offer"].includes(step.kind) &&
-          step.state === "Completed",
-      )
-    )
-      status = "In progress";
-    else if (target.kind === "submission" && state === "Completed")
-      status = "Applied";
-    else
-      status =
-        applicationDate(record) ||
-        steps.some(
-          (step) =>
-            !step.archived &&
-            step.kind === "submission" &&
-            step.state === "Completed",
-        )
-          ? "Applied"
-          : "Saved";
-  }
+  if (applicationStatus(record) === "Accepted" && next)
+    throw new Error("Change Accepted status before reopening process steps.");
+  const submission = steps[index].kind === "submission";
   return {
     ...record.data,
-    recruitmentSteps: steps,
-    applicationStatus: status,
+    recruitmentSteps: all,
+    selectedStepId:
+      !submission && next && !["submission", "offer"].includes(next.kind)
+        ? next.id
+        : "",
+    applicationStatus: terminalStatus
+      ? applicationStatus(record)
+      : !next
+        ? "Offer"
+        : submission
+          ? state === "Completed"
+            ? "Applied"
+            : "Saved"
+          : "In progress",
     applicationDate:
-      target.kind === "submission" && state === "Completed"
+      state === "Completed" && submission
         ? applicationDate(record) || day
         : applicationDate(record),
   };
 }
-
-/** Archiving retains stable membership so appointment notes and preparation never disappear. */
-export function archiveRecruitmentStep(
+export function removeRecruitmentStep(
   record: WorkRecord,
   stepId: string,
 ): RecordData {
-  if (record.data.processVersion === 2) {
-    const target = recruitmentSteps(record.data).find(
-      (step) => step.id === stepId,
-    );
-    if (!target || ["submission", "offer"].includes(target.kind))
-      throw new Error("Application and Offer are fixed endpoints.");
-    const steps = recruitmentSteps(record.data, true).map((step) =>
-      step.id === stepId ? { ...step, archived: true } : step,
-    );
-    const next = steps.find(
-      (step) => !step.archived && step.state === "Planned",
-    );
-    return {
-      ...record.data,
-      recruitmentSteps: steps,
-      selectedStepId:
-        applicationStatus(record) !== "Applied" &&
-        next &&
-        !["submission", "offer"].includes(next.kind)
-          ? next.id
-          : "",
-    };
-  }
-  const data = changeRecruitmentStep(record, stepId, "Cancelled");
-  const steps = recruitmentSteps(data, true).map((step) =>
-    step.id === stepId ? { ...step, archived: true } : step,
+  const target = recruitmentSteps(record.data).find(
+    (step) => step.id === stepId,
   );
-  return { ...data, recruitmentSteps: steps };
+  if (!target || ["submission", "offer"].includes(target.kind))
+    throw new Error("Application and Offer are fixed endpoints.");
+  const steps = recruitmentSteps(record.data).filter(
+    (step) => step.id !== stepId,
+  );
+  const next = steps.find((step) => step.state === "Planned");
+  return {
+    ...record.data,
+    recruitmentSteps: steps,
+    selectedStepId:
+      record.data.selectedStepId === stepId
+        ? next && !["submission", "offer"].includes(next.kind)
+          ? next.id
+          : ""
+        : record.data.selectedStepId,
+  };
 }
 export function commonRecruitmentProcess(): RecruitmentStep[] {
   return [
@@ -731,53 +424,4 @@ export function commonRecruitmentProcess(): RecruitmentStep[] {
     state: "Planned",
     date: "",
   }));
-}
-
-/** Restore uses this same map for steps and their appointment references. */
-export function remapRecruitmentSteps(
-  data: RecordData,
-  stepIds: ReadonlyMap<string, string>,
-): RecordData {
-  const steps = recruitmentSteps(data, true);
-  return {
-    ...data,
-    ...(Array.isArray(data.stageHistory)
-      ? {
-          stageHistory: data.stageHistory.map((event) => {
-            if (!event || typeof event !== "object" || Array.isArray(event))
-              return event;
-            const entry = event as Record<string, unknown>;
-            return {
-              ...entry,
-              ...(typeof entry.fromStepId === "string"
-                ? {
-                    fromStepId:
-                      stepIds.get(entry.fromStepId) || entry.fromStepId,
-                  }
-                : {}),
-              ...(typeof entry.toStepId === "string"
-                ? { toStepId: stepIds.get(entry.toStepId) || entry.toStepId }
-                : {}),
-            };
-          }),
-        }
-      : {}),
-    ...(typeof data.selectedStepId === "string" && data.selectedStepId
-      ? {
-          selectedStepId:
-            stepIds.get(data.selectedStepId) || data.selectedStepId,
-        }
-      : {}),
-    ...(Array.isArray(data.recruitmentSteps)
-      ? {
-          recruitmentSteps: steps.map((step) => ({
-            ...step,
-            id: stepIds.get(step.id) || step.id,
-          })),
-        }
-      : {}),
-    ...(typeof data.stepId === "string" && data.stepId
-      ? { stepId: stepIds.get(data.stepId) || data.stepId }
-      : {}),
-  };
 }

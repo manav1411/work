@@ -1,14 +1,14 @@
 # Security and data boundaries
 
-Work stores private career notes, applications, contacts and files. The browser calls a same-origin Worker; D1 stores owner-scoped content and auth state, and a private R2 bucket stores attachments. This document describes the implemented controls, including their limits. It does not imply that production OAuth, staging or Git integration has been configured.
+Work stores private career notes, applications and files. The browser calls a same-origin Worker; D1 stores owner-scoped content and auth state, and a private R2 bucket stores attachments. This document describes the implemented controls, including their limits. It does not imply that production OAuth, staging or Git integration has been configured.
 
 ## Authentication
 
-GitHub OAuth is handled by Better Auth with the Drizzle SQLite/D1 adapter. Interactive adapter transactions are disabled; workspace writes use D1 batches. Sign-in requires `BETTER_AUTH_SECRET` of at least 32 characters, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `APP_ORIGIN` and owner configuration. Without them, `/api/session` returns `user: null, configured: false`; private endpoints return 401. An OAuth endpoint returns 503 rather than creating a fixture account.
+GitHub OAuth is handled by Better Auth with the Drizzle SQLite/D1 adapter. Interactive adapter transactions are disabled; workspace writes use D1 batches. Sign-in requires `BETTER_AUTH_SECRET` of at least 32 characters, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `APP_ORIGIN` and a valid `ALLOWED_GITHUB_USERS` runtime secret. Without them, `/api/session` returns `user: null, configured: false`; private endpoints return 401. An OAuth endpoint returns 503 rather than creating a fixture account.
 
-The initial registration boundary uses the provider-verified GitHub profile. GitHub's numeric user ID and login are mapped into fields that cannot be supplied through public user-update inputs. Set `OWNER_GITHUB_ID=41612145` for Manav's account; the immutable provider ID then takes precedence over the login, including if the owner later changes their username. `OWNER_GITHUB_LOGIN=manav1411` is the fallback when no numeric ID is configured. A username alone is a weaker long-term identity boundary, so production and staging should pin the numeric ID. Synthetic nonnumeric IDs never satisfy production identity checks.
+The initial registration boundary uses the provider-verified GitHub profile. GitHub's numeric user ID and login are mapped into fields that cannot be supplied through public user-update inputs. The private allowlist is an array of objects with a `login` and optional numeric `id` string. When an ID is present, it takes precedence over the login, including after a username rename; a different account with the same login is rejected. Login-only entries use case-insensitive exact matching. Pin numeric IDs for stable account identity. A missing or malformed list denies all access; an empty list also denies everyone. The actual list lives in ignored `.private/github-allowlist.json` and is uploaded as a Cloudflare secret, never bundled into source or frontend assets. See [allowlist setup](github-allowlist.md). Synthetic nonnumeric IDs never satisfy production identity checks.
 
-Registration, session creation and private session resolution independently check the owner identity. Email/password registration and automatic account linking are disabled. Supporting more users requires an explicit invitation/allowlist design; removing these checks is not a supported onboarding mechanism.
+Registration, provider account creation, session creation and private session resolution independently check the allowlist. Removing an entry and applying the list blocks new sign-ins and existing sessions on their next private request. Email/password registration and automatic account linking are disabled. Add or remove users by editing and applying the private allowlist; each account retains its own workspace.
 
 Production and staging session cookies are secure, HttpOnly, host scoped and SameSite=Lax. The app does not share cookies across `manavdodia.com` subdomains. Session state is read from D1, with cookie session caching disabled. Session lifetime is seven days, with renewal no more often than daily. Use separate secrets and GitHub OAuth applications for production and staging.
 
@@ -22,19 +22,21 @@ The frontend may offer a clearly labelled browser-only demo with synthetic start
 
 ## Ownership and writes
 
-Clients do not select an owner. The Worker derives identity from the validated session for each private request, then scopes every record, revision, search result, related record, preference, export, import and file operation to that owner. Composite relationship/file foreign keys enforce matching owner and record IDs. Nested structured relation fields such as `companyId`, `assetId` and `primaryAttachmentId` are also checked against the user's workspace. Catalogue topic/problem slugs are deliberately allowed because they identify reusable static learning content.
+Clients do not select an owner. The validated GitHub session scopes records, search, goals, preferences, export/upload, and files. Composite foreign keys and typed relation checks enforce ownership.
 
-Record IDs and normal timestamps are server generated. PATCH requires the acknowledged revision number; stale writes return 409 with the current owner-scoped record and do not overwrite the draft. Content and revision writes are atomic in D1, including application stage history. Idempotency keys protect create, batch create, PATCH, import and identical archive restore retries. Reusing a key for different content returns 409. A completed key cannot recreate a record that has been permanently deleted.
+PATCH uses a current version counter to reject conflicting writes with 409. The counter is concurrency control; old content is never stored. Retry receipts contain IDs and resolve the current saved record or goal, rather than keeping response snapshots.
 
-Soft deletion removes a record from ordinary views and FTS search while retaining revisions and files. Restore preserves related links, including links to other trashed records. Permanent deletion requires the record to already be in trash and uses a revision guard; it also removes linked IDs from current records and cascades revision/file metadata. Account deletion requires the exact JSON confirmation `DELETE MY WORKSPACE`, removes only that account and revokes its D1 sessions.
+Deletion is permanent. Application deletion removes appointments and their preparation; removing a recruitment step removes its appointments; removing a custom content tab removes its scoped notes. Other references detach atomically. File deletion queues physical R2 cleanup. Account deletion removes only that account, its content, files, and sessions.
 
-Mutation requests reject foreign `Origin` values and `Sec-Fetch-Site: cross-site`. The app enables no cross-origin API access. JSON is validated using Zod and stored through parameterised SQL. Global search tokenises user queries before building an FTS prefix expression, rather than accepting user-written FTS syntax.
+A workspace upload validates a closed package, stages bounded files privately, and replaces the owner's workspace in one D1 transaction. It rejects a changed workspace, incomplete files, wrong ownership, and invalid references. Committed uploads are safe to retry. Failed or abandoned uploads expire after one hour. Workspace epochs reject stale device writes both at the request boundary and inside mutation transactions. Replaced IDs are never reused.
+
+Mutation requests reject foreign Origin values and cross-site requests. Zod accepts current contracts only, SQL is parameterized, and search builds FTS expressions from tokens.
 
 ## Files and rendering
 
-R2 must remain private. Object keys contain the owner, record and random attachment IDs; knowing a key or attachment ID never grants access. Downloads first authorise the attachment and parent record, then stream the object. Files belonging to trashed records remain inaccessible until restoration. Download responses are private/no-store, nosniff and same-origin. Filenames are sanitised before use in headers.
+R2 must remain private. Object keys contain the owner, record and random attachment IDs; knowing a key or attachment ID never grants access. Downloads first authorise the attachment and parent record, then stream the object. Download responses are private/no-store, nosniff and same-origin. Filenames are sanitised before use in headers.
 
-Accepted types: PDF; PNG, JPEG, WebP and GIF; plain text, Markdown, CSV and JSON. PDFs/images must match their format signature. HTML and SVG uploads are not accepted. File signatures identify the format; they are not an antivirus scan or a guarantee that a document contains no malicious content. The application does not execute uploaded code or documents.
+Accepted types: PDF; DOCX; PNG, JPEG, WebP and GIF; plain text, Markdown, CSV and JSON. PDFs/images must match their format signature. HTML and SVG uploads are not accepted. File signatures identify the format; they are not an antivirus scan or a guarantee that a document contains no malicious content. The application does not execute uploaded code or documents.
 
 Authorised PDFs can be framed only by this origin so the native PDF preview works. Other attachment responses use a restrictive sandbox/content policy. The app has a content security policy, frame denial, referrer protection and disabled camera/microphone/geolocation permissions. Blob URLs are allowed for browser-only attachment previews. Markdown is rendered through the frontend's restricted renderer; imported raw source is kept as data, not executed HTML.
 
@@ -52,27 +54,10 @@ Authorised PDFs can be framed only by this origin so the native PDF preview work
 | Explicit starter batch | 400 records |
 | Import batch | 100 records; 20 files per record; 40 files overall |
 | Bundled export | At most 20 MB file bytes; `?files=false` exports metadata only |
-| Archive restore | 5,000 records; 40 attachment entries; 50,000 supplied revision entries; still subject to JSON/write limits |
-| Atomic import/restore SQL | At most 35 write statements, with JSON chunks below 1.5 MB |
-| Revision/search response | Latest 100 revisions / at most 60 search results |
+| Workspace package | 5,000 records and files; 1,000 goals; 32 MB manifest |
+| Search response | At most 60 results |
 | IP rate limit | 240 API or 30 auth requests per minute |
 
 Rate counters are stored in D1 so different Worker isolates share them. Counters older than five minutes are opportunistically removed. The rate guard returns 429 with Retry-After. This is a personal-workspace control; a larger public service would need more granular abuse controls and quota monitoring.
 
-JSON table-valued bulk queries keep ordinary imports and starter content under D1's 100 bound-parameter limit and reduce query count. Large text/revision archives may still need to be split into complete linked groups. An import/restore that fails a guard rolls back all D1 writes. The Worker cleans up R2 objects it uploaded for a failed batch.
-
-## Backup, deletion and operational limits
-
-Exports contain all owned records including trash, preferences, revisions, attachment metadata and, by default, file bytes. They contain private data and should be kept outside public repositories. Restore is additive: it creates a separate copied archive with new IDs and rewrites relationships/file URLs. It preserves historical revision numbers and trash state, rather than overwriting live records. Identical restore retries are idempotent. A metadata-only backup retains missing-file metadata and warns that the bytes were not included.
-
-Import undo restores earlier snapshots or trashes creations; it refuses a batch whose records were modified later. There is no automatic destructive merge or force-undo mode. Export current work before recovery actions.
-
-D1 and R2 cannot participate in one shared transaction. R2 upload failure does not commit a record/file batch; failed D1 writes clean up new R2 objects. A failure after a successful permanent D1 deletion may leave an inaccessible orphan R2 object. Account deletion removes registered files before deleting the account; failures require operator investigation. A D1 Time Travel restore cannot recover an R2 object already deleted. Keep bundled exports for file recovery.
-
-The application retains revisions and trash until explicit deletion and does not run automatic trash purges or scheduled backup jobs. Cloudflare's database recovery retention depends on the account plan; it is separate from application retention. Permanent/account deletion also does not erase already downloaded exports or provider backups before their retention expires.
-
-The Worker logs only a generic operation, redacted route and error code for unexpected failures; it does not log request bodies, note text, OAuth codes, tokens or SQL values. Check platform log settings separately, because observability tooling can record request metadata. Secrets belong in Worker secrets or ignored local `.dev.vars`; never use frontend build variables for credentials.
-
-## Verification
-
-`npm test -- --run tests/backend.test.ts` exercises actual emulated D1/R2 through Miniflare: signed Better Auth sessions, OAuth initiation/state, owner isolation, forbidden callbacks, production fixture rejection, concurrent saves, preserved revisions, retries, uploads, FTS, import/undo and archive recovery. The tests use synthetic records and secrets. They do not replace real staged OAuth login or second-device production checks. See [operations.md](operations.md) for release and recovery procedures.
+JSON table-valued bulk queries keep writes below D1 parameter limits. Transaction guards roll back a conflicting replacement or deletion. Staged files and obsolete objects are removed through a durable cleanup queue.

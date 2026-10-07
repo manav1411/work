@@ -28,10 +28,9 @@ import {
   ApplicationDataSchema,
   STEP_STATES,
   applicationStatus,
-  archiveRecruitmentStep,
+  removeRecruitmentStep,
   changeRecruitmentStep,
   currentRecruitmentStep,
-  editableApplicationData,
   recruitmentSteps,
   type RecruitmentStep,
 } from "../../../shared/applications";
@@ -66,9 +65,8 @@ export function InlineProcess({
   const data = optimistic || record.data;
   const draft = { ...record, data };
   const steps = recruitmentSteps(data);
-  const allSteps = recruitmentSteps(data, true);
+  const allSteps = recruitmentSteps(data);
   const active = currentRecruitmentStep(draft);
-  const modern = data.processVersion === 2;
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
@@ -112,10 +110,7 @@ export function InlineProcess({
     const first = ordered.find((step) => step.state === "Planned");
     void persist({
       ...data,
-      recruitmentSteps: [
-        ...ordered,
-        ...allSteps.filter((step) => step.archived),
-      ],
+      recruitmentSteps: ordered,
       selectedStepId:
         applicationStatus(draft) !== "Applied" &&
         first &&
@@ -126,20 +121,6 @@ export function InlineProcess({
   }
   return (
     <div className="application-process-inline">
-      {!modern && editing && (
-        <Button
-          variant="secondary"
-          onClick={() => void persist(editableApplicationData(record))}
-        >
-          Edit process
-        </Button>
-      )}
-      {!modern && (
-        <p className="muted application-legacy-label">
-          Historical process · original states are retained until explicitly
-          edited.
-        </p>
-      )}
       {!steps.length && <p className="muted">No process outlined yet.</p>}
       <DndContext
         sensors={sensors}
@@ -161,7 +142,7 @@ export function InlineProcess({
                 applicationId={record.id}
                 index={index}
                 active={active?.id === step.id}
-                editing={editing && modern}
+                editing={editing}
                 pending={!!pending}
                 appointments={interviews.filter(
                   (interview) => field(interview, "stepId") === step.id,
@@ -196,7 +177,7 @@ export function InlineProcess({
                 }}
                 remove={() => {
                   try {
-                    void persist(archiveRecruitmentStep(draft, step.id));
+                    void persist(removeRecruitmentStep(draft, step.id));
                   } catch (failure) {
                     setError(errorMessage(failure));
                   }
@@ -206,7 +187,7 @@ export function InlineProcess({
           </ol>
         </SortableContext>
       </DndContext>
-      {editing && modern && (
+      {editing && (
         <Button
           variant="secondary"
           disabled={!!pending || allSteps.length >= 80}
@@ -218,9 +199,7 @@ export function InlineProcess({
               return;
             }
             const next = [...allSteps];
-            const offerIndex = next.findIndex(
-              (step) => !step.archived && step.kind === "offer",
-            );
+            const offerIndex = next.findIndex((step) => step.kind === "offer");
             const added: RecruitmentStep = {
               id: crypto.randomUUID(),
               title: "Untitled",
@@ -229,9 +208,7 @@ export function InlineProcess({
               date: "",
             };
             next.splice(offerIndex, 0, added);
-            const first = next.find(
-              (step) => !step.archived && step.state === "Planned",
-            );
+            const first = next.find((step) => step.state === "Planned");
             void persist({
               ...data,
               recruitmentSteps: next,

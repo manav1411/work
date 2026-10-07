@@ -1,3 +1,4 @@
+import { NoteInput } from "../content/NoteInput";
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowUpRight, CalendarDays, Plus, Trash2 } from "lucide-react";
@@ -13,7 +14,6 @@ import {
   applicationDate,
   applicationStatus,
   commonRecruitmentProcess,
-  legacyApplicationStage,
   recruitmentSteps,
   applicationStatusLabel,
   applicationStatusSelection,
@@ -32,7 +32,6 @@ import {
   PageHeader,
   SectionTabs,
   Select,
-  Textarea,
 } from "../../components/ui";
 import { webDestination } from "../assets/documentLinks";
 import {
@@ -40,7 +39,7 @@ import {
   interviewTime,
   InterviewForm,
 } from "./InterviewEditor";
-import { errorMessage, stageHistory } from "./domain";
+import { errorMessage } from "./domain";
 import { useSavingWorkspace as useWorkspace } from "./useSaving";
 import { applicationCompany, applicationContact } from "./applicationRecords";
 import { CompanyGlyph } from "../../components/CompanyGlyph";
@@ -54,8 +53,7 @@ export const APPLICATION_STAGES = APPLICATION_STATUSES;
 
 export function ApplicationsPage() {
   const { editing: editMode } = useEditMode();
-  const { records, preferences, create, remove, restore, pending } =
-    useWorkspace();
+  const { records, preferences, create, remove, pending } = useWorkspace();
   const [params, setParams] = useSearchParams();
   const [editing, setEditing] = useState<WorkRecord | null | undefined>();
   const [prefilledCompany, setPrefilledCompany] = useState<WorkRecord>();
@@ -66,20 +64,14 @@ export function ApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [sort, setSort] = useState("updated");
   const [deleting, setDeleting] = useState<WorkRecord>();
-  const [undo, setUndo] = useState<WorkRecord>();
   const [error, setError] = useState("");
   const applications = records.filter(
-    (record) => record.kind === "application" && !record.deletedAt,
+    (record) => record.kind === "application",
   );
-  const companies = records.filter(
-    (record) => record.kind === "company" && !record.deletedAt,
-  );
+  const companies = records.filter((record) => record.kind === "company");
   const radar = params.get("tab") === "radar";
   const linkedInterview = records.find(
-    (item) =>
-      item.kind === "interview" &&
-      !item.deletedAt &&
-      item.id === params.get("interview"),
+    (item) => item.kind === "interview" && item.id === params.get("interview"),
   );
   const selectedId =
     params.get("record") ||
@@ -159,7 +151,6 @@ export function ApplicationsPage() {
     setError("");
     try {
       await remove(deleting.id);
-      setUndo(deleting);
       setDeleting(undefined);
       setParams(radar ? { tab: "radar" } : {});
     } catch (failure) {
@@ -207,21 +198,6 @@ export function ApplicationsPage() {
           On your radar <span>{companies.length}</span>
         </button>
       </SectionTabs>
-      {undo && (
-        <div className="application-notice" role="status">
-          <span>Deleted {undo.title}.</span>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              void restore(undo.id)
-                .then(() => setUndo(undefined))
-                .catch((failure: unknown) => setError(errorMessage(failure)));
-            }}
-          >
-            Undo
-          </Button>
-        </div>
-      )}
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -576,17 +552,7 @@ export function ApplicationsPage() {
                   ))}
               </dl>
             )}
-            {legacyApplicationStage(selected) && (
-              <p className="muted">
-                Previous stage:{" "}
-                <strong>{legacyApplicationStage(selected)}</strong>. The
-                original label and history are retained.
-              </p>
-            )}
             <section className="application-detail-section">
-              <div className="section-heading">
-                <h3>Recruitment process</h3>
-              </div>
               <InlineProcess record={selected} interviews={interviews} />
             </section>
             <section className="application-detail-section">
@@ -608,7 +574,6 @@ export function ApplicationsPage() {
                   open
                   record={interviewEditing || linkedInterview}
                   applicationId={selected.id}
-                  onRemoved={setUndo}
                   onClose={closeInterview}
                 />
               )}
@@ -630,14 +595,9 @@ export function ApplicationsPage() {
                         <p>{interviewTime(record, preferences.timezone)}</p>
                         {field(record, "stepId") && (
                           <p className="muted">
-                            {recruitmentSteps(selected.data, true).find(
+                            {recruitmentSteps(selected.data).find(
                               (step) => step.id === field(record, "stepId"),
                             )?.title || "Unassigned round"}
-                            {recruitmentSteps(selected.data, true).find(
-                              (step) => step.id === field(record, "stepId"),
-                            )?.archived
-                              ? " · deleted step"
-                              : ""}
                           </p>
                         )}
                       </div>
@@ -671,19 +631,6 @@ export function ApplicationsPage() {
                 <h3>Contact</h3>
                 <p>{applicationContact(selected, records)}</p>
               </section>
-            )}
-            {!!stageHistory(selected.data).length && (
-              <details className="application-optional">
-                <summary>Previous stage history</summary>
-                <ol className="application-history">
-                  {stageHistory(selected.data).map((entry, index) => (
-                    <li key={`${entry.at}:${index}`}>
-                      <strong>{entry.stage}</strong> · {niceDate(entry.at)}
-                      {entry.previous ? ` · from ${entry.previous}` : ""}
-                    </li>
-                  ))}
-                </ol>
-              </details>
             )}
           </div>
         )}
@@ -720,7 +667,7 @@ export function ApplicationsPage() {
           <p>
             {deleting?.kind === "company"
               ? "Applications keep their company name. Removing this radar company does not delete them."
-              : "The application is removed from your tracker. Historical appointments remain recoverable."}
+              : "The application, its appointments, and preparation notes will be permanently deleted."}
           </p>
           {error && (
             <p className="form-error" role="alert">
@@ -798,9 +745,7 @@ function ApplicationForm({
   onSaved: (id: string) => void;
 }) {
   const { records, preferences, create, update, pending } = useWorkspace();
-  const companies = records.filter(
-    (item) => item.kind === "company" && !item.deletedAt,
-  );
+  const companies = records.filter((item) => item.kind === "company");
   const [form, setForm] = useState({
     company: record
       ? applicationCompany(record, records)
@@ -828,7 +773,6 @@ function ApplicationForm({
     version: 1,
     createdAt: "",
     updatedAt: "",
-    deletedAt: null,
   };
   const statusOptions = applicationStatusOptions(base);
   function change(key: keyof typeof form, value: string) {
@@ -960,8 +904,7 @@ function ApplicationForm({
           >
             {!statusOptions.some((option) => option.value === form.status) && (
               <option value={form.status} disabled>
-                {record ? applicationStatusLabel(record) : form.status} ·
-                historical
+                {record ? applicationStatusLabel(record) : form.status}
               </option>
             )}
             {statusOptions.map((option) => (
@@ -997,7 +940,8 @@ function ApplicationForm({
         />
       </Field>
       <Field label="Notes">
-        <Textarea
+        <NoteInput
+          aria-label="Notes"
           value={form.notes}
           maxLength={100000}
           rows={4}

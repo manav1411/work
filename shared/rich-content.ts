@@ -73,8 +73,16 @@ export function validRichDocument(value: unknown): value is RichNode {
         "colwidth",
         "type",
         "align",
+        "indent",
       ]);
       if (Object.keys(item.attrs).some((key) => !allowed.has(key)))
+        return false;
+      if (
+        item.attrs.indent !== undefined &&
+        (!Number.isInteger(item.attrs.indent) ||
+          Number(item.attrs.indent) < 0 ||
+          Number(item.attrs.indent) > 6)
+      )
         return false;
       if (
         item.attrs.level !== undefined &&
@@ -271,10 +279,18 @@ export function richDocumentError(value: unknown): string | null {
             "colwidth",
             "type",
             "align",
+            "indent",
           ].includes(key),
       );
       if (extraAttr)
         return `The ${extraAttr} formatting on ${nodePath} is not supported. Paste as plain text to keep the wording.`;
+      if (
+        attrs.indent !== undefined &&
+        (!Number.isInteger(attrs.indent) ||
+          Number(attrs.indent) < 0 ||
+          Number(attrs.indent) > 6)
+      )
+        return `The indentation on ${nodePath} is invalid.`;
       if (
         attrs.level !== undefined &&
         ![1, 2, 3, 4, 5, 6].includes(Number(attrs.level))

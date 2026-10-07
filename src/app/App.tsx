@@ -34,7 +34,6 @@ import {
   X,
 } from "lucide-react";
 import { GitHubIcon as Github } from "../components/GitHubIcon";
-import { field } from "../../shared/model";
 import { Button, EmptyState } from "../components/ui";
 import { jsonRequest, request } from "../lib/api";
 import { useWorkspace } from "../lib/workspace";
@@ -562,47 +561,6 @@ function Shell() {
   );
 }
 
-function Redirect({ to }: { to: string }) {
-  const location = useLocation();
-  const target = new URL(to, window.location.origin);
-  for (const [key, value] of new URLSearchParams(location.search))
-    target.searchParams.set(key, value);
-  return (
-    <Navigate
-      replace
-      to={`${target.pathname}${target.search}${location.hash}`}
-    />
-  );
-}
-
-function LegacyRedirect({ kind }: { kind: string }) {
-  const location = useLocation();
-  const source = new URLSearchParams(location.search);
-  const params = new URLSearchParams({ legacy: kind });
-  const record =
-    source.get("record") ||
-    source.get("selected") ||
-    location.pathname.split("/").filter(Boolean)[1];
-  if (record) params.set("record", record);
-  return <Navigate replace to={`/settings?${params.toString()}#recovery`} />;
-}
-
-function PracticeRedirect() {
-  const location = useLocation();
-  const { records } = useWorkspace();
-  const source = new URLSearchParams(location.search);
-  const requested =
-    source.get("problem") || source.get("record") || source.get("selected");
-  const record = records.find((item) => item.id === requested);
-  const slug = record
-    ? field(record, "problemSlug") || field(record, "problemId")
-    : requested;
-  if (record && !slug) return <LegacyRedirect kind="practice" />;
-  const params = new URLSearchParams({ view: "roadmap" });
-  if (slug) params.set("problem", slug);
-  return <Navigate replace to={`/learn?${params.toString()}`} />;
-}
-
 export default function App() {
   const { user, loading } = useWorkspace();
   if (loading) return <Loading />;
@@ -622,32 +580,8 @@ export default function App() {
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="documents" element={<AssetsPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
-        <Route path="today" element={<Redirect to="/home" />} />
-        <Route path="assets" element={<Redirect to="/documents" />} />
-        <Route path="focus" element={<Redirect to="/learn" />} />
-        <Route path="practice" element={<PracticeRedirect />} />
         <Route path="interviews" element={<InterviewsPage />} />
         <Route path="direction" element={<DirectionPage />} />
-        <Route path="career/*" element={<Redirect to="/direction" />} />
-        <Route
-          path="companies/*"
-          element={<Redirect to="/applications?tab=radar" />}
-        />
-        {[
-          "notes",
-          "resources",
-          "network",
-          "evidence",
-          "projects",
-          "review",
-          "connectors",
-        ].map((kind) => (
-          <Route
-            key={kind}
-            path={`${kind}/*`}
-            element={<LegacyRedirect kind={kind} />}
-          />
-        ))}
         <Route
           path="*"
           element={

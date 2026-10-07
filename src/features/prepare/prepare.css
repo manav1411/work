@@ -176,11 +176,7 @@
   height: 65vh;
   border: 2px solid var(--outline, #171629);
 }
-.revision-layout {
-  display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  gap: 24px;
-}
+
 .learning-banner {
   display: flex;
   align-items: center;
@@ -744,9 +740,7 @@
   .interview-layout {
     gap: 18px;
   }
-  .revision-layout {
-    grid-template-columns: 1fr;
-  }
+
   .note-editor-top {
     align-items: flex-start;
   }

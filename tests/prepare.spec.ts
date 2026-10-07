@@ -1,11 +1,15 @@
 import { expect, test } from "@playwright/test";
 import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
+import { markdownDocument } from "../src/features/content/markdownDocument";
 import { DEMO_STATS } from "../src/features/learn/demo";
 import { enterEditMode } from "./edit-mode-helper";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() =>
-    sessionStorage.setItem("work-demo-active", "true"),
+  await page.addInitScript(
+    () => (
+      localStorage.setItem("work:storage-schema", "current-workspace-2026-10"),
+      sessionStorage.setItem("work-demo-active", "true")
+    ),
   );
 });
 
@@ -63,7 +67,12 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   await expect(
     popover.getByRole("link", { name: "Binary Search", exact: true }),
   ).toHaveAttribute("href", "https://leetcode.com/problems/binary-search/");
-  await expect(popover.getByLabel("Solved")).toHaveCount(1);
+  await expect(
+    popover
+      .getByRole("link", { name: "Binary Search", exact: true })
+      .locator("..")
+      .getByLabel("Solved"),
+  ).toHaveCount(1);
   expect(sourceRequests).toEqual([]);
   await enterEditMode(page, "Learn");
   await expect(page.locator(".learn-track-tabs .sort-handle")).toHaveCount(
@@ -82,14 +91,14 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
   await databasesTab.focus();
   await page.keyboard.press("Enter");
   await expect(databasesTab).toHaveAttribute("aria-selected", "true");
-  const databasesCanvas = page.locator(
-    ".learn-page .rich-document-canvas",
-  );
+  const databasesCanvas = page.locator(".learn-page .rich-document-canvas");
   await expect
     .poll(() =>
-      databasesCanvas.evaluate((canvas) => getComputedStyle(canvas).minHeight),
+      databasesCanvas.evaluate(
+        (canvas) => canvas.getBoundingClientRect().height,
+      ),
     )
-    .not.toBe("0px");
+    .toBeGreaterThan(200);
   await expect(page.locator(".learn-page .rich-block-handle")).toHaveCount(0);
   const deleteTab = page.getByRole("button", {
     name: "Delete tab",
@@ -131,6 +140,21 @@ test("learning tabs are single notes pages and save independently", async ({
     page.getByRole("button", { name: "Delete section" }),
   ).toHaveCount(0);
   await expect(page.locator(".learn-page .rich-document")).toHaveCount(1);
+  const canvas = page.locator(".learn-page .rich-document-canvas");
+  const canvasLayout = await canvas.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      height: rect.height,
+      bottom: rect.bottom,
+      viewport: window.innerHeight,
+      pageHeight: document.documentElement.scrollHeight,
+    };
+  });
+  expect(canvasLayout.height).toBeGreaterThan(300);
+  expect(
+    Math.abs(canvasLayout.bottom - (canvasLayout.viewport - 50)),
+  ).toBeLessThan(2);
+  expect(canvasLayout.pageHeight).toBeLessThanOrEqual(canvasLayout.viewport);
   await enterEditMode(page, "Learn");
   const editor = page.locator(".learn-page .rich-document-prose");
   await editor.fill("Compare isolation levels with a real transaction.");
@@ -138,7 +162,7 @@ test("learning tabs are single notes pages and save independently", async ({
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+          JSON.parse(sessionStorage.getItem("work-demo-current")!).records.find(
             (record: WorkRecord) =>
               record.kind === "note" &&
               record.data.category === "content-document" &&
@@ -148,7 +172,7 @@ test("learning tabs are single notes pages and save independently", async ({
     )
     .toContain("Compare isolation levels");
   const databaseDocument = await page.evaluate(() =>
-    JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+    JSON.parse(sessionStorage.getItem("work-demo-current")!).records.find(
       (record: WorkRecord) =>
         record.kind === "note" &&
         record.data.category === "content-document" &&
@@ -180,7 +204,7 @@ test("learning tabs are single notes pages and save independently", async ({
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+          JSON.parse(sessionStorage.getItem("work-demo-current")!).records.find(
             (record: WorkRecord) =>
               record.kind === "note" &&
               record.data.category === "content-document" &&
@@ -295,7 +319,7 @@ test("mobile topics scroll with keyboard and retain expressive selected state", 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/learn");
   const tabs = page.getByRole("tablist", {
-    name: "Learning topics",
+    name: "Learning tabs",
     exact: true,
   });
   const dimensions = await tabs.evaluate((element) => ({
@@ -380,7 +404,7 @@ test("signed-in private learning notes use owned records and never write to publ
         },
       });
     if (path === "/api/records" && method === "GET")
-      return route.fulfill({ json: { records } });
+      return route.fulfill({ json: { records, epoch: "test-current" } });
     if (path === "/api/records" && method === "POST") {
       const input = route.request().postDataJSON();
       privateWrites.push(path);
@@ -390,7 +414,6 @@ test("signed-in private learning notes use owned records and never write to publ
         version: 1,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        deletedAt: null,
         tags: [],
         links: [],
       };
@@ -410,7 +433,7 @@ test("signed-in private learning notes use owned records and never write to publ
   });
   await page.goto("/learn");
   await expect(
-    page.getByRole("link", { name: "@synthetic-handle", exact: true }),
+    page.getByRole("link", { name: /^@synthetic-handle\b/ }),
   ).toBeVisible();
   await expect(page.locator(".learn-calendar-freshness")).toContainText(
     "Cached",
@@ -474,7 +497,7 @@ test("track notes retain conflicts through reload until the draft is reviewed", 
         json: { preferences: { ...DEFAULT_PREFERENCES, leetcode: "" } },
       });
     if (path === "/api/records" && method === "GET")
-      return route.fulfill({ json: { records } });
+      return route.fulfill({ json: { records, epoch: "test-current" } });
     if (path === "/api/records" && method === "POST") {
       const input = route.request().postDataJSON();
       const record = {
@@ -483,11 +506,14 @@ test("track notes retain conflicts through reload until the draft is reviewed", 
         version: 1,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        deletedAt: null,
         tags: [],
         links: [],
       };
       records.push(record);
+      return route.fulfill({ json: { record } });
+    }
+    if (/^\/api\/records\/[^/]+$/.test(path) && method === "GET") {
+      const record = records.find((item) => item.id === path.split("/").pop());
       return route.fulfill({ json: { record } });
     }
     if (path.startsWith("/api/records/") && method === "PATCH") {
@@ -497,6 +523,10 @@ test("track notes retain conflicts through reload until the draft is reviewed", 
       )!;
       if (failWrites) {
         record.body = "Latest text saved on another device.";
+        record.data = {
+          ...record.data,
+          richContent: { version: 1, document: markdownDocument(record.body) },
+        };
         record.version++;
         return route.fulfill({
           status: 409,
@@ -537,22 +567,27 @@ test("track notes retain conflicts through reload until the draft is reviewed", 
   failWrites = true;
   await editor.fill("Keep my unsaved transaction example.");
   await expect(page.getByRole("alert")).toContainText(
-    "changed on another device",
+    /changed.*(another device|elsewhere)/,
   );
   await expect(editor).toHaveText("Keep my unsaved transaction example.");
   const attempts = writes;
   await page.reload();
   await expect(editor).toContainText("Keep my unsaved transaction example.");
-  await expect(
-    page.getByRole("button", { name: "Keep reviewed draft", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".rich-conflict-review")).toBeVisible();
   // Wait beyond the normal autosave debounce to verify a restored conflict is paused.
   await page.waitForTimeout(1100);
   expect(writes).toBe(attempts);
-  await page.getByText("Compare saved content", { exact: true }).click();
+  await page
+    .getByText("Another session edited this note. Review both copies.", {
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Keep my edits", exact: true }),
+  ).toBeVisible();
   failWrites = false;
   await page
-    .getByRole("button", { name: "Keep reviewed draft", exact: true })
+    .getByRole("button", { name: "Keep my edits", exact: true })
     .click();
   await expect
     .poll(
@@ -567,7 +602,7 @@ test("track notes retain conflicts through reload until the draft is reviewed", 
   expect(writes).toBe(attempts + 1);
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Keep reviewed draft", exact: true }),
+    page.getByRole("button", { name: "Keep my edits", exact: true }),
   ).toHaveCount(0);
   await expect(editor).toContainText("Keep my unsaved transaction example.");
 });

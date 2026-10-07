@@ -1,3 +1,4 @@
+import { initializeDeviceStorage } from "./lib/device-storage";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
@@ -7,6 +8,8 @@ import { WorkspaceProvider } from "./lib/workspace";
 import App from "./app/App";
 import "./styles.css";
 import "./app/identity.css";
+
+initializeDeviceStorage();
 
 try {
   const theme = localStorage.getItem("work:theme");

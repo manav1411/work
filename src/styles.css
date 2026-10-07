@@ -145,7 +145,8 @@ kbd {
 .button-primary {
   background: var(--ink);
   color: var(--paper);
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--shadow-colour) 25%, transparent);
+  box-shadow: 3px 3px 0
+    color-mix(in srgb, var(--shadow-colour) 25%, transparent);
 }
 .button-secondary {
   background: var(--paper);
@@ -165,7 +166,8 @@ kbd {
 }
 .button:not(:disabled):hover {
   transform: translate(-1px, -2px);
-  box-shadow: 4px 5px 0 color-mix(in srgb, var(--shadow-colour) 35%, transparent);
+  box-shadow: 4px 5px 0
+    color-mix(in srgb, var(--shadow-colour) 35%, transparent);
 }
 .button-ghost:not(:disabled):hover {
   background: color-mix(in srgb, var(--ink) 6%, transparent);
@@ -1016,7 +1018,8 @@ kbd {
   border: 1px solid var(--outline);
   border-radius: 9px;
   background: var(--paper);
-  box-shadow: 3px 3px 0 color-mix(in srgb, var(--shadow-colour) 16%, transparent);
+  box-shadow: 3px 3px 0
+    color-mix(in srgb, var(--shadow-colour) 16%, transparent);
   padding: 12px 14px;
   animation: toast-enter 0.2s ease-out;
 }
@@ -2829,20 +2832,4 @@ kbd {
 .today-content-grid > section,
 .today-bottom-grid > section {
   min-width: 0;
-}
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    transition: none !important;
-    scroll-behavior: auto !important;
-  }
-}
-[data-reduce-motion="true"] *,
-[data-reduce-motion="true"] *::before,
-[data-reduce-motion="true"] *::after {
-  animation: none !important;
-  transition: none !important;
-  scroll-behavior: auto !important;
 }

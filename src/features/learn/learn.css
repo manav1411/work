@@ -537,7 +537,6 @@
   border: 1.5px solid var(--outline);
   border-radius: 10px;
   padding: 24px;
-  box-shadow: 4px 4px 0 var(--shadow-colour);
   background: var(--paper);
 }
 .learn-roadmap-heading {
@@ -844,15 +843,6 @@
     align-items: flex-start;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .learn-page *,
-  .learn-modal * {
-    scroll-behavior: auto;
-    transition: none;
-    animation: none;
-  }
-}
-
 /* Restore the original saturated subject controls on both themes. */
 .learn-track-tabs {
   padding-bottom: 6px;
@@ -1118,8 +1108,7 @@
     to right,
     var(--topic-background) 0%,
     var(--topic-background) var(--solved-fill, 0%),
-    color-mix(in srgb, var(--topic-background) 78%, #fff)
-      var(--solved-fill, 0%),
+    color-mix(in srgb, var(--topic-background) 78%, #fff) var(--solved-fill, 0%),
     color-mix(in srgb, var(--topic-background) 78%, #fff) 100%
   );
   color: #202128;
@@ -1133,4 +1122,27 @@
 [data-theme="dark"] .learn-roadmap-list-trigger.learn-roadmap-tone-0 strong,
 [data-theme="dark"] .learn-roadmap-list-trigger.learn-roadmap-tone-0 span {
   color: #202128;
+}
+.learn-notes-page {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 92px);
+}
+.learn-notes-page > .rich-document {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+.learn-notes-page > .rich-document > .rich-document-canvas {
+  flex: 1 1 0;
+  min-height: 0;
+}
+.learn-notes-page .rich-document-canvas .rich-document-prose {
+  min-height: 100%;
+}
+@media (max-width: 760px) {
+  .learn-notes-page {
+    min-height: calc(100dvh - 190px);
+  }
 }

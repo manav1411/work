@@ -9,7 +9,6 @@
   background: var(--paper);
   border-radius: 16px;
   padding: 28px;
-  box-shadow: 5px 5px 0 var(--shadow-colour);
   overflow: hidden;
 }
 .timeline-heading {
@@ -328,7 +327,6 @@
 @media (max-width: 700px) {
   .timeline-board {
     padding: 20px 16px;
-    box-shadow: 3px 3px 0 var(--shadow-colour);
   }
   .timeline-heading {
     flex-wrap: wrap;
@@ -430,13 +428,6 @@
   .home-page .page-header-action .button {
     padding: 9px 11px;
     font-size: 12px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .timeline-event button,
-  .goal-card,
-  .goal-progress > span {
-    transition: none;
   }
 }
 .timeline-goal-span {

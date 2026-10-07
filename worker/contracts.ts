@@ -27,16 +27,7 @@ export async function validateRecordContract(
         "Choose a related record of the correct type in your workspace.",
       );
     const data = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-    if (
-      category &&
-      data.category !== category &&
-      !(
-        category === "learn-topic" &&
-        data.category !== "learn-track" &&
-        typeof data.track === "string" &&
-        data.track
-      )
-    )
+    if (category && data.category !== category)
       throw new ApiError(
         400,
         "INVALID_REFERENCE",
@@ -46,29 +37,9 @@ export async function validateRecordContract(
   };
   if (record.kind === "application")
     await related(record.data.companyId, ["company"]);
-  if (record.kind === "asset") {
-    const parent = await related(record.data.parentVariantId, ["asset"]);
-    if (parent?.id === record.id)
-      throw new ApiError(
-        400,
-        "INVALID_REFERENCE",
-        "A variant cannot be its own parent.",
-      );
-    if (Array.isArray(record.data.applicationIds))
-      for (const applicationId of record.data.applicationIds)
-        await related(applicationId, ["application"]);
-    if (Array.isArray(record.data.submissions))
-      for (const submission of record.data.submissions)
-        await related((submission as Record<string, unknown>).applicationId, [
-          "application",
-        ]);
-  }
-  const scoped = [
-    "content-section",
-    "content-resource",
-    "content-document",
-    "interview-preparation",
-  ].includes(String(record.data.category));
+  const scoped = ["content-document", "interview-preparation"].includes(
+    String(record.data.category),
+  );
   const application =
     record.kind === "interview" || scoped
       ? await related(record.data.applicationId, ["application"])
@@ -77,17 +48,12 @@ export async function validateRecordContract(
     ? await related(record.data.interviewId, ["interview"])
     : null;
   await related(record.data.directionId, ["path", "rotation", "decision"]);
-  if (
-    record.data.category === "content-section" ||
-    record.data.category === "content-resource" ||
-    record.data.category === "content-document"
-  ) {
-    await related(record.data.topicId, ["topic"], "learn-topic");
+  if (record.data.category === "content-document") {
     await related(record.data.tabId, ["note"], "interview-tab");
   }
   if (
-    record.kind === "topic" &&
-    record.data.category === "learn-topic" &&
+    record.data.category === "content-document" &&
+    record.data.scope === "learn" &&
     typeof record.data.track === "string" &&
     /^[0-9a-f-]{36}$/i.test(record.data.track)
   )
@@ -107,11 +73,11 @@ export async function validateRecordContract(
   if (
     record.data.stepId &&
     (!application ||
-      !recruitmentSteps(application.data, true).some(
+      !recruitmentSteps(application.data).some(
         (step) =>
           step.id === record.data.stepId &&
           (record.data.appointmentVersion !== 2 ||
-            (!step.archived && !["submission", "offer"].includes(step.kind))),
+            !["submission", "offer"].includes(step.kind)),
       ))
   )
     throw new ApiError(
@@ -119,31 +85,6 @@ export async function validateRecordContract(
       "INVALID_REFERENCE",
       "This step does not belong to the selected application.",
     );
-  if (
-    record.kind === "application" &&
-    Array.isArray(record.data.recruitmentSteps)
-  ) {
-    const children = await db
-      .prepare(
-        "SELECT data FROM records WHERE owner_id=? AND kind='interview' AND json_extract(data,'$.applicationId')=?",
-      )
-      .bind(owner, record.id)
-      .all<{ data: string }>();
-    const ids = new Set(
-      recruitmentSteps(record.data, true).map((step) => step.id),
-    );
-    if (
-      children.results.some((row) => {
-        const step = JSON.parse(row.data).stepId;
-        return step && !ids.has(step);
-      })
-    )
-      throw new ApiError(
-        400,
-        "STEP_IN_USE",
-        "Delete the step recoverably to preserve its appointment history.",
-      );
-  }
   if (managedDocument(record) && record.data.primaryAttachmentId) {
     const file = await db
       .prepare("SELECT record_id FROM attachments WHERE id=? AND owner_id=?")
@@ -178,21 +119,13 @@ export function recordContractStatements(
       );
       if (record.data.appointmentVersion === 2)
         expression +=
-          " AND EXISTS(SELECT 1 FROM records a JOIN json_each(a.data,'$.recruitmentSteps') step WHERE a.id=? AND a.owner_id=? AND json_extract(step.value,'$.id')=? AND COALESCE(json_extract(step.value,'$.archived'),0)=0 AND json_extract(step.value,'$.kind') NOT IN ('submission','offer'))";
+          " AND EXISTS(SELECT 1 FROM records a JOIN json_each(a.data,'$.recruitmentSteps') step WHERE a.id=? AND a.owner_id=? AND json_extract(step.value,'$.id')=? AND json_extract(step.value,'$.kind') NOT IN ('submission','offer'))";
       if (record.data.appointmentVersion === 2)
         bindings.push(
           String(record.data.applicationId),
           owner,
           String(record.data.stepId),
         );
-    }
-    if (
-      record.kind === "application" &&
-      Array.isArray(record.data.recruitmentSteps)
-    ) {
-      expression =
-        "NOT EXISTS(SELECT 1 FROM records i WHERE i.owner_id=? AND i.kind='interview' AND json_extract(i.data,'$.applicationId')=? AND COALESCE(json_extract(i.data,'$.stepId'),'')!='' AND NOT EXISTS(SELECT 1 FROM json_each(?,'$.recruitmentSteps') step WHERE json_extract(step.value,'$.id')=json_extract(i.data,'$.stepId')))";
-      bindings.push(owner, record.id, JSON.stringify(record.data));
     }
     if (managedDocument(record) && record.data.primaryAttachmentId) {
       expression +=
@@ -214,9 +147,6 @@ export function recordContractStatements(
 function managedDocument(record: WorkRecord) {
   return (
     record.kind === "asset" &&
-    (["resume", "letter", "document", "cover-letter"].includes(
-      String(record.data.type),
-    ) ||
-      record.data.documentDefault === true)
+    ["resume", "letter", "document"].includes(String(record.data.type))
   );
 }

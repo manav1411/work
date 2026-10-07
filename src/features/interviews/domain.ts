@@ -1,5 +1,4 @@
 import { field, type WorkRecord } from "../../../shared/model";
-import { legacyInterviewPreparation } from "../../../shared/content";
 
 export interface InterviewTab {
   id: string;
@@ -7,8 +6,6 @@ export interface InterviewTab {
   key?: "behavioural" | "technical";
   record?: WorkRecord;
   order: number;
-  legacyPreparationId?: string;
-  legacyBody?: string;
 }
 export function interviewTabs(
   records: WorkRecord[],
@@ -16,9 +13,7 @@ export function interviewTabs(
 ): InterviewTab[] {
   const tabs = records.filter(
     (record) =>
-      (!record.deletedAt || record.data.tabKey === "behavioural") &&
-      record.kind === "note" &&
-      record.data.category === "interview-tab",
+      record.kind === "note" && record.data.category === "interview-tab",
   );
   return [
     ...(["behavioural", "technical"] as const).flatMap((key, order) => {
@@ -46,21 +41,15 @@ export function interviewTabs(
           !record.data.tabKey && (includeHidden || !record.data.hidden),
       )
       .map((record, index) => ({
-        id: field(record, "legacyPreparationId")
-          ? `legacy-prep:${field(record, "legacyPreparationId")}`
-          : record.id,
+        id: record.id,
         title: record.title,
         record,
-        ...(field(record, "legacyPreparationId")
-          ? { legacyPreparationId: field(record, "legacyPreparationId") }
-          : {}),
         order:
           typeof record.data.order === "number" ? record.data.order : index + 2,
       })),
     ...records
       .filter(
         (record) =>
-          !record.deletedAt &&
           record.kind === "note" &&
           record.data.category === "interview-preparation",
       )
@@ -73,27 +62,6 @@ export function interviewTabs(
             ? record.data.order
             : tabs.length + index + 2,
       })),
-    ...records
-      .filter(
-        (record) =>
-          !record.deletedAt &&
-          record.kind === "interview" &&
-          legacyInterviewPreparation(record) &&
-          !records.some(
-            (note) =>
-              note.kind === "note" &&
-              ((note.data.category === "interview-preparation" &&
-                field(note, "interviewId") === record.id) ||
-                field(note, "legacyPreparationId") === record.id),
-          ),
-      )
-      .map((record, index) => ({
-        id: `legacy-prep:${record.id}`,
-        title: `${record.title} notes`,
-        legacyPreparationId: record.id,
-        legacyBody: legacyInterviewPreparation(record),
-        order: tabs.length + records.length + index + 2,
-      })),
   ].sort((a, b) => a.order - b.order);
 }
 export function upcomingInterviews(
@@ -104,7 +72,6 @@ export function upcomingInterviews(
     .filter(
       (record) =>
         record.kind === "interview" &&
-        !record.deletedAt &&
         !["Cancelled", "Completed"].includes(field(record, "status")) &&
         Number.isFinite(Date.parse(field(record, "startsAt"))) &&
         Date.parse(field(record, "startsAt")) >= now,
@@ -118,14 +85,13 @@ export function storyMatches(
 ): boolean {
   return (
     story.kind === "story" &&
-    !story.deletedAt &&
     (!tag || story.tags.includes(tag)) &&
     [
       story.title,
       story.body,
       ...story.tags,
-      ...["situation", "task", "action", "result", "lessons", "reflection"].map(
-        (key) => field(story, key),
+      ...["situation", "task", "action", "result", "lessons"].map((key) =>
+        field(story, key),
       ),
     ]
       .join(" ")

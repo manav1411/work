@@ -2,8 +2,11 @@ import { expect, test } from "@playwright/test";
 import { EDIT_HOLD_DURATION } from "../shared/interaction";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() =>
-    sessionStorage.setItem("work-demo-active", "true"),
+  await page.addInitScript(
+    () => (
+      localStorage.setItem("work:storage-schema", "current-workspace-2026-10"),
+      sessionStorage.setItem("work-demo-active", "true")
+    ),
   );
   await page.goto("/learn?track=databases");
   await expect(page.locator("main h1")).toHaveText(/^Learn/);
@@ -42,12 +45,12 @@ test("ordinary clicks, cancelled holds, and completed holds have distinct behavi
   await page.clock.runFor(EDIT_HOLD_DURATION);
   await expect(learn).not.toHaveClass(/nav-holding/);
   await expect(
-    page.getByRole("button", { name: "Add topic", exact: true }),
+    page.getByRole("button", { name: "Add tab", exact: true }),
   ).toHaveCount(0);
   await learn.dispatchEvent("pointerdown", { button: 0 });
   await page.clock.runFor(EDIT_HOLD_DURATION - 1);
   await expect(
-    page.getByRole("button", { name: "Add topic", exact: true }),
+    page.getByRole("button", { name: "Add tab", exact: true }),
   ).toHaveCount(0);
   await page.clock.runFor(1);
   await learn.dispatchEvent("pointerup");
@@ -55,11 +58,11 @@ test("ordinary clicks, cancelled holds, and completed holds have distinct behavi
     page.getByRole("status").filter({ hasText: "Editing Learn" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Add topic", exact: true }),
+    page.getByRole("button", { name: "Add tab", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Done editing", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Add topic", exact: true }),
+    page.getByRole("button", { name: "Add tab", exact: true }),
   ).toHaveCount(0);
 });
 
@@ -120,7 +123,7 @@ test("mobile section holds enable editing without opening the navigation drawer"
   await page.clock.runFor(EDIT_HOLD_DURATION);
   await learn.dispatchEvent("pointerup");
   await expect(
-    page.getByRole("button", { name: "Add topic", exact: true }),
+    page.getByRole("button", { name: "Add tab", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".sidebar")).not.toHaveClass(/sidebar-open/);
   expect(

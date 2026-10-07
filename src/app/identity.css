@@ -310,15 +310,6 @@
 .direction-timeline > section:nth-child(3n + 2) h3 {
   background: var(--lime);
 }
-@media (prefers-reduced-motion: reduce) {
-  .edit-navigation.nav-holding::before {
-    animation: none;
-    transform: scaleX(1);
-  }
-}
-.timeline-board {
-  box-shadow: 5px 5px 0 var(--shadow-colour);
-}
 .timeline-heading h2 {
   text-decoration: underline;
   text-decoration-color: var(--aqua);
@@ -369,30 +360,6 @@
   75% {
     color: var(--aqua);
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .brand-arrow {
-    animation: none !important;
-  }
-}
-.theme-switch {
-  display: inline-flex;
-  border: 1.5px solid var(--outline);
-  border-radius: 7px;
-  overflow: hidden;
-  box-shadow: 2px 2px 0 var(--shadow-colour);
-}
-.theme-switch button {
-  border: 0;
-  background: var(--paper);
-  color: var(--ink);
-  min-width: 68px;
-  padding: 8px 12px;
-  font-weight: 700;
-}
-.theme-switch button[aria-pressed="true"] {
-  background: var(--pink);
-  color: #202128;
 }
 .input:focus {
   border-color: var(--outline);

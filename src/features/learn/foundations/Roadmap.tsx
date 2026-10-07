@@ -9,12 +9,12 @@ import {
 } from "react";
 import { ChevronDown, X } from "lucide-react";
 import { Button } from "../../../components/ui";
-import HomeworkList from "./HomeworkList";
+import ProblemList from "./ProblemList";
 import {
   roadmapEdges,
   roadmapTopics,
   roadmapTotalProblems,
-} from "./roadmapData";
+} from "../../../content/problems";
 
 // Adapted from Personal-website's Roadmap: grid positions, measured curved
 // edges, clamped problem popovers and the mobile accordion are retained.
@@ -227,7 +227,7 @@ function RoadmapGraph({
             </Button>
           </header>
           <div className="learn-roadmap-popover-scroll">
-            <HomeworkList
+            <ProblemList
               problems={topic.problems}
               solvedSlugs={solved}
               personalised={personalised}
@@ -312,7 +312,7 @@ export default function Roadmap({ solved, personalised, initialTopic }: Props) {
             </button>
             {selected === topic.id && (
               <div id={`learn-roadmap-list-${topic.id}`}>
-                <HomeworkList
+                <ProblemList
                   problems={topic.problems}
                   solvedSlugs={solved}
                   personalised={personalised}

@@ -120,7 +120,6 @@
   --content-tone: var(--blue);
   padding: 22px;
   border: 1.5px solid var(--outline);
-  box-shadow: 3px 3px 0 var(--shadow-colour);
 }
 .interview-story-content h3 {
   font-size: 19px;
@@ -196,6 +195,41 @@
   margin-left: auto;
   color: var(--muted);
 }
+.interviews-page-notes {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 92px);
+}
+.interviews-page-notes .interview-workspace {
+  flex: 1 1 0;
+  min-height: 0;
+  align-items: stretch;
+}
+.interviews-page-notes .interview-workspace > [role="tabpanel"] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.interviews-page-notes .interview-intro {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+}
+.interviews-page-notes .interview-intro > .rich-document {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+}
+.interviews-page-notes .rich-document-canvas {
+  flex: 1 1 0;
+  min-height: 0;
+}
+.interviews-page-notes .rich-document-prose {
+  min-height: 100%;
+}
 @media (max-width: 1000px) {
   .interview-workspace {
     grid-template-columns: 1fr;
@@ -219,6 +253,11 @@
   .interview-story-filters select {
     max-width: none;
     width: 100%;
+  }
+}
+@media (max-width: 760px) {
+  .interviews-page-notes {
+    min-height: calc(100dvh - 190px);
   }
 }
 .inline-star-field h4 {
@@ -253,17 +292,7 @@
   align-items: center;
   padding: 10px 38px 10px 14px;
 }
-.inline-star-text {
-  width: 100%;
-  padding: 3px 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  resize: vertical;
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.6;
-}
+
 .interview-story-card h3 {
   display: flex;
   align-items: center;

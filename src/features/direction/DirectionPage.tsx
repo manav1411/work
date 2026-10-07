@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Check, Plus, Trash2, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Check, ChevronRight, Plus, Trash2 } from "lucide-react";
 import { goalProgress, EMPTY_GOAL } from "../../../shared/goals";
 import {
   DIRECTION_KINDS,
@@ -25,18 +25,14 @@ import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
 import { useGoals } from "../../lib/goals";
 import { useLearningData } from "../learn/useLearningData";
-import { observedProgress, useGoalMeasurements } from "./goalMetrics";
+import { observedProgress } from "./goalMetrics";
 import { GoalEditor } from "./GoalEditor";
 import { useAutosave } from "../../lib/autosave";
 import { RichDocumentEditor } from "../content/RichDocumentEditor";
-import { markdownDocument } from "../content/markdownDocument";
 import { SortableList } from "../content/SortableList";
 import { normalizeWebUrl } from "../../../shared/urls";
 import { reorderRecords } from "../content/reorderRecords";
-import {
-  DIRECTION_STATUSES as STATUSES,
-  directionNotes,
-} from "./directionAdapter";
+const STATUSES = ["Future", "Exploring", "Pursuing", "Achieved"];
 import "../home/timeline.css";
 import "./direction.css";
 export function DirectionPage() {
@@ -44,16 +40,12 @@ export function DirectionPage() {
   const { editing } = useEditMode();
   const model = useGoals();
   const learning = useLearningData();
-  useGoalMeasurements(model, learning, workspace.user?.id ?? "");
   const [params, setParams] = useSearchParams();
   const [scale, setScale] = useState<"quarter" | "year">("quarter");
   const [error, setError] = useState("");
   const directions = workspace.records
-    .filter(
-      (record) =>
-        DIRECTION_KINDS.includes(
-          record.kind as (typeof DIRECTION_KINDS)[number],
-        ) && !record.deletedAt,
+    .filter((record) =>
+      DIRECTION_KINDS.includes(record.kind as (typeof DIRECTION_KINDS)[number]),
     )
     .sort(
       (a, b) =>
@@ -160,7 +152,7 @@ export function DirectionPage() {
                     {entry.done ? (
                       <Check size={17} />
                     ) : (
-                      <ArrowUpRight size={17} />
+                      <ChevronRight size={17} />
                     )}
                   </button>
                 ))}
@@ -357,7 +349,6 @@ function DirectionCard({
         endDate: value.endDate,
         researchLinks: links.map((link) => link.url),
         researchLinkTitles: links.map((link) => link.title),
-        legacyDirection: current.current.data.legacyDirection ?? record.data,
       });
       const saved = await persist(
         {
@@ -390,6 +381,35 @@ function DirectionCard({
   });
   const set = (patch: Partial<typeof initial>) =>
     setValue((previous) => ({ ...previous, ...patch }));
+  const [pendingLink, setPendingLink] = useState<{
+    title: string;
+    url: string;
+  } | null>(null);
+  const pendingLinkInput = useRef<HTMLInputElement>(null);
+  const commitPendingLink = () => {
+    if (!pendingLink) return false;
+    const url = normalizeWebUrl(pendingLink.url);
+    try {
+      const parsed = new URL(url);
+      if (
+        !["http:", "https:"].includes(parsed.protocol) ||
+        !parsed.hostname ||
+        parsed.username ||
+        parsed.password
+      )
+        return false;
+    } catch {
+      return false;
+    }
+    setValue((previous) => ({
+      ...previous,
+      links: [...previous.links, url],
+      linkTitles: [...(previous.linkTitles ?? []), pendingLink.title],
+    }));
+    setPendingLink(null);
+    void flush();
+    return true;
+  };
   return (
     <Card className="stack direction-card">
       <div className="section-heading">
@@ -480,23 +500,25 @@ function DirectionCard({
           </small>
         )
       )}
+      <h4 className="direction-field-heading">Notes</h4>
       <RichDocumentEditor
+        compact
+        allowBlockReordering={false}
         record={record}
         input={{ kind: record.kind, title: record.title, data: record.data }}
         draftKey={`direction:${record.id}`}
-        initialDocument={markdownDocument(directionNotes(record))}
         persist={(patch) =>
           persist({
             body: patch.body,
             data: {
               richContent: patch.data?.richContent,
-              legacyBody: patch.data?.legacyBody,
             },
           })
         }
       />
       {(editing || form.links.length > 0) && (
         <div className="stack direction-links">
+          <h4 className="direction-field-heading">Links</h4>
           {form.links.map((url, index) =>
             editing ? (
               <div className="direction-link-editor" key={index}>
@@ -562,18 +584,66 @@ function DirectionCard({
               </a>
             ),
           )}
+          {editing && pendingLink && (
+            <div className="direction-link-editor" key="pending">
+              <div className="stack direction-link-fields">
+                <Input
+                  aria-label="New link title"
+                  placeholder="Link title (optional)"
+                  value={pendingLink.title}
+                  onChange={(event) =>
+                    setPendingLink({
+                      ...pendingLink,
+                      title: event.target.value,
+                    })
+                  }
+                />
+                <Input
+                  aria-label="New link"
+                  ref={pendingLinkInput}
+                  autoFocus
+                  placeholder="example.com"
+                  value={pendingLink.url}
+                  onChange={(event) =>
+                    setPendingLink({ ...pendingLink, url: event.target.value })
+                  }
+                  onBlur={(event) => {
+                    const target = event.relatedTarget;
+                    const row = event.currentTarget.closest(
+                      ".direction-link-editor",
+                    );
+                    if (target instanceof Node && row?.contains(target)) return;
+                    if (
+                      target instanceof HTMLElement &&
+                      target.closest(".direction-add-link")
+                    )
+                      return;
+                    commitPendingLink();
+                  }}
+                />
+              </div>
+              <Button
+                variant="ghost"
+                aria-label="Cancel new link"
+                onClick={() => setPendingLink(null)}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </div>
+          )}
           {editing && (
             <Button
-              variant="ghost"
-              onClick={() =>
-                set({
-                  links: [...form.links, ""],
-                  linkTitles: [...(form.linkTitles ?? []), ""],
-                })
-              }
+              className="direction-add-link"
+              variant="secondary"
+              onClick={() => {
+                if (!pendingLink) setPendingLink({ title: "", url: "" });
+                else if (!commitPendingLink()) {
+                  pendingLinkInput.current?.focus();
+                }
+              }}
             >
               <Plus size={14} />
-              Add research link
+              Add link
             </Button>
           )}
         </div>

@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./db/auth-schema";
 import type { SessionResponse } from "../shared/model";
 import { ApiError, type Env } from "./env";
+import { parseGitHubAllowlist } from "./github-allowlist";
 
 export function localAuthAllowed(env: Env, request: Request): boolean {
   const host = new URL(request.url).hostname;
@@ -20,7 +21,7 @@ export function authConfigured(env: Env): boolean {
     env.BETTER_AUTH_SECRET.length >= 32 &&
     env.GITHUB_CLIENT_ID &&
     env.GITHUB_CLIENT_SECRET &&
-    env.OWNER_GITHUB_LOGIN &&
+    parseGitHubAllowlist(env.ALLOWED_GITHUB_USERS) !== null &&
     env.APP_ORIGIN,
   );
 }
@@ -35,9 +36,11 @@ export function allowedIdentity(
     typeof githubLogin !== "string"
   )
     return false;
-  return env.OWNER_GITHUB_ID
-    ? githubId === env.OWNER_GITHUB_ID
-    : githubLogin.toLowerCase() === env.OWNER_GITHUB_LOGIN.toLowerCase();
+  return (parseGitHubAllowlist(env.ALLOWED_GITHUB_USERS) ?? []).some((user) =>
+    user.id
+      ? githubId === user.id
+      : githubLogin.toLowerCase() === user.login.toLowerCase(),
+  );
 }
 
 export function createAuth(env: Env) {
@@ -76,7 +79,7 @@ export function createAuth(env: Env) {
           if (!allowedIdentity(env, githubId, profile.login))
             throw new APIError("FORBIDDEN", {
               message:
-                "This workspace is currently available to its owner only.",
+                "This GitHub account does not have access to this workspace.",
             });
           verifiedIdentity = { githubId, githubLogin: profile.login };
           return verifiedIdentity;
@@ -126,7 +129,8 @@ export function createAuth(env: Env) {
               !allowedIdentity(env, identity.githubId, identity.githubLogin)
             )
               throw new APIError("FORBIDDEN", {
-                message: "Registration is restricted to the workspace owner.",
+                message:
+                  "This GitHub account cannot register for this workspace.",
               });
             return { data: { ...user, ...identity } };
           },
@@ -148,7 +152,7 @@ export function createAuth(env: Env) {
             )
               throw new APIError("FORBIDDEN", {
                 message:
-                  "The provider account must match the verified workspace owner.",
+                  "The provider account must match an allowed GitHub identity.",
               });
           },
         },
@@ -193,7 +197,7 @@ export async function resolveSession(
         timestamp,
         timestamp,
         "local",
-        env.OWNER_GITHUB_LOGIN,
+        "local-dev",
       )
       .run();
     return {

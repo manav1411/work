@@ -29,7 +29,6 @@ export function timelineItems(
     if (/^\d{4}-\d{2}-\d{2}$/.test(item.date)) result.push(item);
   };
   for (const record of records) {
-    if (record.deletedAt) continue;
     if (record.kind === "interview") {
       const at = field(record, "startsAt");
       if (!at || !Number.isFinite(Date.parse(at))) continue;
@@ -90,7 +89,6 @@ export function timelineItems(
     }
   }
   for (const goal of goals) {
-    if (goal.deletedAt) continue;
     if (goal.targetDate)
       add({
         id: `${goal.id}:target`,
@@ -117,24 +115,6 @@ export function timelineItems(
           completed: milestone.done,
         });
     }
-    // Keep the overview quiet: show the last measurement per day; the goal retains its full history.
-    const daily = new Map<string, Goal["checkpoints"][number]>();
-    for (const checkpoint of goal.checkpoints) {
-      const day = localDate(new Date(checkpoint.at), timezone);
-      const existing = daily.get(day);
-      if (!existing || existing.at <= checkpoint.at) daily.set(day, checkpoint);
-    }
-    for (const [date, checkpoint] of daily)
-      add({
-        id: `${goal.id}:progress:${date}`,
-        date,
-        sortAt: checkpoint.at,
-        title: goal.title,
-        detail: `${checkpoint.value}${(checkpoint.unit ?? goal.unit) ? ` ${checkpoint.unit ?? goal.unit}` : ""}`,
-        kind: "progress",
-        goal,
-        completed: true,
-      });
   }
   return result.sort(
     (a, b) =>

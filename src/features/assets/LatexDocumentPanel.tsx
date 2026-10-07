@@ -6,12 +6,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { Download } from "lucide-react";
 import type { WorkRecord } from "../../../shared/model";
 import { documentPdfFilename } from "../../../shared/documents";
 import {
   TEXLIVE_ENVIRONMENT,
-  latexSourceSchema,
   type LatexJob as Job,
   type LatexProject as Project,
 } from "../../../shared/latex";
@@ -22,7 +20,6 @@ import { mergeLatexProjects } from "../../lib/latex-autosave";
 import { useEditMode } from "../../lib/edit-mode";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
-import { downloadDocumentFile } from "./files";
 
 const SourceEditor = lazy(() => import("./LatexSourceEditor"));
 const PdfPreview = lazy(() => import("./LatexPdfPreview"));
@@ -36,7 +33,18 @@ const hasMainSource = (project: Project | null | undefined) =>
       file.content.trim().length > 0,
   );
 
-export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
+export default function LatexDocumentPanel({
+  record,
+  onDownloadChange,
+}: {
+  record: WorkRecord;
+  onDownloadChange?: (action?: {
+    recordId: string;
+    attachmentId: string;
+    filename: string;
+    label: string;
+  }) => void;
+}) {
   const { editing } = useEditMode();
   const { user, refresh } = useWorkspace();
   const [serverProject, setServerProject] = useState<Project | null>(null);
@@ -55,7 +63,7 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
   const alive = useRef(true);
   const compileSequence = useRef(0);
   const sourceLoadSequence = useRef(0);
-  const compileRef = useRef<(revisionId: string) => Promise<void>>(
+  const compileRef = useRef<(sourceId: string) => Promise<void>>(
     async () => {},
   );
   const draftKey = `work:latex-draft:${user?.id || "demo"}:${record.id}`;
@@ -83,14 +91,14 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
             : next.latestSuccessfulJob,
         );
         const alreadyCompiled =
-          (next.latestSuccessfulJob?.revisionId === next.revisionId &&
+          (next.latestSuccessfulJob?.sourceId === next.sourceId &&
             next.latestSuccessfulJob.metadata?.texEnvironment ===
               TEXLIVE_ENVIRONMENT) ||
           (latestJob?.status === "succeeded" &&
             latestJob.metadata?.texEnvironment === TEXLIVE_ENVIRONMENT &&
-            latestJob.revisionId === next.revisionId);
+            latestJob.sourceId === next.sourceId);
         const compileInProgressOrFailed =
-          latestJob?.revisionId === next.revisionId &&
+          latestJob?.sourceId === next.sourceId &&
           latestJob.environment === TEXLIVE_ENVIRONMENT &&
           (["queued", "running"].includes(latestJob.status) ||
             (latestJob.status === "failed" &&
@@ -101,7 +109,7 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
           !alreadyCompiled &&
           !compileInProgressOrFailed
         )
-          void compileRef.current(next.revisionId);
+          void compileRef.current(next.sourceId);
       }
     } catch (failure) {
       if (!alive.current || sequence !== sourceLoadSequence.current) return;
@@ -137,33 +145,6 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
     storageKey: draftKey,
     enabled: loaded,
     pending: !loaded,
-    decodeLegacy: (raw) => {
-      if (!raw || typeof raw !== "object") return undefined;
-      const candidate = raw as Project;
-      const parsed = latexSourceSchema.safeParse({
-        files: candidate.files,
-        mainFile: candidate.mainFile,
-        engine: candidate.engine,
-      });
-      if (
-        !parsed.success ||
-        typeof candidate.version !== "number" ||
-        typeof candidate.revisionId !== "string"
-      )
-        return undefined;
-      return { value: candidate, version: candidate.version };
-    },
-    validate: (value) => {
-      if (!value) return null;
-      const parsed = latexSourceSchema.safeParse({
-        files: value.files,
-        mainFile: value.mainFile,
-        engine: value.engine,
-      });
-      return parsed.success
-        ? null
-        : parsed.error.issues[0]?.message || "Check the LaTeX source project.";
-    },
     merge: mergeLatexProjects,
     refresh: async () => {
       await refreshSource();
@@ -186,7 +167,7 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
         ...value,
         engine: "pdflatex",
         version: next.version,
-        revisionId: next.revisionId,
+        sourceId: next.sourceId,
       };
       if (alive.current) {
         setServerProject(saved);
@@ -226,7 +207,7 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
       return;
     setProject({
       version: record.version,
-      revisionId: "",
+      sourceId: "",
       mainFile: "main.tex",
       engine: "pdflatex",
       files: [{ path: "main.tex", encoding: "utf8", content: "" }],
@@ -241,10 +222,10 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
   ]);
   useEffect(() => {
     const metadata = record.data.latexProject as
-      { revisionId?: string } | undefined;
+      { sourceId?: string } | undefined;
     setServerProject((current) =>
       current &&
-      (metadata?.revisionId || "") === current.revisionId &&
+      (metadata?.sourceId || "") === current.sourceId &&
       record.version > current.version
         ? (() => {
             const next = { ...current, version: record.version };
@@ -255,13 +236,13 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
   }, [record.version, record.data.latexProject]);
 
   const compile = useCallback(
-    async (revisionId: string) => {
+    async (sourceId: string) => {
       const sequence = ++compileSequence.current;
       if (alive.current) setCompileError("");
       try {
         const result = await request<{ job: Job }>(
           `${api}/compile`,
-          jsonRequest("POST", { revisionId }),
+          jsonRequest("POST", { sourceId }),
         );
         if (alive.current && sequence === compileSequence.current) {
           setJob(result.job);
@@ -343,11 +324,36 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
   const currentPdf =
     !!project &&
     !dirty &&
-    successful?.revisionId === project.revisionId &&
+    successful?.sourceId === project.sourceId &&
     successful.metadata?.texEnvironment === TEXLIVE_ENVIRONMENT;
+  useEffect(() => {
+    const action =
+      successful?.pdfUrl &&
+      successful.pdfAttachmentId &&
+      (editing || currentPdf)
+        ? {
+            recordId: record.id,
+            attachmentId: successful.pdfAttachmentId,
+            filename: documentPdfFilename(record),
+            label:
+              editing && !currentPdf ? "Download previous PDF" : "Download",
+          }
+        : undefined;
+    onDownloadChange?.(action);
+    return () => onDownloadChange?.(undefined);
+  }, [
+    onDownloadChange,
+    record.id,
+    record.title,
+    record.data.type,
+    successful?.pdfUrl,
+    successful?.pdfAttachmentId,
+    editing,
+    currentPdf,
+  ]);
   const activeJob =
     !!job &&
-    job.revisionId === project?.revisionId &&
+    job.sourceId === project?.sourceId &&
     ["queued", "running"].includes(job.status);
   const localCompareText =
     currentFile?.encoding === "utf8"
@@ -382,21 +388,6 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
                       : "No compiled PDF"}
             </span>
           </>
-        )}
-        {successful?.pdfUrl && (editing || currentPdf) && (
-          <Button
-            variant="secondary"
-            onClick={() => {
-              if (!successful.pdfAttachmentId) return;
-              void downloadDocumentFile({
-                id: successful.pdfAttachmentId,
-                filename: documentPdfFilename(record),
-              }).catch((failure) => setError(errorMessage(failure)));
-            }}
-          >
-            <Download size={16} />
-            {editing && !currentPdf ? "Download previous PDF" : "Download"}
-          </Button>
         )}
       </div>
       {editing && autosave.error && !autosave.conflict && (
@@ -487,7 +478,7 @@ export default function LatexDocumentPanel({ record }: { record: WorkRecord }) {
                 />
               </div>
             ) : (
-              <p>Binary project file · included in your backup</p>
+              <p>Binary project file · included in your workspace export</p>
             )}
             {successful?.pdfUrl ? (
               <PdfPreview url={successful.pdfUrl} />

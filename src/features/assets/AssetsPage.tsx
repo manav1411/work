@@ -1,6 +1,13 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "react-router-dom";
-import { Copy, FileText, Plus, Trash2, X } from "lucide-react";
+import { Copy, Download, FileText, Plus, Trash2, X } from "lucide-react";
 import { field, type WorkRecord } from "../../../shared/model";
 import { documentRecords } from "../../../shared/documents";
 import { Button, Card, Modal, PageHeader } from "../../components/ui";
@@ -13,6 +20,7 @@ import { DocumentEditor } from "./DocumentEditor";
 import { DocumentPreview } from "./DocumentPreview";
 import { DocumentViewer } from "./DocumentViewer";
 import { ProfileLinks } from "./ProfileLinks";
+import { downloadDocumentFile } from "./files";
 import { InlineTitle } from "../content/InlineTitle";
 import { SortableList } from "../content/SortableList";
 import { reorderRecords } from "../content/reorderRecords";
@@ -23,10 +31,15 @@ const FAMILIES = [
   { type: "resume", title: "Resume" },
   { type: "letter", title: "Cover letter" },
 ] as const;
-const familyOf = (record: WorkRecord) =>
-  field(record, "type").replace("cover-letter", "letter");
+const familyOf = (record: WorkRecord) => field(record, "type");
 const native = (record: WorkRecord) =>
   !!record.data.latexProject || record.data.nativeDocument === true;
+type FamilyDownload = {
+  recordId: string;
+  attachmentId: string;
+  filename: string;
+  label: string;
+};
 
 export function AssetsPage() {
   const workspace = useWorkspace();
@@ -42,6 +55,11 @@ export function AssetsPage() {
   >({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [familyDownload, setFamilyDownload] = useState<FamilyDownload>();
+  const publishFamilyDownload = useCallback(
+    (action?: FamilyDownload) => setFamilyDownload(action),
+    [],
+  );
   const recordsRef = useRef(records);
   recordsRef.current = records;
   const creatingRef = useRef(false);
@@ -129,7 +147,7 @@ export function AssetsPage() {
   }
   async function finishCopy(targetId: string, sourceId: string, retry = false) {
     for (let attempt = 0; attempt < 3; attempt++) {
-      // A lost response may have completed the copy already. Keep that snapshot.
+      // A lost response may have completed the copy already. Keep the completed copy.
       const existing =
         retry || attempt > 0
           ? await request<{ project: unknown }>(
@@ -417,14 +435,32 @@ export function AssetsPage() {
                   <div className="document-family-tabs">
                     {documentTabs(family.type, family.title, variants, current)}
                   </div>
-                  <Button
-                    variant="ghost"
-                    className="icon-button document-viewer-close"
-                    onClick={() => setParams({})}
-                    aria-label={`Close ${family.title}`}
-                  >
-                    <X size={18} />
-                  </Button>
+                  <div className="document-family-actions">
+                    {familyDownload &&
+                      familyDownload.recordId === current?.id && (
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            void downloadDocumentFile({
+                              id: familyDownload.attachmentId,
+                              filename: familyDownload.filename,
+                            }).catch((failure) =>
+                              setError(errorMessage(failure)),
+                            )
+                          }
+                        >
+                          <Download size={16} /> {familyDownload.label}
+                        </Button>
+                      )}
+                    <Button
+                      variant="ghost"
+                      className="icon-button document-viewer-close"
+                      onClick={() => setParams({})}
+                      aria-label={`Close ${family.title}`}
+                    >
+                      <X size={18} />
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <button
@@ -481,7 +517,11 @@ export function AssetsPage() {
                     </div>
                   ) : current ? (
                     <Suspense fallback={<p role="status">Loading document…</p>}>
-                      <LatexPanel key={current.id} record={current} />
+                      <LatexPanel
+                        key={current.id}
+                        record={current}
+                        onDownloadChange={publishFamilyDownload}
+                      />
                     </Suspense>
                   ) : (
                     <p className="muted">No document yet.</p>

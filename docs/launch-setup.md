@@ -1,6 +1,6 @@
-# Finish the private launch
+# GitHub OAuth and deployment setup
 
-The private launch is active. On 3 October 2026 production OAuth credentials were securely uploaded; the owner completed real sign-in and confirmed note save/reload. A GitHub `main` push produced a successful Cloudflare build/deployment and passed the complete GitHub checks. The owner recovered the private archive; read-only production counts confirm 14 imported records and three attachments. The instructions below document setup and recovery; do not recreate the working OAuth app, reconnect an existing build trigger, or replace sign-in with development fixture access.
+Preserve existing working OAuth registrations, credentials, and build triggers. Use this document when configuring a new environment.
 
 ## 1. Dedicated GitHub OAuth application
 
@@ -26,9 +26,9 @@ From this repository, upload the credentials:
 node scripts/cloudflare.mjs secrets
 ```
 
-This command pipes values directly to Wrangler, displays no values, and creates a random auth secret only if production does not already have one. It does not overwrite an existing auth secret or reuse the development secret. `OWNER_GITHUB_ID=41612145` pins account access to the verified GitHub owner even if the login is renamed. The GitHub app requests identity/email scopes, not repository-write access.
+This command pipes values directly to Wrangler, displays no values, and creates a random auth secret only if production does not already have one. It does not overwrite an existing auth secret or reuse the development secret. Apply the private GitHub allowlist with `npm run auth:allowlist -- production` before deploying. The allowlist is a runtime secret; numeric IDs pin account access even after a username rename. See [allowlist setup](github-allowlist.md). The GitHub app requests identity/email scopes, not repository-write access.
 
-Then check `/api/health` for `authenticationConfigured: true` and actually sign in through GitHub. Check a note edit/reload, an upload/download, and a full export. A configured health response alone does not prove a successful provider callback. Staging needs a separate OAuth app with callback `https://work-staging.manavbdodia.workers.dev/api/auth/callback/github` and independently generated staging secrets; do not share the production client secret.
+Then check `/api/health` for `authenticationConfigured: true` and actually sign in through GitHub. Check a note edit/reload, an upload/download, and a full workspace export/upload. A configured health response alone does not prove a successful provider callback. Staging needs a separate OAuth app with callback `https://work-staging.manavbdodia.workers.dev/api/auth/callback/github` and independently generated staging secrets; do not share the production client secret.
 
 ## 2. Connect GitHub to Cloudflare Workers Builds
 
@@ -51,25 +51,3 @@ Create a build token scoped to this Cloudflare account, with Workers Scripts Edi
 The optional `node scripts/cloudflare.mjs connect-builds` command automates the repository connection and production trigger **after** GitHub App authorisation, with a user-scoped `CLOUDFLARE_BUILD_API_TOKEN` that has Workers Builds Configuration Edit/Workers Scripts Read and an existing build-token entry named `work-builds`. It refuses to replace existing triggers or reuse an unrelated token. It is not proof of connection until the API succeeds and an actual Git push produces a successful deployment.
 
 Do not connect PR builds to production D1/R2 or production OAuth. A stable staging release is available for separate authorisation tests. Fixture-only previews may be added later with explicitly isolated preview bindings; they are not configured in this release.
-
-## 3. Bring in the verified private notes
-
-The ignored `.private/work-migration.json` archive was produced from local, owner-scoped data after validating the actual Notion source and résumé. It contains private content; do not upload it to GitHub or attach it to an issue.
-
-After private cloud sign-in, open **Settings → Import, export & recovery → Recover a backup** and select that archive. It copies records/files into fresh server IDs, preserves links/revisions and leaves existing records unchanged. Review the restored notes and résumé before linking a historical asset to an application. Current employer/stack, Overleaf destination, LeetCode profile, weekly time budget and work-authorisation details remain user-owned preference/research fields.
-
-Alternatively, choose the original unzipped Notion directory in the import preview and import the résumé PDF separately. The source files remain untouched. Do not use the public preview for migration: it stores only tab-local samples and has browser-storage limits.
-
-After migration, **Settings → Add career starter** adds the editable research target, career paths, rotation prompts, February decision and initial actions without replacing imported notes. This setup is also available if a first note was captured before onboarding. The learning and practice catalogues do not need a separate import.
-
-## Release gate
-
-Complete these before declaring the full private launch finished:
-
-- Successful real production GitHub callback, not a synthetic session. Staging remains signed out until a separate OAuth app is deliberately configured for staging authentication tests.
-- Production edit/file/search/export retrieved after reload and a second device sign-in.
-- Verified backup restore into copied records and a recoverable competing edit.
-- A GitHub `main` push observed as a successful Cloudflare Git-triggered deployment.
-- Custom-domain HTTPS, deep links, private API 401 when signed out, and no shared production preview resources.
-
-Cloudflare billing remains the owner's responsibility. R2 was enabled by the owner; no plan upgrade or broad billing change was performed by this project setup.

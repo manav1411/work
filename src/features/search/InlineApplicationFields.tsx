@@ -1,3 +1,4 @@
+import { NoteInput } from "../content/NoteInput";
 import { useRef, useState } from "react";
 import { field, localDate, type WorkRecord } from "../../../shared/model";
 import {
@@ -8,7 +9,7 @@ import {
   applicationStatusSelection,
   selectApplicationStatus,
 } from "../../../shared/applications";
-import { Button, Field, Input, Select, Textarea } from "../../components/ui";
+import { Button, Field, Input, Select } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useAutosave } from "../../lib/autosave";
 import { applicationCompany } from "./applicationRecords";
@@ -117,9 +118,6 @@ export function InlineApplicationFields({ record }: { record: WorkRecord }) {
           {!options.some((option) => option.value === selection) && (
             <option value={selection} disabled>
               {applicationStatusLabel(record)}
-              {record.data.processVersion !== 2 || record.data.legacyStatusLabel
-                ? " · historical"
-                : ""}
             </option>
           )}
           {options.map((option) => (
@@ -156,7 +154,7 @@ export function InlineApplicationFields({ record }: { record: WorkRecord }) {
           </Field>
         ))}
       </div>
-      <Textarea
+      <NoteInput
         aria-label="Application notes"
         placeholder="Notes"
         value={draft.value.body}

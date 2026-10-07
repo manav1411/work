@@ -3,18 +3,21 @@ import type { WorkRecord } from "../shared/model";
 import { enterEditMode } from "./edit-mode-helper";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() =>
-    sessionStorage.setItem("work-demo-active", "true"),
+  await page.addInitScript(
+    () => (
+      localStorage.setItem("work:storage-schema", "current-workspace-2026-10"),
+      sessionStorage.setItem("work-demo-active", "true")
+    ),
   );
   await page.goto("/interviews");
   await expect(
     page.getByRole("heading", { name: /^Interviews/ }),
   ).toBeVisible();
   await page.evaluate(() => {
-    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    const state = JSON.parse(sessionStorage.getItem("work-demo-current")!);
     state.records = [];
     state.goals = [];
-    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+    sessionStorage.setItem("work-demo-current", JSON.stringify(state));
   });
   await page.reload();
   await enterEditMode(page, "Interviews");
@@ -128,7 +131,7 @@ test("main notes and STAR competencies save inline across interview tabs", async
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+          JSON.parse(sessionStorage.getItem("work-demo-current")!).records.find(
             (record: WorkRecord) => record.data.tabKey === "behavioural",
           )?.body,
       ),
@@ -148,7 +151,7 @@ test("main notes and STAR competencies save inline across interview tabs", async
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+          JSON.parse(sessionStorage.getItem("work-demo-current")!).records.find(
             (record: WorkRecord) => record.data.tabKey === "technical",
           )?.body,
       ),
@@ -186,7 +189,7 @@ test("main notes and STAR competencies save inline across interview tabs", async
     .poll(() =>
       page.evaluate(() => {
         const record = JSON.parse(
-          sessionStorage.getItem("work-demo-v1")!,
+          sessionStorage.getItem("work-demo-current")!,
         ).records.find((item: WorkRecord) => item.kind === "story");
         return (
           record && {
@@ -264,7 +267,7 @@ test("upcoming interview reminders are static and use local time without a zone 
   page,
 }) => {
   await page.evaluate(() => {
-    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    const state = JSON.parse(sessionStorage.getItem("work-demo-current")!);
     const base = {
       body: "",
       tags: [],
@@ -272,7 +275,6 @@ test("upcoming interview reminders are static and use local time without a zone 
       version: 1,
       createdAt: "2026-10-01T00:00:00Z",
       updatedAt: "2026-10-01T00:00:00Z",
-      deletedAt: null,
     };
     state.records.push(
       {
@@ -296,7 +298,7 @@ test("upcoming interview reminders are static and use local time without a zone 
         },
       },
     );
-    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+    sessionStorage.setItem("work-demo-current", JSON.stringify(state));
   });
   await page.reload();
   const reminder = page.locator(".interview-upcoming-card");
@@ -334,8 +336,23 @@ test("behavioural story bank precedes compact notes without shrinking other tabs
   await expect(page.locator(".interview-intro")).not.toHaveClass(
     /interview-intro-behavioural/,
   );
-  const technicalMinHeight = await page
+  await page.getByRole("button", { name: "Done editing" }).click();
+  const technicalLayout = await page
     .locator(".interview-intro .rich-document-canvas")
-    .evaluate((canvas) => getComputedStyle(canvas).minHeight);
-  expect(technicalMinHeight).not.toBe("0px");
+    .evaluate((canvas) => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        height: rect.height,
+        bottom: rect.bottom,
+        viewport: window.innerHeight,
+        pageHeight: document.documentElement.scrollHeight,
+      };
+    });
+  expect(technicalLayout.height).toBeGreaterThan(250);
+  expect(
+    Math.abs(technicalLayout.bottom - (technicalLayout.viewport - 50)),
+  ).toBeLessThan(2);
+  expect(technicalLayout.pageHeight).toBeLessThanOrEqual(
+    technicalLayout.viewport,
+  );
 });

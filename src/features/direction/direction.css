@@ -10,7 +10,6 @@
 .direction-card {
   position: relative;
   border: 2px solid var(--outline);
-  box-shadow: 4px 4px 0 var(--shadow-colour);
 }
 .direction-card h3,
 .goal-inline-card h3 {
@@ -38,6 +37,15 @@
 .direction-card .rich-document-canvas > .rich-document-prose {
   min-height: 0;
 }
+.direction-field-heading {
+  margin: 2px 0 -10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.direction-links > .direction-field-heading {
+  margin-bottom: -4px;
+}
 .direction-link-editor {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -50,9 +58,15 @@
 .direction-links .input {
   min-width: 0;
 }
-.direction-page [data-selected="true"] > .card {
-  outline: 2px solid var(--focus-colour);
-  outline-offset: 4px;
+.button.direction-add-link {
+  align-self: flex-start;
+  width: fit-content;
+  box-shadow: none;
+}
+.button.direction-add-link:not(:disabled):hover,
+.button.direction-add-link:not(:disabled):active {
+  transform: none;
+  box-shadow: none;
 }
 .goal-inline-card {
   height: 100%;
@@ -72,7 +86,6 @@
 }
 .direction-overview {
   border: 2px solid var(--outline);
-  box-shadow: 4px 4px 0 var(--shadow-colour);
 }
 .direction-timeline {
   display: grid;

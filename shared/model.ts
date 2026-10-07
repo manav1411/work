@@ -1,21 +1,13 @@
 export const RECORD_KINDS = [
-  "action",
   "note",
   "company",
   "application",
-  "contact",
   "interview",
   "story",
-  "practice",
   "topic",
-  "progress",
-  "achievement",
-  "project",
   "asset",
   "path",
   "decision",
-  "review",
-  "focus",
   "resource",
   "rotation",
 ] as const;
@@ -34,7 +26,6 @@ export interface WorkRecord {
   version: number;
   createdAt: string;
   updatedAt: string;
-  deletedAt: string | null;
 }
 
 export interface RecordInput {
@@ -59,45 +50,14 @@ export interface UserPreferences {
   timezone: string;
   theme: "light" | "dark";
   displayName: string;
-  github: string;
-  linkedin: string;
-  website: string;
   leetcode: string;
-  currentCompany: string;
-  stack: string;
-  weeklyHours: number;
-  weeklyApplications: number;
-  weeklyPractice: number;
-  customStages: string[];
-  reducedMotion: boolean;
 }
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   timezone: "Australia/Melbourne",
   theme: "light",
   displayName: "",
-  github: "",
-  linkedin: "",
-  website: "",
   leetcode: "",
-  currentCompany: "",
-  stack: "",
-  weeklyHours: 4,
-  weeklyApplications: 3,
-  weeklyPractice: 3,
-  customStages: [
-    "Saved",
-    "Researching",
-    "Ready to apply",
-    "Applied",
-    "Assessment",
-    "Interview",
-    "Offer",
-    "Accepted",
-    "Rejected",
-    "Withdrawn",
-  ],
-  reducedMotion: false,
 };
 
 export interface Attachment {
@@ -106,18 +66,6 @@ export interface Attachment {
   filename: string;
   contentType: string;
   size: number;
-  createdAt: string;
-}
-
-export interface RecordRevision {
-  id: string;
-  recordId: string;
-  version: number;
-  title: string;
-  body: string;
-  tags: string[];
-  links: string[];
-  data: RecordData;
   createdAt: string;
 }
 
@@ -158,86 +106,33 @@ export const arrayField = (
 };
 
 export const KIND_LABELS: Record<RecordKind, string> = {
-  action: "Action",
-  note: "Note",
-  company: "Company",
+  note: "Notes",
+  company: "Radar company",
   application: "Application",
-  contact: "Contact",
-  interview: "Interview",
-  story: "Story",
-  practice: "Practice attempt",
-  topic: "Learning topic",
-  progress: "Learning progress",
-  achievement: "Work evidence",
-  project: "Project",
-  asset: "Career asset",
-  path: "Career path",
+  interview: "Appointment",
+  story: "STAR story",
+  topic: "Learning tab",
+  asset: "Document",
+  path: "Direction",
   decision: "Decision",
-  review: "Weekly review",
-  focus: "Focus session",
-  resource: "Resource",
-  rotation: "Rotation",
+  resource: "Profile link",
+  rotation: "Experience",
 };
-
-export const KIND_ROUTES: Record<RecordKind, string> = {
-  action: "/settings",
-  note: "/settings",
-  company: "/applications",
-  application: "/applications",
-  contact: "/settings",
-  interview: "/applications",
-  story: "/interviews",
-  practice: "/learn",
-  topic: "/learn",
-  progress: "/learn",
-  achievement: "/settings",
-  project: "/settings",
-  asset: "/documents",
-  path: "/direction",
-  decision: "/direction",
-  review: "/settings",
-  focus: "/settings",
-  resource: "/settings",
-  rotation: "/direction",
-};
-
 export const recordUrl = (record: WorkRecord): string => {
-  const recovery = `/settings?legacy=${record.kind}&record=${encodeURIComponent(record.id)}#recovery`;
-  if (record.kind === "company")
-    return `/applications?tab=radar&record=${encodeURIComponent(record.id)}`;
-  if (record.kind === "note" || record.kind === "resource") {
-    if (
-      field(record, "scope") === "interviews" ||
-      field(record, "category").startsWith("interview-")
-    ) {
-      const interview = field(record, "interviewId");
-      return interview
-        ? `/interviews?interview=${encodeURIComponent(interview)}`
-        : `/interviews?tab=${encodeURIComponent(field(record, "tabId", field(record, "tabKey", record.id)))}`;
-    }
-    if (field(record, "scope") === "learn")
-      return `/learn?track=${encodeURIComponent(field(record, "track", "dsa"))}`;
-    if (field(record, "scope") === "documents") return "/documents";
-  }
-  if (
-    record.kind === "practice" ||
-    (record.kind === "progress" && record.data.category === "problem")
-  ) {
-    const slug = field(record, "problemSlug") || field(record, "problemId");
-    return slug
-      ? `/learn?view=roadmap&problem=${encodeURIComponent(slug)}`
-      : recovery;
-  }
-  if (record.kind === "progress") return recovery;
-  if (record.kind === "topic") {
-    const track = field(record, "track");
-    return track ? `/learn?track=${encodeURIComponent(track)}` : recovery;
-  }
-  if (record.kind === "interview")
-    return `/applications?interview=${encodeURIComponent(record.id)}`;
-  return KIND_ROUTES[record.kind] === "/settings"
-    ? recovery
-    : `${KIND_ROUTES[record.kind]}?record=${encodeURIComponent(record.id)}`;
+  const id = encodeURIComponent(record.id);
+  if (record.kind === "company") return `/applications?tab=radar&record=${id}`;
+  if (record.kind === "application") return `/applications?record=${id}`;
+  if (record.kind === "interview") return `/applications?interview=${id}`;
+  if (record.kind === "asset" || record.kind === "resource")
+    return `/documents?record=${id}`;
+  if (["path", "rotation", "decision"].includes(record.kind))
+    return `/direction?record=${id}`;
+  if (record.kind === "topic" || record.data.scope === "learn")
+    return `/learn?track=${encodeURIComponent(field(record, "track", field(record, "seedId", record.id)))}`;
+  if (record.kind === "story") return "/interviews?tab=behavioural";
+  return field(record, "interviewId")
+    ? `/interviews?interview=${encodeURIComponent(field(record, "interviewId"))}`
+    : `/interviews?tab=${encodeURIComponent(field(record, "tabId", field(record, "tabKey", record.id)))}`;
 };
 
 export function localDate(
@@ -275,7 +170,11 @@ export function niceDate(
 export function safeUrl(value: string): string | null {
   try {
     const url = new URL(value);
-    return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+    return ["https:", "http:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password
+      ? url.href
+      : null;
   } catch {
     return null;
   }

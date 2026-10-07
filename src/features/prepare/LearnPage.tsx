@@ -10,11 +10,7 @@ import { useLearningData } from "../learn/useLearningData";
 import Roadmap from "../learn/foundations/Roadmap";
 import LeetCodeCalendar from "../learn/LeetCodeCalendar";
 import { roadmapTopics } from "../../content/problems";
-import {
-  learningSubjects,
-  learningTopics,
-  type LearningSubject,
-} from "../learn/topics";
+import { learningSubjects, type LearningSubject } from "../learn/topics";
 import { ContentPanel } from "../content/ContentPanel";
 import { DeleteControl } from "../content/DeleteControl";
 import { InlineTitle } from "../content/InlineTitle";
@@ -34,7 +30,6 @@ export function LearnPage() {
   const track = subjects.some((item) => item.id === params.get("track"))
     ? params.get("track")!
     : "dsa";
-  const topics = learningTopics(records, track);
   const problemTopic = roadmapTopics.find((topic) =>
     topic.problems.some((problem) => problem.slug === params.get("problem")),
   )?.id;
@@ -87,7 +82,9 @@ export function LearnPage() {
     selectTrack(record.id);
   };
   return (
-    <div className="page learn-page">
+    <div
+      className={`page learn-page ${track === "dsa" ? "" : "learn-notes-page"}`}
+    >
       <PageHeader
         title="Learn"
         action={
@@ -234,26 +231,6 @@ export function LearnPage() {
         <ContentPanel
           context={{ scope: "learn", track }}
           allowBlockReordering={false}
-          legacyContexts={topics.map((topic) => ({
-            context: {
-              scope: "learn" as const,
-              track,
-              ...(topic.seedId
-                ? { seedId: topic.seedId }
-                : { topicId: topic.id }),
-            },
-            title: topic.title,
-            initialBody: topic.record?.body ?? "",
-            resources: topic.url
-              ? [
-                  {
-                    id: `${topic.id}-reading`,
-                    title: topic.resource,
-                    url: topic.url,
-                  },
-                ]
-              : [],
-          }))}
         />
       )}
     </div>

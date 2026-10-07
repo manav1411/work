@@ -6,11 +6,8 @@ import {
   validRichDocument,
 } from "../shared/rich-content";
 import { contentDataError } from "../shared/content";
-import { interviewTabs } from "../src/features/interviews/domain";
-import { topicSolveFraction } from "../src/features/learn/foundations/Roadmap";
-import type { WorkRecord } from "../shared/model";
 
-describe("safe freeform migration and protected preparation", () => {
+describe("structured document content", () => {
   it("retains authored Markdown as structured nested lists, tasks, code, tables and links", () => {
     const document = markdownDocument(
       "# Databases\n\nRead **transactions** and [SQL](https://example.com/sql).\n\n- parent\n  - child\n\n- [x] Read paper\n- Plain task companion\n\n```python\nprint('kept')\n```\n\n| Key | Value |\n| --- | --- |\n| Original | Preserved |\n\n<script>never evaluated</script>\n\n![diagram](https://example.com/image.png)",
@@ -84,6 +81,31 @@ describe("safe freeform migration and protected preparation", () => {
         ],
       }),
     ).toBe(true);
+  });
+  it("accepts saved indentation levels and rejects invalid values", () => {
+    for (const indent of [0, 1, 6]) {
+      const document = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            attrs: { indent },
+            content: [{ type: "text", text: "Retained note" }],
+          },
+        ],
+      };
+      expect(validRichDocument(document)).toBe(true);
+      expect(richDocumentError(document)).toBeNull();
+      expect(richPlainText(document)).toBe("Retained note");
+    }
+    for (const indent of [-1, 7, 1.5, "1", null]) {
+      const document = {
+        type: "doc",
+        content: [{ type: "paragraph", attrs: { indent } }],
+      };
+      expect(validRichDocument(document)).toBe(false);
+      expect(richDocumentError(document)).toMatch(/indentation.*invalid/);
+    }
   });
   it("rejects dangerous links, arbitrary nodes/attributes, malformed marks and invalid nesting", () => {
     expect(
@@ -202,86 +224,5 @@ describe("safe freeform migration and protected preparation", () => {
     } as const;
     expect(richDocumentError(unsafeLink)).toMatch(/HTTP or HTTPS/i);
     expect(richPlainText(unsafeLink)).toContain("Keep this label");
-  });
-  it("revives a historically hidden or deleted Behavioural tab with original notes", () => {
-    const override = {
-      id: "old",
-      kind: "note",
-      title: "People interviews",
-      body: "Original principles",
-      data: { category: "interview-tab", tabKey: "behavioural", hidden: true },
-      version: 2,
-      tags: [],
-      links: [],
-      createdAt: "2026-01-01",
-      updatedAt: "2026-01-02",
-      deletedAt: "2026-01-02",
-    } as WorkRecord;
-    expect(
-      interviewTabs([override]).find((tab) => tab.key === "behavioural"),
-    ).toMatchObject({
-      title: "People interviews",
-      record: { body: "Original principles" },
-    });
-  });
-  it("counts unique solved roadmap problems once and caps the fill", () => {
-    expect(topicSolveFraction(["a", "a", "b"], new Set(["a", "extra"]))).toBe(
-      0.5,
-    );
-    expect(topicSolveFraction(["a"], new Set(["a", "extra"]))).toBe(1);
-    expect(topicSolveFraction([], new Set(["a"]))).toBe(0);
-  });
-  it("exposes direct legacy preparation as ordinary stable tabs and deduplicates materialized or existing notes", () => {
-    const appointment = {
-      id: "appointment",
-      kind: "interview",
-      title: "Final round",
-      body: "Meeting address",
-      data: { prepNotes: "Original advice", questions: "Ask about mentoring" },
-      version: 1,
-      tags: [],
-      links: [],
-      createdAt: "2026-01-01",
-      updatedAt: "2026-01-01",
-      deletedAt: null,
-    } as WorkRecord;
-    const before = JSON.stringify(appointment);
-    const tab = interviewTabs([appointment]).find(
-      (tab) => tab.id === "legacy-prep:appointment",
-    );
-    expect(tab).toMatchObject({
-      title: "Final round notes",
-      legacyPreparationId: "appointment",
-    });
-    expect(tab?.legacyBody).toContain("Original advice");
-    expect(tab?.legacyBody).toContain("Ask about mentoring");
-    expect(JSON.stringify(appointment)).toBe(before);
-    const note = {
-      ...appointment,
-      id: "saved",
-      kind: "note",
-      title: "My preparation",
-      body: "Saved edits",
-      data: { category: "interview-tab", legacyPreparationId: "appointment" },
-    } as WorkRecord;
-    expect(
-      interviewTabs([appointment, note]).filter(
-        (tab) => tab.id === "legacy-prep:appointment",
-      ),
-    ).toHaveLength(1);
-    expect(
-      interviewTabs([appointment, note]).find(
-        (tab) => tab.id === "legacy-prep:appointment",
-      )?.record?.id,
-    ).toBe("saved");
-    const oldPrep = {
-      ...note,
-      data: { category: "interview-preparation", interviewId: "appointment" },
-    } as WorkRecord;
-    expect(
-      interviewTabs([appointment, oldPrep]).some((tab) =>
-        tab.id.startsWith("legacy-prep:"),
-      ),
-    ).toBe(false);
   });
 });

@@ -31,7 +31,7 @@ test("native documents expand inline, save source and copy independently", async
     if (path === "/api/preferences")
       return route.fulfill({ json: { preferences: DEFAULT_PREFERENCES } });
     if (path === "/api/records" && method === "GET")
-      return route.fulfill({ json: { records } });
+      return route.fulfill({ json: { records, epoch: "test-current" } });
     if (path === "/api/records" && method === "POST") {
       const input = route.request().postDataJSON();
       const record: WorkRecord = {
@@ -42,7 +42,6 @@ test("native documents expand inline, save source and copy independently", async
         links: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        deletedAt: null,
       };
       records.push(record);
       return route.fulfill({ json: { record } });
@@ -86,9 +85,9 @@ test("native documents expand inline, save source and copy independently", async
           engine: input.engine,
           mainFile: input.mainFile,
           version: record.version,
-          revisionId: `revision-${++revision}`,
+          sourceId: `revision-${++revision}`,
         };
-        record.data.latexProject = { revisionId: project.revisionId };
+        record.data.latexProject = { sourceId: project.sourceId };
         projects.set(id, structuredClone(project));
         return route.fulfill({ json: { project, record } });
       }
@@ -99,12 +98,11 @@ test("native documents expand inline, save source and copy independently", async
         target.version++;
         target.data = {
           ...target.data,
-          latexProject: { revisionId: `revision-${++revision}` },
+          latexProject: { sourceId: `revision-${++revision}` },
         };
         const project = {
           ...structuredClone(original),
-          revisionId: (target.data.latexProject as { revisionId: string })
-            .revisionId,
+          sourceId: (target.data.latexProject as { sourceId: string }).sourceId,
           version: target.version,
         };
         projects.set(target.id, project);
@@ -116,8 +114,8 @@ test("native documents expand inline, save source and copy independently", async
         return route.fulfill({
           json: {
             job: {
-              id: `job-${input.revisionId}`,
-              revisionId: input.revisionId,
+              id: `job-${input.sourceId}`,
+              sourceId: input.sourceId,
               status: "failed",
               createdAt: new Date().toISOString(),
               log: "Synthetic compiler fixture: compilation unavailable.",
@@ -126,7 +124,7 @@ test("native documents expand inline, save source and copy independently", async
         });
       }
     }
-    return route.fulfill({ json: { records: [] } });
+    return route.fulfill({ json: { epoch: "test-current", records: [] } });
   });
   await page.goto("/documents");
   await enterEditMode(page, "Documents");
@@ -164,4 +162,22 @@ test("native documents expand inline, save source and copy independently", async
   await page.getByRole("button", { name: "Close Resume", exact: true }).click();
   await expect(page).toHaveURL(/\/documents$/);
   await expect(page.locator(".document-family-expanded")).toHaveCount(0);
+
+  await page
+    .getByRole("button", { name: "Add link", exact: true })
+    .first()
+    .click();
+  await page.getByLabel("Link name", { exact: true }).fill("Portfolio");
+  await page
+    .getByLabel("Portfolio URL", { exact: true })
+    .fill("portfolio.example.com");
+  await page.waitForTimeout(1_000);
+  expect(records.some((record) => record.kind === "resource")).toBe(false);
+  await page
+    .getByRole("button", { name: "Add link", exact: true })
+    .last()
+    .click();
+  await expect
+    .poll(() => records.some((record) => record.kind === "resource"))
+    .toBe(true);
 });

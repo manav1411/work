@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Plus } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { field, type RecordPatch } from "../../../shared/model";
+import { field } from "../../../shared/model";
 import { Button, PageHeader } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
@@ -10,8 +10,6 @@ import { DeleteControl } from "../content/DeleteControl";
 import { InlineTitle } from "../content/InlineTitle";
 import { SortableList } from "../content/SortableList";
 import { reorderRecords } from "../content/reorderRecords";
-import { RichDocumentEditor } from "../content/RichDocumentEditor";
-import { contentRecordWriter } from "../content/recordWriter";
 import {
   applicationCompany,
   interviewTime,
@@ -30,46 +28,12 @@ export function InterviewsPage() {
   const tab = tabs.find((item) => item.id === params.get("tab")) ?? tabs[0];
   const [newId, setNewId] = useState("");
   const [error, setError] = useState("");
-  const recordsRef = useRef(records);
-  recordsRef.current = records;
-  const legacyWriters = useRef(
-    new Map<string, ReturnType<typeof contentRecordWriter>>(),
-  );
-  const legacyWriter = (item: InterviewTab) => {
-    let writer = legacyWriters.current.get(item.id);
-    if (!writer) {
-      writer = contentRecordWriter({
-        read: () =>
-          recordsRef.current.find(
-            (record) =>
-              record.kind === "note" &&
-              record.data.legacyPreparationId === item.legacyPreparationId,
-          ),
-        input: () => ({
-          kind: "note",
-          title: item.title,
-          body: item.legacyBody ?? "",
-          data: {
-            category: "interview-tab",
-            legacyPreparationId: item.legacyPreparationId,
-            order: item.order,
-          },
-        }),
-        create,
-        update,
-      });
-      legacyWriters.current.set(item.id, writer);
-    }
-    return writer;
-  };
   const saveTab = async (
     item: InterviewTab,
     patch: Record<string, unknown> = {},
     title = item.title,
     expectedVersion?: number,
   ) => {
-    if (item.legacyPreparationId)
-      return legacyWriter(item)({ title, data: patch }, expectedVersion);
     const data = {
       ...item.record?.data,
       category: item.record?.data.category ?? "interview-tab",
@@ -83,7 +47,9 @@ export function InterviewsPage() {
   };
   const upcoming = upcomingInterviews(records);
   return (
-    <div className="page interviews-page">
+    <div
+      className={`page interviews-page ${tab?.key === "behavioural" ? "" : "interviews-page-notes"}`}
+    >
       <PageHeader
         title="Interviews"
         action={
@@ -189,8 +155,7 @@ export function InterviewsPage() {
                 label="Delete tab"
                 actionVariant="danger"
                 onDelete={async () => {
-                  if (tab.key || tab.legacyPreparationId)
-                    await saveTab(tab, { hidden: true });
+                  if (tab.key) await saveTab(tab, { hidden: true });
                   else if (tab.record) await remove(tab.record.id);
                   setParams({});
                 }}
@@ -203,42 +168,19 @@ export function InterviewsPage() {
               <section
                 className={`interview-intro ${tab.key === "behavioural" ? "interview-intro-behavioural" : ""}`}
               >
-                {tab.legacyPreparationId ? (
-                  <RichDocumentEditor
-                    key={tab.id}
-                    record={tab.record}
-                    allowBlockReordering={false}
-                    input={{
-                      kind: "note",
-                      title: tab.title,
-                      body: tab.legacyBody ?? "",
-                      data: {
-                        category: "interview-tab",
-                        legacyPreparationId: tab.legacyPreparationId,
-                        order: tab.order,
-                      },
-                    }}
-                    draftKey={tab.id}
-                    initialBody={tab.legacyBody}
-                    persist={(patch: RecordPatch, version) =>
-                      legacyWriter(tab)(patch, version)
-                    }
-                  />
-                ) : (
-                  <ContentPanel
-                    key={tab.id}
-                    record={tab.record}
-                    allowBlockReordering={false}
-                    context={{
-                      scope: "interviews",
-                      ...(tab.record?.data.category === "interview-preparation"
-                        ? { interviewId: field(tab.record, "interviewId") }
-                        : tab.key
-                          ? { tabKey: tab.key }
-                          : { tabId: tab.id }),
-                    }}
-                  />
-                )}
+                <ContentPanel
+                  key={tab.id}
+                  record={tab.record}
+                  allowBlockReordering={false}
+                  context={{
+                    scope: "interviews",
+                    ...(tab.record?.data.category === "interview-preparation"
+                      ? { interviewId: field(tab.record, "interviewId") }
+                      : tab.key
+                        ? { tabKey: tab.key }
+                        : { tabId: tab.id }),
+                  }}
+                />
               </section>
             </>
           )}

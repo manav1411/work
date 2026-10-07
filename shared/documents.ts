@@ -1,3 +1,4 @@
+import { latexEngineSchema, latexJobSchema } from "./latex";
 import { z } from "zod";
 import { field, safeUrl, type Attachment, type WorkRecord } from "./model";
 import { normalizeWebUrl } from "./urls";
@@ -28,7 +29,6 @@ export function documentPdfFilename(
     case "resume":
       return "Manav_Dodia_Resume.pdf";
     case "letter":
-    case "cover-letter":
       return "Manav_Dodia_Cover_Letter.pdf";
     default:
       return fallback;
@@ -56,27 +56,23 @@ export const documentDestinationSchema = z
   );
 export const documentMetadataSchema = z
   .object({
-    type: z.string().max(80).optional(),
-    documentDefault: z.boolean().optional(),
+    type: z.enum(["resume", "letter", "document"]),
+    order: z.number().finite().optional(),
+    latexProject: z
+      .object({
+        sourceId: z.string().min(1).max(160),
+        mainFile: z.string().max(240),
+        engine: latexEngineSchema,
+        inputHash: z.string().max(160),
+      })
+      .strict()
+      .optional(),
+    latexJobs: z.array(latexJobSchema).max(1000).optional(),
+    nativeDocument: z.literal(true).optional(),
     sourceUrl: documentDestinationSchema.optional(),
     primaryAttachmentId: z.string().max(160).optional(),
-    parentVariantId: z.string().max(160).optional(),
-    forkRevisionId: z.string().max(160).optional(),
-    applicationIds: z.array(z.string().min(1).max(160)).max(100).optional(),
-    intendedStream: z.string().max(160).optional(),
-    submissions: z
-      .array(
-        z.object({
-          applicationId: z.string().max(160),
-          revisionId: z.string().min(1).max(160),
-          pdfAttachmentId: z.string().min(1).max(160),
-          submittedAt: z.string().datetime(),
-        }),
-      )
-      .max(200)
-      .optional(),
   })
-  .passthrough();
+  .strict();
 export const profileLinkDataSchema = z
   .object({
     scope: z.literal("documents"),
@@ -91,11 +87,11 @@ export const profileLinkDataSchema = z
         "Use an HTTP or HTTPS URL without embedded credentials.",
       ),
   })
-  .passthrough();
+  .strict();
 
 export function documentRecords(records: WorkRecord[]): WorkRecord[] {
   return records
-    .filter((record) => record.kind === "asset" && !record.deletedAt)
+    .filter((record) => record.kind === "asset")
     .sort(
       (a, b) =>
         b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id),
@@ -110,8 +106,7 @@ export function primaryDocumentFile(
   const own = attachments.filter((file) => file.recordId === record.id);
   const primary = field(record, "primaryAttachmentId");
   if (primary) return own.find((file) => file.id === primary);
-  // Older uploaded assets did not always store a primary pointer.
-  return own.sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  return undefined;
 }
 
 export function documentPreviewKind(
@@ -155,7 +150,7 @@ export class DocumentFileSaveError extends Error {
   }
 }
 
-/** Upload and pointer selection are separate commits; older files are retained. */
+/** Upload and pointer selection are separate commits so failed saves can retry. */
 export async function saveDocumentFile(
   operations: DocumentFileOperations,
   uploaded?: Attachment,

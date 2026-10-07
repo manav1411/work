@@ -8,21 +8,20 @@ const expected =
   environment === "production"
     ? {
         name: "work",
-        database: "a36c8c5c-420d-4699-b358-746c9640faae",
+        database: "9fe1b5fe-24fe-4b43-9667-ad7967b739e1",
         bucket: "work-files-prod",
         origin: "https://work.manavdodia.com",
       }
     : {
         name: "work-staging",
-        database: "07d0cb9a-99ab-4197-b856-e6ef19d46dd8",
+        database: "e7b6920e-f704-499f-be7c-539263cc78b7",
         bucket: "work-files-staging",
         origin: "https://work-staging.manavbdodia.workers.dev",
       };
 if (
   config.name !== expected.name ||
   config.vars?.ENVIRONMENT !== environment ||
-  config.vars?.APP_ORIGIN !== expected.origin ||
-  config.vars?.OWNER_GITHUB_ID !== "41612145"
+  config.vars?.APP_ORIGIN !== expected.origin
 )
   throw new Error(
     "The built Worker does not match the intended release environment.",
@@ -37,6 +36,14 @@ if (
 if (config.vars?.LOCAL_DEV_AUTH)
   throw new Error(
     "Local fixture authentication must never be in a deployed configuration.",
+  );
+if (
+  ["ALLOWED_GITHUB_USERS", "OWNER_GITHUB_LOGIN", "OWNER_GITHUB_ID"].some(
+    (name) => Object.hasOwn(config.vars ?? {}, name),
+  )
+)
+  throw new Error(
+    "The GitHub allowlist must be a runtime secret, not build vars.",
   );
 if (environment === "staging" && config.routes?.length)
   throw new Error("Staging must not attach production domain routes.");

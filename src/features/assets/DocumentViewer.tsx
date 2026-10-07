@@ -219,7 +219,7 @@ export function DocumentViewer({
             </h2>
             <p className="muted">
               {missing
-                ? "This uploaded copy is unavailable. You can recover it from a backup or add a new document."
+                ? "This uploaded copy is unavailable. Upload the file again or replace the workspace from an export."
                 : file
                   ? "This format opens in its own app. Download the file to read or edit it."
                   : "No uploaded file is associated with this document."}

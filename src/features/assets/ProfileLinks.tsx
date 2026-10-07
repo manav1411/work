@@ -7,9 +7,7 @@ import { webDestination } from "../../../shared/documents";
 import { Button, Card, Input } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
-type ProfileKey = "linkedin" | "github" | "website";
 type Link = {
-  key?: ProfileKey;
   record?: WorkRecord;
   title: string;
   url: string;
@@ -19,18 +17,14 @@ export function ProfileLinks() {
   const { editing } = useEditMode();
   const [adding, setAdding] = useState(false);
   const links: Link[] = [
-    ...[
-      { key: "linkedin" as const, title: "LinkedIn" },
-      { key: "github" as const, title: "GitHub" },
-      { key: "website" as const, title: "Website" },
-    ].map((item) => ({ ...item, url: workspace.preferences[item.key] })),
     ...workspace.records
       .filter(
         (record) =>
           record.kind === "resource" &&
-          !record.deletedAt &&
           record.data.scope === "documents" &&
-          record.data.category === "profile-link",
+          record.data.category === "profile-link" &&
+          !!record.title.trim() &&
+          !!webDestination(field(record, "url")),
       )
       .map((record) => ({
         record,
@@ -41,9 +35,13 @@ export function ProfileLinks() {
   return (
     <section className="document-profile-links">
       <div className="document-section-heading">
-        <h2>External links</h2>
+        <h2>Links</h2>
         {editing && (
-          <Button variant="secondary" onClick={() => setAdding(true)}>
+          <Button
+            variant="secondary"
+            disabled={adding}
+            onClick={() => setAdding(true)}
+          >
             <Plus size={16} />
             Add link
           </Button>
@@ -51,11 +49,7 @@ export function ProfileLinks() {
       </div>
       <div className="document-link-grid">
         {links.map((item, index) => (
-          <LinkCard
-            key={item.key || item.record!.id}
-            item={item}
-            index={index}
-          />
+          <LinkCard key={item.record!.id} item={item} index={index} />
         ))}
         {adding && editing && (
           <LinkCard
@@ -91,23 +85,26 @@ function LinkCard({
   const saveRef = useRef<() => Promise<void>>(async () => {});
   saveRef.current = async () => {
     const current = { ...live.current };
-    if (JSON.stringify(current) === saved.current || saving.current) return;
-    const destination = webDestination(current.url);
-    if (!destination) {
-      if (current.url) setError("Enter a valid web link.");
+    if (saving.current) return;
+    if (!current.title.trim()) {
+      setError("Enter a name for this link.");
       return;
     }
+    const destination = webDestination(current.url);
+    if (!destination) {
+      setError("Enter a valid web link.");
+      return;
+    }
+    if (item.record && JSON.stringify(current) === saved.current) return;
     saving.current = true;
     setError("");
     let failed = false;
     try {
-      if (item.key)
-        await workspace.savePreferences({ [item.key]: destination });
-      else if (item.record) {
+      if (item.record) {
         const next = await workspace.update(
           item.record.id,
           {
-            title: current.title.trim() || "Untitled link",
+            title: current.title.trim(),
             data: { ...item.record.data, url: destination },
           },
           version.current,
@@ -116,7 +113,7 @@ function LinkCard({
       } else {
         await workspace.create({
           kind: "resource",
-          title: current.title.trim() || "Untitled link",
+          title: current.title.trim(),
           data: {
             scope: "documents",
             category: "profile-link",
@@ -141,12 +138,12 @@ function LinkCard({
     }
   };
   useEffect(() => {
-    if (editing) {
+    if (editing && item.record) {
       clearTimeout(timer.current);
       timer.current = setTimeout(() => void saveRef.current(), 800);
     }
     return () => clearTimeout(timer.current);
-  }, [title, url, editing]);
+  }, [title, url, editing, item.record?.id]);
   const destination = webDestination(url);
   const personal =
     destination &&
@@ -160,7 +157,6 @@ function LinkCard({
           <Input
             aria-label="Link name"
             value={title}
-            readOnly={!!item.key}
             placeholder="Link name"
             onChange={(event) => setTitle(event.target.value)}
           />
@@ -169,22 +165,27 @@ function LinkCard({
             value={url}
             placeholder="example.com"
             onChange={(event) => setUrl(event.target.value)}
-            onBlur={() => void saveRef.current()}
+            onBlur={() => {
+              if (item.record) void saveRef.current();
+            }}
           />
           <Button
             variant="ghost"
             onClick={() =>
               void (
-                item.key
-                  ? workspace.savePreferences({ [item.key]: "" })
-                  : item.record
-                    ? workspace.remove(item.record.id)
-                    : Promise.resolve(onCreated?.())
+                item.record
+                  ? workspace.remove(item.record.id)
+                  : Promise.resolve(onCreated?.())
               ).catch((failure) => setError(errorMessage(failure)))
             }
           >
-            Delete
+            {item.record ? "Delete" : "Cancel"}
           </Button>
+          {!item.record && (
+            <Button variant="secondary" onClick={() => void saveRef.current()}>
+              Add link
+            </Button>
+          )}
         </div>
       ) : destination ? (
         <a

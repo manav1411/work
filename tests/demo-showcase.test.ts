@@ -1,77 +1,91 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { createDemoStore } from "../src/lib/demo";
-import { applicationStatus, currentRecruitmentStep } from "../shared/applications";
-import { type WorkRecord } from "../shared/model";
+import { recordDataError } from "../shared/record-contract";
+import type { LatexProject } from "../shared/latex";
+import type { Attachment } from "../shared/model";
+import { learningStatsSchema } from "../shared/learning";
+import { DEMO_STATS } from "../src/features/learn/demo";
+import { todayAestMidnight } from "../src/features/learn/foundations/leetcodeMetrics";
 
-function demoStorage(): Storage {
-  const values = new Map<string, string>();
-  return {
-    get length() {
-      return values.size;
-    },
-    clear: () => values.clear(),
-    getItem: (key) => values.get(key) ?? null,
-    key: (index) => [...values.keys()][index] ?? null,
-    removeItem: (key) => values.delete(key),
-    setItem: (key, value) => values.set(key, value),
-  };
-}
+afterEach(() => vi.unstubAllGlobals());
 
-describe("isolated demo showcase seed", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it("shows a rich linked sample workspace and upgrades without replacing edits", async () => {
-    vi.stubGlobal("sessionStorage", demoStorage());
-    const demo = createDemoStore();
-    const records = demo.getRecords();
-    const applications = records.filter((item) => item.kind === "application");
-    expect(new Set(applications.map(applicationStatus))).toEqual(
-      new Set(["Saved", "Applied", "In progress", "Offer", "Rejected"]),
-    );
-
-    const upcoming = records.find(
-      (item) => item.data.demoSeedKey === "appointment-atlassian-technical",
-    );
-    const atlassian = applications.find(
-      (item) => item.data.demoSeedKey === "app-atlassian-platform",
-    )!;
-    expect(upcoming?.data.applicationId).toBe(atlassian.id);
-    expect(upcoming?.data.stepId).toBe(currentRecruitmentStep(atlassian)?.id);
-    expect(
-      records.filter((item) => item.kind === "story"),
-    ).toHaveLength(3);
-    expect(
-      records.filter(
-        (item) => item.kind === "path" && item.data.category === "direction",
+it("seeds a valid populated demo with native PDF documents and connected preparation", async () => {
+  vi.stubGlobal("sessionStorage", { getItem: () => null, setItem: () => {} });
+  const demo = createDemoStore();
+  const records = demo.getRecords();
+  for (const record of records)
+    expect(recordDataError(record.kind, record.data)).toBeNull();
+  expect(
+    records.filter((record) => record.kind === "application"),
+  ).toHaveLength(5);
+  expect(
+    records
+      .filter((record) => record.kind === "story")
+      .every((record) =>
+        ["situation", "task", "action", "result", "lessons"].every(
+          (key) => typeof record.data[key] === "string" && record.data[key],
+        ),
       ),
-    ).toHaveLength(2);
-    expect(records.filter((item) => item.kind === "company" && item.data.radar))
-      .toHaveLength(2);
-
-    const document = records.find(
-      (item) => item.data.demoSeedKey === "document-resume-outline",
-    )!;
+  ).toBe(true);
+  expect(
+    records.some(
+      (record) =>
+        record.title === "My next direction" ||
+        record.title === "A challenge I solved",
+    ),
+  ).toBe(false);
+  const natives = records.filter((record) => record.data.nativeDocument);
+  expect(
+    natives.filter((record) => record.data.type === "resume"),
+  ).toHaveLength(2);
+  expect(
+    natives.filter((record) => record.data.type === "letter"),
+  ).toHaveLength(1);
+  for (const record of natives) {
+    const response = (await demo.adapter(`/api/latex/${record.id}`)) as {
+      project: LatexProject;
+    };
+    const job = response.project.latestSuccessfulJob!;
+    expect(job.status).toBe("succeeded");
+    expect(job.pdfUrl).toMatch(/^data:application\/pdf;base64,/);
     const files = (await demo.adapter(
-      `/api/records/${document.id}/attachments`,
-    )) as { attachments: { id: string; contentType: string }[] };
-    expect(files.attachments).toHaveLength(1);
-    expect(files.attachments[0].contentType).toBe("text/markdown");
-    await expect(demo.fileUrl(files.attachments[0].id)).resolves.toMatch(/^blob:/);
-
-    const authored = (await demo.adapter("/api/records", {
-      method: "POST",
-      body: JSON.stringify({ kind: "story", title: "My demo edit", tags: [], data: {} }),
-    })) as { record: WorkRecord };
-    const story = records.find(
-      (item) => item.data.demoSeedKey === "story-security-change",
-    )!;
-    await demo.adapter(`/api/records/${story.id}`, { method: "DELETE" });
-
-    const reopened = createDemoStore();
-    expect(reopened.getRecords().some((item) => item.id === authored.record.id)).toBe(true);
-    expect(reopened.getRecords().some((item) => item.id === story.id)).toBe(false);
+      `/api/records/${record.id}/attachments`,
+    )) as { attachments: Attachment[] };
+    expect(files.attachments.map((file) => file.id)).toContain(
+      job.pdfAttachmentId,
+    );
     expect(
-      reopened.getRecords().filter((item) => item.data.demoSeedKey === "story-security-change"),
-    ).toHaveLength(0);
-  });
+      atob((await demo.fileUrl(job.pdfAttachmentId!)).split(",")[1]),
+    ).toContain("Alex Morgan");
+  }
+  const preparation = records.find(
+    (record) => record.data.category === "interview-preparation",
+  )!;
+  expect(
+    records.some((record) => record.id === preparation.data.interviewId),
+  ).toBe(true);
+  expect(
+    (preparation.data.storyIds as string[]).every((id) =>
+      records.some((record) => record.id === id && record.kind === "story"),
+    ),
+  ).toBe(true);
+  expect(
+    records.filter((record) => record.data.scope === "learn"),
+  ).toHaveLength(7);
+});
+
+it("keeps demo learning totals and recent activity consistent with its calendar", () => {
+  expect(learningStatsSchema.safeParse(DEMO_STATS).success).toBe(true);
+  expect(
+    DEMO_STATS.solvedDays![String(todayAestMidnight())].length,
+  ).toBeGreaterThan(0);
+  const total = Object.values(DEMO_STATS.solvedDays!).flat().length;
+  expect(
+    DEMO_STATS.solved.find((item) => item.difficulty === "All")!.count,
+  ).toBe(total);
+  expect(
+    DEMO_STATS.solved
+      .filter((item) => item.difficulty !== "All")
+      .reduce((sum, item) => sum + item.count, 0),
+  ).toBe(total);
 });

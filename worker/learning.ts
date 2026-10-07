@@ -146,47 +146,16 @@ async function configuredUsername(env: Env, owner: string): Promise<string> {
       if (typeof value.leetcode === "string" && value.leetcode.trim())
         return learningUsername(value.leetcode);
     } catch {
-      /* Legacy invalid preferences do not expose another account. */
+      /* Invalid preferences do not select another account. */
     }
   }
-  const connection = await env.DB.prepare(
-    "SELECT config,account_id FROM connector_connections WHERE owner_id=? AND provider='leetcode' AND status!='disconnected' LIMIT 1",
-  )
-    .bind(owner)
-    .first<{ config: string; account_id: string }>();
-  if (!connection) return "";
-  try {
-    const config = JSON.parse(connection.config) as { username?: unknown };
-    return learningUsername(
-      typeof config.username === "string"
-        ? config.username
-        : connection.account_id,
-    );
-  } catch {
-    return "";
-  }
+  return "";
 }
 
 export const learningRoutes = new Hono<{
   Bindings: Env;
   Variables: Variables;
 }>();
-// The teaching curriculum remains on its source site. Work no longer fetches
-// content or writes shared task completion, including from older clients.
-for (const path of ["/content", "/progress", "/tasks", "/refresh"]) {
-  learningRoutes.all(path, (context) =>
-    context.json(
-      {
-        error: {
-          code: "LEARNING_RETIRED",
-          message:
-            "The Weeks curriculum has been retired from Work. Use the roadmap; existing progress is preserved.",
-        },
-      },
-      410,
-    ),
-  );
-}
 learningRoutes.get("/stats", async (context) => {
   const owner = context.get("user").id;
   const username = await configuredUsername(context.env, owner);

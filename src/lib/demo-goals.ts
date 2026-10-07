@@ -7,17 +7,15 @@ export function demoGoals(): Goal[] {
     newGoal({
       ...EMPTY_GOAL,
       title: "Complete the DSA curriculum",
-      measure: "curriculum",
+      measure: "leetcode",
       target: 12,
-      unit: "tasks",
       startDate: addDays(today, -14),
       targetDate: addDays(today, 35),
-      value: 3,
     }),
     newGoal({
       ...EMPTY_GOAL,
       title: "Finish portfolio project",
-      measure: "milestones",
+      measure: "completion",
       targetDate: addDays(today, 21),
       startDate: addDays(today, -7),
       milestones: [

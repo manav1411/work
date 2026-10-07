@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
 export async function enterEditMode(page: Page, section: string) {
+  await page.waitForLoadState("networkidle");
   const link = page
     .locator(".sidebar")
     .getByRole("link", { name: section, exact: true });

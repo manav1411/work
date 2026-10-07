@@ -8,16 +8,7 @@ export interface Env {
   BETTER_AUTH_SECRET?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
-  CONNECTOR_ENCRYPTION_KEY?: string;
-  NOTION_CLIENT_ID?: string;
-  NOTION_CLIENT_SECRET?: string;
-  GITHUB_APP_ID?: string;
-  GITHUB_APP_SLUG?: string;
-  GITHUB_APP_PRIVATE_KEY?: string;
-  GITHUB_APP_WEBHOOK_SECRET?: string;
-  NOTION_WEBHOOK_SECRET?: string;
-  OWNER_GITHUB_LOGIN: string;
-  OWNER_GITHUB_ID?: string;
+  ALLOWED_GITHUB_USERS?: string;
   APP_ORIGIN: string;
   ASSETS?: Fetcher;
   LATEX_COMPILER_URL?: string;

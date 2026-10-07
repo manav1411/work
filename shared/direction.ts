@@ -1,3 +1,4 @@
+import { richContentSchema } from "./rich-content";
 import { z } from "zod";
 import { normalizeWebUrl } from "./urls";
 
@@ -30,20 +31,15 @@ const researchUrl = z
 export const directionDataSchema = z
   .object({
     category: z.literal("direction"),
-    priority: z.string().max(80).optional(),
     status: z.string().max(80).default("Exploring"),
-    location: z.string().max(240).optional(),
-    focus: z.string().max(240).optional(),
-    nextStep: z.string().max(2000).optional(),
-    uncertainties: z.string().max(10_000).optional(),
-    outcome: z.string().max(10_000).optional(),
-    reviewDate: directionDate.optional(),
+    directionOrder: z.number().finite().optional(),
+    richContent: richContentSchema.optional(),
     startDate: directionDate.default(""),
     endDate: directionDate.default(""),
     researchLinks: z.array(researchUrl).max(40).default([]),
     researchLinkTitles: z.array(z.string().max(240)).max(40).default([]),
   })
-  .passthrough()
+  .strict()
   .refine(
     (value) =>
       !value.startDate || !value.endDate || value.startDate <= value.endDate,

@@ -30,7 +30,7 @@ interface InterviewEditorProps {
   onRemoved?: (record: WorkRecord) => void;
 }
 
-/** Compatibility viewer for timeline deep links; scheduling itself is inline in Applications. */
+/** Appointment editor opened from Applications and Home. */
 export function InterviewEditor(props: InterviewEditorProps) {
   const { editing } = useEditMode();
   const { records, preferences } = useWorkspace();
@@ -77,7 +77,6 @@ export function InterviewForm({
   const application = records.find(
     (item) =>
       item.kind === "application" &&
-      !item.deletedAt &&
       item.id === (applicationId || field(record, "applicationId")),
   );
   const steps = application
@@ -118,15 +117,6 @@ export function InterviewForm({
             );
       const data = InterviewAppointmentDataSchema.parse({
         ...record?.data,
-        ...(record && record.data.appointmentVersion !== 2
-          ? {
-              legacyAppointment: {
-                ...record.data,
-                title: record.title,
-                capturedAt: new Date().toISOString(),
-              },
-            }
-          : {}),
         appointmentVersion: 2,
         applicationId: application.id,
         stepId: selectedStep,

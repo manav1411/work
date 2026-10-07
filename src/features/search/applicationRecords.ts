@@ -2,36 +2,16 @@ import { field, localDate, type WorkRecord } from "../../../shared/model";
 
 export function applicationCompany(
   record: WorkRecord,
-  records: WorkRecord[],
+  _records: WorkRecord[],
 ): string {
-  return (
-    field(record, "company") ||
-    records.find(
-      (item) =>
-        item.kind === "company" && item.id === field(record, "companyId"),
-    )?.title ||
-    ""
-  );
+  return field(record, "company");
 }
 
 export function applicationContact(
   record: WorkRecord,
-  records: WorkRecord[],
+  _records: WorkRecord[],
 ): string {
-  if (field(record, "contact")) return field(record, "contact");
-  const contacts = records.filter(
-    (item) =>
-      item.kind === "contact" &&
-      !item.deletedAt &&
-      (item.id === field(record, "contactId") ||
-        record.links.includes(item.id)),
-  );
-  const contact =
-    contacts.find((item) => item.id === field(record, "contactId")) ||
-    (contacts.length === 1 ? contacts[0] : undefined);
-  return contact
-    ? [contact.title, field(contact, "email")].filter(Boolean).join(" · ")
-    : "";
+  return field(record, "contact");
 }
 
 export function associatedInterviews(
@@ -41,11 +21,7 @@ export function associatedInterviews(
   return records
     .filter((record) => {
       const owner = field(record, "applicationId");
-      return (
-        record.kind === "interview" &&
-        !record.deletedAt &&
-        (owner ? owner === applicationId : record.links.includes(applicationId))
-      );
+      return record.kind === "interview" && owner === applicationId;
     })
     .sort(
       (a, b) =>

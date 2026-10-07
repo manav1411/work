@@ -3,74 +3,12 @@ import { enterEditMode } from "./edit-mode-helper";
 import type { WorkRecord } from "../shared/model";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() =>
-    sessionStorage.setItem("work-demo-active", "true"),
-  );
-});
-
-test("legacy appointment prose materializes one ordinary tab without modifying the appointment", async ({
-  page,
-}) => {
-  await page.goto("/interviews");
-  await expect(page.locator("main h1")).toHaveText(/^Interviews/);
-  await page.evaluate(() => {
-    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
-    state.records = [
-      {
-        id: "legacy-appointment",
-        kind: "interview",
-        title: "Final round",
-        body: "Meeting address",
-        data: {
-          prepNotes: "Original advice",
-          questions: "Ask about mentoring",
-        },
-        tags: [],
-        links: [],
-        version: 1,
-        createdAt: "2026-01-01",
-        updatedAt: "2026-01-01",
-        deletedAt: null,
-      },
-    ];
-    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
-  });
-  await page.reload();
-  await page
-    .getByRole("tab", { name: "Final round notes", exact: true })
-    .click();
-  const notes = page.locator(".interview-intro .tiptap");
-  await expect(notes).toContainText("Original advice");
-  await enterEditMode(page, "Interviews");
-  await page
-    .getByRole("tab", { name: "Final round notes", exact: true })
-    .getByLabel("Tab name")
-    .fill("My preparation");
-  await notes.fill("Preserved plus revised");
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
-        const notes = state.records.filter(
-          (record: WorkRecord) => record.kind === "note",
-        );
-        return [notes.length, notes[0]?.title, notes[0]?.body];
-      }),
-    )
-    .toEqual([1, "My preparation", "Preserved plus revised"]);
-  expect(
-    await page.evaluate(
-      () =>
-        JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
-          (record: WorkRecord) => record.kind === "interview",
-        ).data,
+  await page.addInitScript(
+    () => (
+      localStorage.setItem("work:storage-schema", "current-workspace-2026-10"),
+      sessionStorage.setItem("work-demo-active", "true")
     ),
-  ).toEqual({ prepNotes: "Original advice", questions: "Ask about mentoring" });
-  await page.reload();
-  await expect(
-    page.getByRole("tab", { name: "My preparation", exact: true }),
-  ).toBeVisible();
-  await expect(notes).toContainText("Preserved plus revised");
+  );
 });
 
 test("freeform notes autosave rich JSON and survive tab rename and navigation", async ({
@@ -79,7 +17,14 @@ test("freeform notes autosave rich JSON and survive tab rename and navigation", 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/interviews");
-  await expect(page.locator("main h1")).toHaveText(/^Interviews/);
+  await expect(page.locator(".page-header h1")).toHaveText(/^Interviews/);
+  await page.evaluate(() => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-current")!);
+    state.records = [];
+    sessionStorage.setItem("work-demo-current", JSON.stringify(state));
+  });
+  await page.reload();
+  await expect(page.locator(".interview-intro .tiptap")).toBeVisible();
   await enterEditMode(page, "Interviews");
   const notes = page.locator(".interview-intro .tiptap");
   await notes.fill("Remember the trade-offs.");
@@ -87,7 +32,7 @@ test("freeform notes autosave rich JSON and survive tab rename and navigation", 
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+          JSON.parse(sessionStorage.getItem("work-demo-current")!).records.find(
             (record: WorkRecord) =>
               record.data.category === "content-document" &&
               record.data.tabKey === "behavioural",
@@ -104,7 +49,7 @@ test("freeform notes autosave rich JSON and survive tab rename and navigation", 
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(sessionStorage.getItem("work-demo-v1")!).records.find(
+          JSON.parse(sessionStorage.getItem("work-demo-current")!).records.find(
             (record: WorkRecord) =>
               record.data.category === "interview-tab" &&
               record.data.tabKey === "behavioural",
@@ -127,9 +72,9 @@ test("inline STAR fields save together and calendar hover dismisses after a clic
 }) => {
   await page.goto("/interviews");
   await page.evaluate(() => {
-    const state = JSON.parse(sessionStorage.getItem("work-demo-v1")!);
+    const state = JSON.parse(sessionStorage.getItem("work-demo-current")!);
     state.records = [];
-    sessionStorage.setItem("work-demo-v1", JSON.stringify(state));
+    sessionStorage.setItem("work-demo-current", JSON.stringify(state));
   });
   await page.reload();
   await enterEditMode(page, "Interviews");
@@ -150,7 +95,7 @@ test("inline STAR fields save together and calendar hover dismisses after a clic
     .poll(() =>
       page.evaluate(() => {
         const record = JSON.parse(
-          sessionStorage.getItem("work-demo-v1")!,
+          sessionStorage.getItem("work-demo-current")!,
         ).records.findLast((record: WorkRecord) => record.kind === "story");
         return [
           record?.title,
@@ -174,6 +119,6 @@ test("inline STAR fields save together and calendar hover dismisses after a clic
   await day.hover();
   await day.click();
   await expect(page.locator("#leetcode-day-details")).toBeVisible();
-  await page.locator("main h1").hover();
+  await page.locator(".page-header h1").hover();
   await expect(page.locator("#leetcode-day-details")).toHaveCount(0);
 });

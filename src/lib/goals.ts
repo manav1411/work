@@ -76,20 +76,5 @@ export function useGoals() {
     await request(`/api/goals/${goal.id}`, { method: "DELETE" });
     setGoals((previous) => previous.filter((item) => item.id !== goal.id));
   };
-  const checkpoint = useCallback(
-    async (goal: Goal, value: number, at: string) => {
-      const result = await request<{ goal: Goal }>(
-        `/api/goals/${goal.id}/checkpoint`,
-        jsonRequest("POST", {
-          value,
-          at,
-          measure: goal.measure,
-          scope: goal.scope,
-        }),
-      );
-      if (current.current === scope) put(result.goal);
-    },
-    [scope, put],
-  );
-  return { goals, loading, error, refresh, save, remove, checkpoint };
+  return { goals, loading, error, refresh, save, remove };
 }

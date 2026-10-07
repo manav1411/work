@@ -31,24 +31,6 @@ export const milestoneSchema = z
     completedAt: z.string().datetime().nullable(),
   })
   .strict();
-export const checkpointSchema = z
-  .object({
-    value: z.number().finite().min(0).max(1_000_000_000),
-    at: z.string().datetime(),
-    unit: z.string().max(80).optional(),
-    measure: z
-      .enum([
-        "completion",
-        "manual",
-        "milestones",
-        "curriculum",
-        "problems",
-        "leetcode",
-      ])
-      .optional(),
-    scope: z.string().max(120).optional(),
-  })
-  .strict();
 export const goalFields = z
   .object({
     title: z.string().trim().min(1).max(240),
@@ -56,20 +38,8 @@ export const goalFields = z
     startDate: date.default(""),
     sourceUrl: destination.default(""),
     directionId: z.string().max(120).default(""),
-    measure: z
-      .enum([
-        "completion",
-        "manual",
-        "milestones",
-        "curriculum",
-        "problems",
-        "leetcode",
-      ])
-      .default("completion"),
-    scope: z.string().max(120).default(""),
+    measure: z.enum(["completion", "leetcode"]).default("completion"),
     target: z.number().finite().positive().max(1_000_000_000).default(1),
-    value: z.number().finite().min(0).max(1_000_000_000).default(0),
-    unit: z.string().max(80).default(""),
     milestones: z.array(milestoneSchema).max(100).default([]),
     status: z.enum(["active", "completed"]).default("active"),
     completedAt: z.string().datetime().nullable().default(null),
@@ -89,14 +59,12 @@ export const goalInputSchema = goalFields
       value.milestones.length,
     "Milestone IDs must be unique.",
   );
-export const goalBackupSchema = goalFields
+export const goalSchema = goalFields
   .extend({
     id: z.string().uuid(),
     version: z.number().int().positive(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
-    checkpoints: z.array(checkpointSchema).max(1000),
-    deletedAt: z.string().datetime().nullable(),
   })
   .strict()
   .refine(
@@ -113,7 +81,7 @@ export const goalBackupSchema = goalFields
     "Milestone IDs must be unique.",
   );
 export type GoalInput = z.infer<typeof goalFields>;
-export type Goal = z.infer<typeof goalBackupSchema>;
+export type Goal = z.infer<typeof goalSchema>;
 export type Milestone = z.infer<typeof milestoneSchema>;
 export const EMPTY_GOAL: GoalInput = {
   title: "",
@@ -122,10 +90,7 @@ export const EMPTY_GOAL: GoalInput = {
   sourceUrl: "",
   directionId: "",
   measure: "completion",
-  scope: "",
   target: 1,
-  value: 0,
-  unit: "",
   milestones: [],
   status: "active",
   completedAt: null,
@@ -138,62 +103,20 @@ export function newGoal(input: GoalInput): Goal {
     version: 1,
     createdAt: at,
     updatedAt: at,
-    deletedAt: null,
-    checkpoints:
-      input.measure === "manual"
-        ? [
-            {
-              value: input.value,
-              at,
-              unit: input.unit,
-              measure: input.measure,
-              scope: input.scope,
-            },
-          ]
-        : [],
   };
 }
 export function goalProgress(goal: Goal, observedValue?: number) {
   const value =
-    goal.measure === "milestones"
-      ? goal.milestones.filter((item) => item.done).length
-      : goal.measure === "completion"
-        ? goal.status === "completed"
-          ? 1
-          : 0
-        : (observedValue ?? goal.value);
-  const target =
-    goal.measure === "milestones"
-      ? Math.max(1, goal.milestones.length)
-      : goal.measure === "completion"
+    goal.measure === "completion"
+      ? goal.status === "completed"
         ? 1
-        : goal.target;
+        : 0
+      : (observedValue ?? 0);
+  const target = goal.measure === "completion" ? 1 : goal.target;
   return {
     value,
     target,
     percent: Math.min(100, Math.max(0, (value / target) * 100)),
     complete: goal.status === "completed" || value >= target,
   };
-}
-
-export function sourceCheckpointHistory(
-  goal: Goal,
-  input: Pick<z.infer<typeof checkpointSchema>, "value" | "at">,
-): Goal["checkpoints"] | null {
-  const sameSource = (point: Goal["checkpoints"][number]) =>
-    (point.measure ?? goal.measure) === goal.measure &&
-    (point.scope ?? goal.scope) === goal.scope;
-  const last = goal.checkpoints.slice().reverse().find(sameSource);
-  if (
-    goal.status === "completed" ||
-    goal.value === input.value ||
-    (last && last.at > input.at)
-  )
-    return null;
-  return [
-    ...goal.checkpoints.filter(
-      (point) => !(sameSource(point) && point.at === input.at),
-    ),
-    { ...input, unit: goal.unit, measure: goal.measure, scope: goal.scope },
-  ].slice(-1000);
 }

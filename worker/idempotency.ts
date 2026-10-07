@@ -9,7 +9,7 @@ interface SavedRequest {
 }
 interface SavedReferences {
   field: "record" | "records";
-  refs: { id: string; version: number }[];
+  refs: { id: string }[];
 }
 function encodeResponse(response: unknown): string {
   if (!response || typeof response !== "object")
@@ -24,10 +24,13 @@ function encodeResponse(response: unknown): string {
       field,
       refs: records.map((record) => ({
         id: record.id,
-        version: record.version,
       })),
     } satisfies SavedReferences;
     delete value[field];
+  }
+  if (value.goal && typeof value.goal === "object") {
+    value.$workGoal = (value.goal as { id: string }).id;
+    delete value.goal;
   }
   return JSON.stringify(value);
 }
@@ -37,11 +40,38 @@ async function decodeResponse(
   response: string,
 ): Promise<unknown> {
   const value = JSON.parse(response) as Record<string, unknown>;
+  if (typeof value.$workGoal === "string") {
+    const row = await db
+      .prepare(
+        "SELECT payload,version,created_at,updated_at FROM goals WHERE id=? AND owner_id=?",
+      )
+      .bind(value.$workGoal, owner)
+      .first<{
+        payload: string;
+        version: number;
+        created_at: string;
+        updated_at: string;
+      }>();
+    if (!row)
+      throw new ApiError(
+        409,
+        "IDEMPOTENCY_GOAL_REMOVED",
+        "This completed request's goal was deleted.",
+      );
+    value.goal = {
+      ...JSON.parse(row.payload),
+      id: value.$workGoal,
+      version: row.version,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+    delete value.$workGoal;
+  }
   const references = value.$workRecords as SavedReferences | undefined;
   if (!references) return value;
   const rows = await db
     .prepare(
-      `SELECT r.id,r.owner_id,r.kind,v.title,v.body,v.tags,v.links,v.data,v.version,r.created_at,v.created_at AS updated_at,v.deleted_at FROM records r JOIN record_revisions v ON v.record_id=r.id AND v.owner_id=r.owner_id JOIN json_each(?) refs ON r.id=json_extract(refs.value,'$.id') AND v.version=json_extract(refs.value,'$.version') WHERE r.owner_id=?`,
+      "SELECT r.* FROM records r JOIN json_each(?) refs ON r.id=json_extract(refs.value,'$.id') WHERE r.owner_id=?",
     )
     .bind(JSON.stringify(references.refs), owner)
     .all<RecordRow>();

@@ -1,4 +1,4 @@
-import type { Attachment, RecordRevision } from "../../shared/model";
+import type { Attachment } from "../../shared/model";
 
 export class ApiError extends Error {
   status: number;
@@ -12,6 +12,11 @@ export class ApiError extends Error {
 }
 
 export type ApiAdapter = (path: string, init?: RequestInit) => Promise<unknown>;
+let workspaceEpoch = "";
+export function setWorkspaceEpoch(epoch: string) {
+  workspaceEpoch = epoch;
+}
+
 let adapter: ApiAdapter | null = null;
 let fileResolver: ((id: string) => Promise<string>) | null = null;
 
@@ -29,6 +34,7 @@ export async function request<T>(
 ): Promise<T> {
   if (adapter) return (await adapter(path, init)) as T;
   const headers = new Headers(init.headers);
+  if (workspaceEpoch) headers.set("X-Workspace-Epoch", workspaceEpoch);
   if (
     init.body &&
     !(init.body instanceof FormData) &&
@@ -95,16 +101,6 @@ export async function removeAttachment(id: string): Promise<void> {
   await request(`/api/attachments/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
-}
-
-export async function getRevisions(
-  recordId: string,
-): Promise<RecordRevision[]> {
-  return (
-    await request<{ revisions: RecordRevision[] }>(
-      `/api/records/${encodeURIComponent(recordId)}/revisions`,
-    )
-  ).revisions;
 }
 
 export async function getAttachmentUrl(id: string): Promise<string> {

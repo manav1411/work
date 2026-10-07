@@ -22,8 +22,6 @@ export type AutosavePersistResult<T> = {
   offline?: boolean;
 };
 
-type LegacyDraft<T> = { value: T; version?: number };
-
 export type UseAutosaveOptions<T> = {
   initial: T;
   version?: number;
@@ -33,7 +31,6 @@ export type UseAutosaveOptions<T> = {
     value: T,
     expectedVersion?: number,
   ) => Promise<AutosavePersistResult<T> | void>;
-  decodeLegacy?: (raw: unknown) => LegacyDraft<T> | undefined;
   refresh?: () => Promise<void>;
   validate?: (value: T) => string | null;
   merge?: (base: T, local: T, remote: T) => { value: T; conflict: boolean };
@@ -122,29 +119,9 @@ export function mergeAutosaveValues<T>(
   return { value: merged.value as T, conflict: merged.conflicts };
 }
 
-function defaultLegacy<T>(raw: unknown): LegacyDraft<T> | undefined {
-  if (isPlainObject(raw) && Object.hasOwn(raw, "value")) {
-    return {
-      value: raw.value as T,
-      ...(typeof raw.version === "number" ? { version: raw.version } : {}),
-    };
-  }
-  return undefined;
-}
-
-function readStored<T>(
-  key: string,
-  decodeLegacy: (raw: unknown) => LegacyDraft<T> | undefined,
-): AutosaveEnvelope<T> | undefined {
+function readStored<T>(key: string): AutosaveEnvelope<T> | undefined {
   try {
-    const rawText = localStorage.getItem(key);
-    if (rawText === null) return undefined;
-    let raw: unknown;
-    try {
-      raw = JSON.parse(rawText);
-    } catch {
-      raw = rawText;
-    }
+    const raw = JSON.parse(localStorage.getItem(key) ?? "null");
     if (
       isPlainObject(raw) &&
       raw.__autosave === 1 &&
@@ -152,17 +129,10 @@ function readStored<T>(
       Object.hasOwn(raw, "baseValue")
     )
       return raw as AutosaveEnvelope<T>;
-    const legacy = decodeLegacy(raw);
-    if (!legacy) return undefined;
-    return {
-      __autosave: 1,
-      value: legacy.value,
-      baseValue: undefined as T,
-      ...(legacy.version !== undefined ? { baseVersion: legacy.version } : {}),
-    };
   } catch {
-    return undefined;
+    /* Invalid device drafts are discarded. */
   }
+  return undefined;
 }
 
 function store<T>(key: string, envelope: AutosaveEnvelope<T>) {
@@ -180,54 +150,6 @@ function clearStored(key: string) {
     localStorage.removeItem(key);
   } catch {
     // Storage is a recovery aid; removing it must not interrupt the editor.
-  }
-}
-
-export type AutosaveRecoveryCopy<T = unknown> = {
-  savedAt: string;
-  reason: "kept-local" | "used-saved";
-  value: T;
-  baseValue: T;
-  baseVersion?: number;
-};
-
-function archiveKey(storageKey: string) {
-  return `work:autosave-recovery:${encodeURIComponent(storageKey)}`;
-}
-
-/** Read up to three account-scoped copies displaced by a conflict choice. */
-export function readAutosaveArchive<T = unknown>(
-  storageKey: string,
-): AutosaveRecoveryCopy<T>[] {
-  try {
-    const archive = JSON.parse(
-      localStorage.getItem(archiveKey(storageKey)) ?? "[]",
-    );
-    return Array.isArray(archive) ? (archive as AutosaveRecoveryCopy<T>[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-export function archiveAutosaveCopy<T>(
-  storageKey: string,
-  copy: AutosaveRecoveryCopy<T>,
-) {
-  try {
-    localStorage.setItem(
-      archiveKey(storageKey),
-      JSON.stringify([...readAutosaveArchive<T>(storageKey), copy].slice(-3)),
-    );
-  } catch {
-    // Archival must not prevent a user from resolving a conflict.
-  }
-}
-
-export function clearAutosaveArchive(storageKey: string) {
-  try {
-    localStorage.removeItem(archiveKey(storageKey));
-  } catch {
-    // Recovery copies are optional when browser storage is restricted.
   }
 }
 
@@ -252,13 +174,15 @@ function retryable(failure: unknown) {
 }
 
 function failureMessage(failure: unknown) {
-  const issues = (failure as { issues?: { message?: string }[] } | null)?.issues;
+  const issues = (failure as { issues?: { message?: string }[] } | null)
+    ?.issues;
   if (Array.isArray(issues) && typeof issues[0]?.message === "string")
     return issues[0].message;
   return failure instanceof Error ? failure.message : "Couldn’t save this yet.";
 }
 
 const activeFlushers = new Set<() => Promise<void>>();
+const unsavedChecks = new Set<() => boolean>();
 const activeStorageKeys = new Map<string, number>();
 let globalListeners = false;
 let retryInterval: ReturnType<typeof setInterval> | undefined;
@@ -296,8 +220,14 @@ function removeGlobalListeners() {
 }
 
 /** Best-effort flush used before account changes and page teardown. */
-export async function flushAutosaves(): Promise<void> {
-  await Promise.allSettled([...activeFlushers].map((flush) => flush()));
+export async function flushAutosaves(): Promise<boolean> {
+  const results = await Promise.allSettled(
+    [...activeFlushers].map((flush) => flush()),
+  );
+  return (
+    results.every((result) => result.status === "fulfilled") &&
+    [...unsavedChecks].every((check) => !check())
+  );
 }
 
 export function isAutosaveActive(storageKey: string) {
@@ -334,12 +264,6 @@ function initialDraft<T>(
     };
   }
 
-  if (stored.baseValue === undefined) {
-    // Old drafts did not record a baseline. Resume automatically; the old
-    // value alone is not evidence that another session changed the record.
-    return { value: stored.value, baseline: initial, version, conflict: false };
-  }
-
   const mergeBase =
     stored.conflict && stored.conflictServerValue !== undefined
       ? stored.conflictServerValue
@@ -364,14 +288,13 @@ export function useAutosave<T>(
     storageKey,
     enabled = true,
     persist,
-    decodeLegacy,
     refresh,
     validate,
     merge = mergeAutosaveValues,
     pending = false,
   } = options;
   const [storedAtMount] = useState<AutosaveEnvelope<T> | undefined>(() =>
-    readStored<T>(storageKey, decodeLegacy ?? defaultLegacy<T>),
+    readStored<T>(storageKey),
   );
   const storedDraft = useRef(storedAtMount);
   const previousStorageKey = useRef(storageKey);
@@ -397,7 +320,6 @@ export function useAutosave<T>(
   const initialRef = useRef(initial);
   const callback = useRef(persist);
   const validateRef = useRef(validate);
-  const decodeLegacyRef = useRef(decodeLegacy);
   const mergeRef = useRef(merge);
   const refreshRef = useRef(refresh);
   const keyRef = useRef(storageKey);
@@ -423,7 +345,6 @@ export function useAutosave<T>(
 
   callback.current = persist;
   validateRef.current = validate;
-  decodeLegacyRef.current = decodeLegacy;
   mergeRef.current = merge;
   refreshRef.current = refresh;
   initialRef.current = initial;
@@ -644,13 +565,6 @@ export function useAutosave<T>(
   flushRef.current = flush;
 
   const keepLocal = useCallback(async () => {
-    archiveAutosaveCopy<T>(keyRef.current, {
-      savedAt: new Date().toISOString(),
-      reason: "kept-local",
-      value: remoteValue.current,
-      baseValue: baseline.current,
-      baseVersion: remoteVersion.current,
-    });
     baseline.current = initialRef.current;
     expectedVersion.current = remoteVersion.current;
     savedValueRef.current = remoteValue.current;
@@ -665,13 +579,6 @@ export function useAutosave<T>(
 
   const useSaved = useCallback(() => {
     const next = initialRef.current;
-    archiveAutosaveCopy<T>(keyRef.current, {
-      savedAt: new Date().toISOString(),
-      reason: "used-saved",
-      value: latest.current,
-      baseValue: baseline.current,
-      baseVersion: expectedVersion.current,
-    });
     baseline.current = next;
     savedValueRef.current = next;
     remoteValue.current = next;
@@ -694,10 +601,7 @@ export function useAutosave<T>(
     stagedRemote.current = null;
     clearTimeout(timer.current);
     clearTimeout(retryTimer.current);
-    const stored = readStored<T>(
-      storageKey,
-      decodeLegacyRef.current ?? defaultLegacy<T>,
-    );
+    const stored = readStored<T>(storageKey);
     storedDraft.current = stored;
     const next = initialDraft(
       initialRef.current,
@@ -900,6 +804,12 @@ export function useAutosave<T>(
 
   useEffect(() => {
     const registeredFlush = async () => flushRef.current();
+    const unsaved = () =>
+      dirty.current ||
+      conflictRef.current ||
+      pendingRef.current ||
+      !!errorRef.current;
+    unsavedChecks.add(unsaved);
     activeFlushers.add(registeredFlush);
     installGlobalListeners();
     return () => {
@@ -907,6 +817,7 @@ export function useAutosave<T>(
       clearTimeout(retryTimer.current);
       if (canPersist.current) void flushRef.current();
       activeFlushers.delete(registeredFlush);
+      unsavedChecks.delete(unsaved);
       removeGlobalListeners();
     };
   }, []);

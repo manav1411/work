@@ -9,11 +9,7 @@ export interface DocumentLink {
 function getDocument(records: WorkRecord[], type: DocumentType): DocumentLink {
   const candidates = records
     .filter(
-      (record) =>
-        record.kind === "asset" &&
-        !record.deletedAt &&
-        (field(record, "type") === type ||
-          (type === "letter" && field(record, "type") === "cover-letter")),
+      (record) => record.kind === "asset" && field(record, "type") === type,
     )
     .sort(
       (a, b) =>
@@ -21,8 +17,7 @@ function getDocument(records: WorkRecord[], type: DocumentType): DocumentLink {
     );
   const record =
     candidates.find((item) => item.data.latexProject) ||
-    candidates.find((item) => field(item, "primaryAttachmentId")) ||
-    candidates[0];
+    candidates.find((item) => field(item, "primaryAttachmentId"));
   return record ? { record } : {};
 }
 
