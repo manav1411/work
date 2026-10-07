@@ -200,6 +200,7 @@ export default function LatexDocumentPanel({
     if (
       !loaded ||
       !editing ||
+      serverProject ||
       project ||
       error ||
       record.data.nativeDocument !== true
@@ -215,11 +216,22 @@ export default function LatexDocumentPanel({
   }, [
     loaded,
     editing,
+    serverProject,
     project,
     error,
     record.version,
     record.data.nativeDocument,
   ]);
+  useEffect(() => {
+    if (
+      loaded &&
+      project?.sourceId === "" &&
+      !hasMainSource(project) &&
+      serverProject &&
+      hasMainSource(serverProject)
+    )
+      autosave.useSaved();
+  }, [loaded, project?.sourceId, serverProject, autosave.useSaved]);
   useEffect(() => {
     const metadata = record.data.latexProject as
       { sourceId?: string } | undefined;

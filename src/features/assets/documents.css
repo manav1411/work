@@ -58,7 +58,7 @@
   margin-top: 0;
 }
 .document-family-content {
-  margin-top: 1.7rem;
+  margin-top: 0.85rem;
   min-width: 0;
   display: grid;
   gap: 1rem;
@@ -305,7 +305,8 @@
   min-height: 320px;
   height: min(72dvh, 760px);
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
   touch-action: pan-x pan-y;
   background: var(--surface-tint);

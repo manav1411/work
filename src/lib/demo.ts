@@ -135,6 +135,61 @@ export function createDemoStore() {
   } catch {
     /* Start a fresh demo. */
   }
+  if (state !== initial) {
+    state.projects ??= {};
+    state.attachments ??= [];
+    state.files ??= {};
+    for (const seedRecord of initial.records) {
+      const seedProject = initial.projects[seedRecord.id];
+      const seedJob = seedProject?.latestJob;
+      const seedFileId = seedJob?.pdfAttachmentId;
+      const seedFile = seedFileId
+        ? initial.attachments.find((file) => file.id === seedFileId)
+        : undefined;
+      const contents = seedFileId ? initial.files[seedFileId] : undefined;
+      const savedRecord = state.records.find(
+        (record) =>
+          record.kind === seedRecord.kind &&
+          record.title === seedRecord.title &&
+          record.data.type === seedRecord.data.type &&
+          record.data.nativeDocument === true,
+      );
+      if (
+        !seedProject ||
+        !seedJob ||
+        !seedFile ||
+        !contents ||
+        !savedRecord ||
+        state.projects[savedRecord.id]
+      )
+        continue;
+
+      const attachmentId = crypto.randomUUID();
+      const attachment = {
+        ...seedFile,
+        id: attachmentId,
+        recordId: savedRecord.id,
+      };
+      const job = { ...seedJob, pdfAttachmentId: attachmentId };
+      state.attachments.push(attachment);
+      state.files[attachmentId] = contents;
+      state.projects[savedRecord.id] = {
+        ...seedProject,
+        latestJob: job,
+        latestSuccessfulJob: job,
+      };
+      savedRecord.data = {
+        ...savedRecord.data,
+        latexProject: seedRecord.data.latexProject,
+        latexJobs: [
+          ...(Array.isArray(savedRecord.data.latexJobs)
+            ? savedRecord.data.latexJobs
+            : []),
+          job,
+        ],
+      };
+    }
+  }
   const persist = () => {
     try {
       sessionStorage.setItem(key, JSON.stringify(state));

@@ -11,8 +11,6 @@ import { Button } from "../../components/ui";
 import "./pdf-text-layer.css";
 GlobalWorkerOptions.workerSrc = workerUrl;
 
-const ZOOM_STOPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 2, 2.5, 3];
-
 function findZoomAnchor(
   container: HTMLElement,
   clientX: number,
@@ -46,12 +44,14 @@ function findZoomAnchor(
   const bounds = canvas?.getBoundingClientRect();
   if (!bounds || !page || !bounds.width || !bounds.height) return undefined;
   const containerBounds = container.getBoundingClientRect();
+  const anchorX = Math.min(bounds.right, Math.max(bounds.left, clientX));
+  const anchorY = Math.min(bounds.bottom, Math.max(bounds.top, clientY));
   return {
     page: Number(page.dataset.pageNumber),
-    xRatio: Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width)),
-    yRatio: Math.min(1, Math.max(0, (clientY - bounds.top) / bounds.height)),
-    viewportX: clientX - containerBounds.left - container.clientLeft,
-    viewportY: clientY - containerBounds.top - container.clientTop,
+    xRatio: (anchorX - bounds.left) / bounds.width,
+    yRatio: (anchorY - bounds.top) / bounds.height,
+    viewportX: anchorX - containerBounds.left - container.clientLeft,
+    viewportY: anchorY - containerBounds.top - container.clientTop,
   };
 }
 
@@ -60,7 +60,6 @@ function PdfPage({
   number,
   zoom = 1,
   fitWidth = 0,
-  fitScale = 1,
   thumbnail = false,
   onPageSizeChange,
 }: {
@@ -68,7 +67,6 @@ function PdfPage({
   number: number;
   zoom?: number;
   fitWidth?: number;
-  fitScale?: number;
   thumbnail?: boolean;
   onPageSizeChange?: (number: number) => void;
 }) {
@@ -101,7 +99,7 @@ function PdfPage({
         const widthScale = availableWidth / base.width;
         const scale = thumbnail
           ? Math.max(0.08, widthScale, host.current.clientHeight / base.height)
-          : Math.max(0.1, fitScale) * zoom;
+          : Math.max(0.1, zoom);
         const viewport = page.getViewport({ scale });
         const ratio = window.devicePixelRatio || 1;
         const element = canvas.current;
@@ -151,7 +149,6 @@ function PdfPage({
     };
   }, [
     document,
-    fitScale,
     fitWidth,
     number,
     thumbnail,
@@ -197,6 +194,7 @@ export default function LatexPdfPreview({
   const [pdf, setPdf] = useState<PDFDocumentProxy>();
   const [error, setError] = useState("");
   const [zoom, setZoom] = useState(1);
+  const [fitToPage, setFitToPage] = useState(true);
   const [renderZoom, setRenderZoom] = useState(1);
   const [fitWidth, setFitWidth] = useState(0);
   const [fitHeight, setFitHeight] = useState(0);
@@ -208,6 +206,7 @@ export default function LatexPdfPreview({
     undefined,
   );
   const zoomRef = useRef(zoom);
+  const fitToPageRef = useRef(fitToPage);
   const renderZoomRef = useRef(renderZoom);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -223,6 +222,7 @@ export default function LatexPdfPreview({
     | undefined
   >(undefined);
   zoomRef.current = zoom;
+  fitToPageRef.current = fitToPage;
   renderZoomRef.current = renderZoom;
 
   const updateDocumentGeometry = useCallback(() => {
@@ -286,13 +286,26 @@ export default function LatexPdfPreview({
   );
 
   const scheduleZoom = useCallback(
-    (value: number, clientX: number, clientY: number) => {
+    (
+      value: number,
+      clientX: number,
+      clientY: number,
+      returnToFit = false,
+    ) => {
       const container = preview.current;
-      const next = Math.min(3, Math.max(0.5, value));
-      if (!container || next === zoomRef.current) return;
+      const next = returnToFit
+        ? Math.max(0.1, value)
+        : Math.min(2, Math.max(0.5, value));
+      if (
+        !container ||
+        (next === zoomRef.current && returnToFit === fitToPageRef.current)
+      )
+        return;
       zoomAnchor.current = findZoomAnchor(container, clientX, clientY);
       zoomRef.current = next;
       setZoom(next);
+      fitToPageRef.current = returnToFit;
+      setFitToPage(returnToFit);
       requestAnimationFrame(() => {
         updateDocumentGeometry();
         restoreZoomAnchor();
@@ -310,9 +323,11 @@ export default function LatexPdfPreview({
     setPdf(undefined);
     setError("");
     setZoom(1);
+    setFitToPage(true);
     setRenderZoom(1);
     setFitScale(0);
     zoomRef.current = 1;
+    fitToPageRef.current = true;
     renderZoomRef.current = 1;
     zoomAnchor.current = undefined;
     if (settleTimer.current) clearTimeout(settleTimer.current);
@@ -385,6 +400,15 @@ export default function LatexPdfPreview({
   }, [fitHeight, fitWidth, pdf, thumbnail]);
 
   useEffect(() => {
+    if (!pdf || thumbnail || !fitToPage || !fitScale) return;
+    zoomRef.current = fitScale;
+    renderZoomRef.current = fitScale;
+    setZoom(fitScale);
+    setRenderZoom(fitScale);
+    requestAnimationFrame(updateDocumentGeometry);
+  }, [fitScale, fitToPage, pdf, thumbnail, updateDocumentGeometry]);
+
+  useEffect(() => {
     const container = preview.current;
     if (!container || thumbnail) return;
     const touchDistance = (touches: TouchList) => {
@@ -417,7 +441,7 @@ export default function LatexPdfPreview({
       const centerX = (event.touches[0].clientX + event.touches[1].clientX) / 2;
       const centerY = (event.touches[0].clientY + event.touches[1].clientY) / 2;
       const next = Math.min(
-        3,
+        2,
         Math.max(
           0.5,
           initial.zoom * Math.pow(distance / initial.distance, 1.2),
@@ -457,7 +481,8 @@ export default function LatexPdfPreview({
     const centerY =
       (preview.current?.getBoundingClientRect().top ?? 0) +
       (preview.current?.clientHeight ?? 0) / 2;
-    const next = zoomStopsForCurrent(zoomRef.current, direction);
+    const next =
+      Math.round((zoomRef.current + direction * 0.25) * 100) / 100;
     scheduleZoom(next, centerX, centerY);
   };
 
@@ -466,19 +491,12 @@ export default function LatexPdfPreview({
     if (!container) return;
     const bounds = container.getBoundingClientRect();
     scheduleZoom(
-      1,
+      fitScale,
       bounds.left + container.clientWidth / 2,
       bounds.top + container.clientHeight / 2,
+      true,
     );
   };
-
-  function zoomStopsForCurrent(current: number, direction: -1 | 1) {
-    if (direction > 0)
-      return ZOOM_STOPS.find((stop) => stop > current + 0.001) ?? 3;
-    return (
-      [...ZOOM_STOPS].reverse().find((stop) => stop < current - 0.001) ?? 0.5
-    );
-  }
 
   useEffect(() => {
     requestAnimationFrame(updateDocumentGeometry);
@@ -511,20 +529,20 @@ export default function LatexPdfPreview({
                   className="icon-button"
                   aria-label="Zoom out"
                   title="Zoom out"
-                  disabled={zoom <= 0.5}
+                  disabled={zoomRef.current <= 0.5}
                   onClick={() => zoomByStep(-1)}
                 >
                   <Minus size={16} />
                 </Button>
                 <output aria-live="polite">
-                  {zoom === 1 ? "Fit" : `${Math.round(fitScale * zoom * 100)}%`}
+                  {fitToPage ? "Fit" : `${Math.round(zoom * 100)}%`}
                 </output>
                 <Button
                   variant="ghost"
                   className="icon-button"
                   aria-label="Zoom in"
                   title="Zoom in"
-                  disabled={zoom >= 3}
+                  disabled={zoomRef.current >= 2}
                   onClick={() => zoomByStep(1)}
                 >
                   <Plus size={16} />
@@ -534,7 +552,7 @@ export default function LatexPdfPreview({
                   className="icon-button pdf-zoom-fit"
                   aria-label="Fit to page"
                   title="Fit to page"
-                  disabled={zoom === 1}
+                  disabled={fitToPage}
                   onClick={fitPage}
                 >
                   <RotateCcw size={15} />
@@ -557,7 +575,6 @@ export default function LatexPdfPreview({
                     number={index + 1}
                     zoom={thumbnail ? 1 : renderZoom}
                     fitWidth={thumbnail ? 0 : fitWidth}
-                    fitScale={thumbnail ? 1 : fitScale}
                     thumbnail={thumbnail}
                     onPageSizeChange={thumbnail ? undefined : onPageSizeChange}
                   />
