@@ -15,10 +15,10 @@ import {
 import {
   Button,
   Card,
+  CompactSelect,
   Field,
   Input,
   PageHeader,
-  Select,
   SectionTabs,
 } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
@@ -414,7 +414,7 @@ function DirectionCard({
     <Card className="stack direction-card">
       <div className="section-heading">
         {editing ? (
-          <Select
+          <CompactSelect
             aria-label="Direction status"
             value={form.status}
             onChange={(event) => set({ status: event.target.value })}
@@ -422,7 +422,7 @@ function DirectionCard({
             {STATUSES.map((status) => (
               <option key={status}>{status}</option>
             ))}
-          </Select>
+          </CompactSelect>
         ) : (
           <span className="badge">{form.status}</span>
         )}

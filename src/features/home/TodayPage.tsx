@@ -36,6 +36,7 @@ export function TodayPage() {
     model.goals,
     preferences.timezone,
     today,
+    (goal) => observedProgress(goal, learning),
   );
   const visible = windowItems(items, start, end);
   const goalSpans = model.goals.filter(

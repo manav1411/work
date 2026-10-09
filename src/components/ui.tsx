@@ -147,7 +147,15 @@ export function Field({
     )
       return child;
     if (
-      ![Input, Textarea, Select, "input", "textarea", "select"].includes(
+      ![
+        Input,
+        Textarea,
+        Select,
+        CompactSelect,
+        "input",
+        "textarea",
+        "select",
+      ].includes(
         child.type as typeof Input,
       )
     )
@@ -213,6 +221,42 @@ export function Select({
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { contentClassName?: string }) {
   return <ThemedSelect className={className} {...props} />;
+}
+function selectOptionLabels(children: ReactNode): ReactNode[] {
+  return Children.toArray(children).flatMap((child) => {
+    if (!isValidElement<{ children?: ReactNode }>(child)) return [];
+    return child.type === "option"
+      ? [child.props.children]
+      : selectOptionLabels(child.props.children);
+  });
+}
+export function CompactSelect({
+  children,
+  className = "",
+  contentClassName = "",
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & { contentClassName?: string }) {
+  const labels = selectOptionLabels(children);
+  return (
+    <span className={`compact-select ${className}`.trim()}>
+      {labels.map((label, index) => (
+        <span
+          className="compact-select-width"
+          aria-hidden="true"
+          key={index}
+        >
+          {label}
+        </span>
+      ))}
+      <Select
+        {...props}
+        className="compact-select-trigger"
+        contentClassName={`compact-select-menu ${contentClassName}`.trim()}
+      >
+        {children}
+      </Select>
+    </span>
+  );
 }
 export function EmptyState({
   title,

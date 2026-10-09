@@ -23,6 +23,7 @@ export function timelineItems(
   goals: Goal[],
   timezone: string,
   today = localDate(new Date(), timezone),
+  observed?: (goal: Goal) => number | undefined,
 ): TimelineItem[] {
   const result: TimelineItem[] = [];
   const add = (item: TimelineItem) => {
@@ -89,15 +90,16 @@ export function timelineItems(
     }
   }
   for (const goal of goals) {
+    const complete = goalProgress(goal, observed?.(goal)).complete;
     if (goal.targetDate)
       add({
         id: `${goal.id}:target`,
         date: goal.targetDate,
         title: goal.title,
-        detail: goalProgress(goal).complete ? "Complete" : "Target",
+        detail: complete ? "Complete" : "Target",
         kind: "milestone",
         goal,
-        completed: goalProgress(goal).complete,
+        completed: complete,
       });
     for (const milestone of goal.milestones) {
       const date =

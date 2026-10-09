@@ -8,10 +8,17 @@ import {
   goalProgress,
 } from "../../../shared/goals";
 import { type WorkRecord, niceDate } from "../../../shared/model";
-import { Button, Card, Field, Input, Select } from "../../components/ui";
+import {
+  Button,
+  Card,
+  CompactSelect,
+  Field,
+  Input,
+} from "../../components/ui";
 import { ApiError } from "../../lib/api";
 import { useEditMode } from "../../lib/edit-mode";
 import { useAutosave } from "../../lib/autosave";
+import { roadmapTotalProblems } from "../../content/problems";
 export function goalInput(goal: Goal): GoalInput {
   return Object.fromEntries(
     Object.keys(EMPTY_GOAL).map((key) => [
@@ -124,7 +131,7 @@ export function GoalEditor({
       {editing ? (
         <>
           <Field label="Direction">
-            <Select
+            <CompactSelect
               value={form.directionId}
               onChange={(event) => set({ directionId: event.target.value })}
             >
@@ -134,7 +141,7 @@ export function GoalEditor({
                   {record.title}
                 </option>
               ))}
-            </Select>
+            </CompactSelect>
           </Field>
           <div className="form-grid">
             <Field label="Start date">
@@ -153,19 +160,27 @@ export function GoalEditor({
             </Field>
           </div>
           <Field label="Progress measure">
-            <Select
+            <CompactSelect
               value={form.measure}
               onChange={(event) => {
                 const measure = event.target.value as GoalInput["measure"];
                 set({
                   measure,
-                  target: measure === "completion" ? 1 : form.target,
+                  target:
+                    measure === "completion"
+                      ? 1
+                      : measure === "neetcode150"
+                        ? roadmapTotalProblems
+                        : form.measure === "leetcode"
+                          ? form.target
+                          : 1,
                 });
               }}
             >
               <option value="completion">Complete / incomplete</option>
-              <option value="leetcode">LeetCode problems</option>
-            </Select>
+              <option value="leetcode">Total LeetCode problems solved</option>
+              <option value="neetcode150">NeetCode 150</option>
+            </CompactSelect>
           </Field>
           {form.measure === "leetcode" && (
             <Field label="Target">
@@ -197,11 +212,19 @@ export function GoalEditor({
           ? progress.complete
             ? "Complete"
             : "In progress"
-          : `${progress.value} / ${progress.target} problems`}
+          : form.measure === "neetcode150"
+            ? `${progress.value} / ${progress.target} NeetCode problems`
+            : `${progress.value} / ${progress.target} LeetCode problems`}
       </p>
       {form.measure === "leetcode" && (
         <small className="muted">
           Total unique LeetCode problems solved: {progress.value}. Target:{" "}
+          {progress.target}.
+        </small>
+      )}
+      {form.measure === "neetcode150" && (
+        <small className="muted">
+          Problems solved from the NeetCode 150 roadmap: {progress.value} of{" "}
           {progress.target}.
         </small>
       )}

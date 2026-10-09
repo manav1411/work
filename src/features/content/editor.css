@@ -121,6 +121,7 @@
   outline: 0;
   line-height: 1.8;
   font-size: 15px;
+  font-synthesis: style;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }

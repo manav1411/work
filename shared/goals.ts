@@ -38,7 +38,9 @@ export const goalFields = z
     startDate: date.default(""),
     sourceUrl: destination.default(""),
     directionId: z.string().max(120).default(""),
-    measure: z.enum(["completion", "leetcode"]).default("completion"),
+    measure: z
+      .enum(["completion", "leetcode", "neetcode150"])
+      .default("completion"),
     target: z.number().finite().positive().max(1_000_000_000).default(1),
     milestones: z.array(milestoneSchema).max(100).default([]),
     status: z.enum(["active", "completed"]).default("active"),

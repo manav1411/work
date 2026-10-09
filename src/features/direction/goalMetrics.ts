@@ -1,5 +1,8 @@
 import type { Goal } from "../../../shared/goals";
+import { roadmapTopics } from "../../content/problems";
 import type { useLearningData } from "../learn/useLearningData";
+
+const neetcode150Problems = roadmapTopics.flatMap((topic) => topic.problems);
 
 export function observedProgress(
   goal: Goal,
@@ -9,4 +12,8 @@ export function observedProgress(
   if (goal.measure === "leetcode")
     return learning.stats.solved.find((item) => item.difficulty === "All")
       ?.count;
+  if (goal.measure === "neetcode150")
+    return neetcode150Problems.filter((problem) =>
+      learning.solvedSlugs.has(problem.slug),
+    ).length;
 }
