@@ -1,8 +1,32 @@
 import { useEffect, useRef } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, basicSetup } from "codemirror";
-import { StreamLanguage } from "@codemirror/language";
+import {
+  HighlightStyle,
+  StreamLanguage,
+  syntaxHighlighting,
+} from "@codemirror/language";
 import { stex } from "@codemirror/legacy-modes/mode/stex";
+import { tags } from "@lezer/highlight";
+
+const latexHighlightStyle = HighlightStyle.define([
+  {
+    tag: [tags.tagName, tags.keyword, tags.macroName],
+    color: "var(--link-colour)",
+  },
+  { tag: [tags.atom, tags.number, tags.bool], color: "var(--latex-atom)" },
+  {
+    tag: [tags.string, tags.special(tags.string)],
+    color: "var(--latex-string)",
+  },
+  {
+    tag: [tags.standard(tags.variableName), tags.special(tags.variableName)],
+    color: "var(--latex-atom)",
+  },
+  { tag: tags.bracket, color: "var(--ink)" },
+  { tag: tags.comment, color: "var(--muted)" },
+  { tag: tags.invalid, color: "var(--latex-error)" },
+]);
 
 export default function LatexSourceEditor({
   value,
@@ -34,14 +58,25 @@ export default function LatexSourceEditor({
       },
       ".cm-gutters": {
         backgroundColor: "var(--surface-tint)",
-        color: "var(--muted)",
+        color: "color-mix(in srgb, var(--muted) 85%, var(--ink))",
         borderColor: "var(--line)",
       },
       ".cm-content": { caretColor: "var(--ink)" },
+      ".cm-activeLine": {
+        backgroundColor: "color-mix(in srgb, var(--ink) 3%, var(--paper))",
+      },
+      ".cm-activeLineGutter": {
+        backgroundColor: "var(--surface-tint)",
+        color: "var(--ink)",
+      },
+      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+        backgroundColor: "color-mix(in srgb, var(--blue) 15%, var(--paper))",
+      },
     });
     const extensions = [
       basicSetup,
       StreamLanguage.define(stex),
+      syntaxHighlighting(latexHighlightStyle),
       EditorView.lineWrapping,
       theme,
     ];

@@ -17,6 +17,7 @@ import { Button, Select } from "../../components/ui";
 import { ApiError, jsonRequest, request } from "../../lib/api";
 import { useAutosave } from "../../lib/autosave";
 import { mergeLatexProjects } from "../../lib/latex-autosave";
+import { latexDiagnosticMessage } from "../../lib/latex-diagnostics";
 import { useEditMode } from "../../lib/edit-mode";
 import { useWorkspace } from "../../lib/workspace";
 import { errorMessage } from "../search/domain";
@@ -538,10 +539,11 @@ export default function LatexDocumentPanel({
                     setLine(diagnostic.line);
                   }}
                 >
-                  {diagnostic.file}:{diagnostic.line} · {diagnostic.message}
+                  {diagnostic.file}:{diagnostic.line} ·{" "}
+                  {latexDiagnosticMessage(diagnostic, job.log)}
                 </Button>
               ) : (
-                <span>{diagnostic.message}</span>
+                <span>{latexDiagnosticMessage(diagnostic, job.log)}</span>
               )}
             </div>
           ))}

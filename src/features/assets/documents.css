@@ -212,9 +212,18 @@
   flex: 1;
 }
 .latex-document-panel {
+  --latex-atom: #6b3fb5;
+  --latex-string: #187250;
+  --latex-error: #b42318;
   display: grid;
   gap: 0.85rem;
   min-width: 0;
+}
+
+[data-theme="dark"] .latex-document-panel {
+  --latex-atom: #ccb3ff;
+  --latex-string: #8ed8b5;
+  --latex-error: #ff9e98;
 }
 .latex-toolbar {
   display: flex;
