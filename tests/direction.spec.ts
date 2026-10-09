@@ -160,6 +160,20 @@ test("goals start unfocused, show all details when selected, and dismiss on outs
   await expect(picker.getByRole("tab")).toHaveCount(3, { timeout: 15000 });
   await expect(page.getByRole("tabpanel")).toHaveCount(0);
   await expect(page.locator(".direction-timeline")).not.toContainText("Today");
+  await expect(
+    page.locator('.direction-timeline-kind[data-kind="goal"]'),
+  ).toHaveCount(2);
+  await expect(
+    page.locator('.direction-timeline-kind[data-kind="action"]'),
+  ).toHaveCount(3);
+  await expect(
+    page.locator('.direction-timeline-kind[data-kind="task"]'),
+  ).toHaveCount(1);
+  await expect(
+    page
+      .locator(".direction-timeline-item")
+      .filter({ hasText: "Deploy the prototype" }),
+  ).toContainText("Task");
   await expect(picker.locator('[aria-selected="true"]')).toHaveCount(0);
   const heights = await picker
     .getByRole("tab")

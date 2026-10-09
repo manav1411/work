@@ -442,9 +442,34 @@
 .direction-timeline-item > span {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.direction-timeline-kind {
+  --timeline-kind: var(--aqua);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--timeline-kind) 16%, var(--paper));
+  color: var(--ink);
+  font-size: 10px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+.direction-timeline-kind[data-kind="action"] {
+  --timeline-kind: var(--blue);
+}
+.direction-timeline-kind[data-kind="task"] {
+  --timeline-kind: var(--orange);
 }
 .direction-timeline-item strong {
   display: block;
+  flex: 1 1 160px;
   font-size: 13px;
   overflow-wrap: anywhere;
 }

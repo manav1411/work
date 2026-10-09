@@ -7,7 +7,15 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
-import { ArrowUpRight, Check, ChevronRight, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  ListChecks,
+  Plus,
+  Target,
+  Trash2,
+} from "lucide-react";
 import {
   goalProgress,
   EMPTY_GOAL,
@@ -112,6 +120,7 @@ export function DirectionPage() {
         done: goalProgress(goal, observedProgress(goal, learning), today)
           .complete,
         goal: true,
+        kind: "action" as const,
       })),
     ...model.goals.flatMap((goal) =>
       goal.milestones
@@ -123,6 +132,7 @@ export function DirectionPage() {
           title: item.title,
           done: item.done,
           goal: true,
+          kind: "task" as const,
         })),
     ),
     ...directions
@@ -136,6 +146,7 @@ export function DirectionPage() {
         title: record.title,
         done: ["Achieved", "Completed"].includes(field(record, "status")),
         goal: false,
+        kind: "goal" as const,
       })),
   ].sort((a, b) => a.date.localeCompare(b.date));
   const groups = new Map<string, typeof entries>();
@@ -368,6 +379,23 @@ export function DirectionPage() {
                   >
                     <time>{niceDate(entry.date)}</time>
                     <span>
+                      <span
+                        className="direction-timeline-kind"
+                        data-kind={entry.kind}
+                      >
+                        {entry.kind === "goal" ? (
+                          <Target size={12} aria-hidden="true" />
+                        ) : entry.kind === "action" ? (
+                          <ArrowUpRight size={12} aria-hidden="true" />
+                        ) : (
+                          <ListChecks size={12} aria-hidden="true" />
+                        )}
+                        {entry.kind === "goal"
+                          ? "Goal"
+                          : entry.kind === "action"
+                            ? "Action"
+                            : "Task"}
+                      </span>
                       <strong>{entry.title}</strong>
                     </span>
                     {entry.done ? (
