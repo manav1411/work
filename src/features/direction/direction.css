@@ -71,6 +71,15 @@
 .goal-inline-card {
   height: 100%;
 }
+.direction-date-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+.direction-date-fields > .field {
+  width: max-content;
+  max-width: 100%;
+}
 .direction-card .record-title-button {
   font-family: var(--font-heading);
   font-size: 22px;

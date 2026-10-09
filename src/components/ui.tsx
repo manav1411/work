@@ -217,10 +217,9 @@ export const Textarea = forwardRef<
   );
 });
 export function Select({
-  className = "",
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { contentClassName?: string }) {
-  return <ThemedSelect className={className} {...props} />;
+  return <CompactSelect {...props} />;
 }
 function selectOptionLabels(children: ReactNode): ReactNode[] {
   return Children.toArray(children).flatMap((child) => {
@@ -238,7 +237,7 @@ export function CompactSelect({
 }: SelectHTMLAttributes<HTMLSelectElement> & { contentClassName?: string }) {
   const labels = selectOptionLabels(children);
   return (
-    <span className={`compact-select ${className}`.trim()}>
+    <span className="compact-select">
       {labels.map((label, index) => (
         <span
           className="compact-select-width"
@@ -248,13 +247,13 @@ export function CompactSelect({
           {label}
         </span>
       ))}
-      <Select
+      <ThemedSelect
         {...props}
-        className="compact-select-trigger"
+        className={`compact-select-trigger ${className}`.trim()}
         contentClassName={`compact-select-menu ${contentClassName}`.trim()}
       >
         {children}
-      </Select>
+      </ThemedSelect>
     </span>
   );
 }

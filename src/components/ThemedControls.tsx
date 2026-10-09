@@ -185,7 +185,7 @@ export function DateInput({
     );
   };
   return (
-    <div className="themed-date">
+    <div className={`themed-date ${datetime ? "themed-date-time" : ""}`}>
       <input
         {...props}
         ref={inputRef}

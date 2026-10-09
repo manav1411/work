@@ -476,7 +476,7 @@ function DirectionCard({
         <h3>{form.title}</h3>
       )}
       {editing ? (
-        <div className="form-grid">
+        <div className="form-grid direction-date-fields">
           <Field label="Start date">
             <Input
               type="date"

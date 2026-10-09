@@ -244,6 +244,10 @@ kbd {
 .stack {
   gap: 18px;
 }
+.stack > .button {
+  align-self: flex-start;
+  width: fit-content;
+}
 .page-header {
   display: flex;
   justify-content: space-between;
@@ -369,6 +373,11 @@ kbd {
   padding: 11px 12px;
   font-size: 13px;
   min-height: 42px;
+}
+.input[type="number"] {
+  align-self: flex-start;
+  width: 9rem;
+  max-width: 100%;
 }
 .input:focus {
   outline: 2px solid var(--blue);

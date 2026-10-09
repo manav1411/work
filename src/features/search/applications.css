@@ -227,17 +227,17 @@
   height: 42px;
   min-height: 42px;
 }
-.application-filters > .themed-select-trigger {
+.application-filters > .compact-select > .themed-select-trigger {
   gap: 0.5rem;
 }
-.application-filters > .themed-select-trigger > span:first-child {
+.application-filters > .compact-select > .themed-select-trigger > span:first-child {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.application-filters > .themed-select-trigger > span:last-child {
+.application-filters > .compact-select > .themed-select-trigger > span:last-child {
   flex: 0 0 auto;
 }
 .application-notice {

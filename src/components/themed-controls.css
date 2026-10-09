@@ -100,7 +100,12 @@
 }
 .themed-date {
   position: relative;
+  width: 10rem;
+  max-width: 100%;
   min-width: 0;
+}
+.themed-date-time {
+  width: 13rem;
 }
 .themed-date > .input {
   padding-right: 38px;
