@@ -1,5 +1,5 @@
 import {
-  EMPTY_GOAL,
+  actionInput,
   goalInputSchema,
   type Goal,
   type GoalInput,
@@ -121,12 +121,7 @@ export async function resumePendingSettings(
         const { goals } = await request<{ goals: Goal[] }>("/api/goals");
         const remote = goals.find((goal) => goal.id === id);
         if (!remote) continue;
-        const remoteInput = Object.fromEntries(
-          Object.keys(EMPTY_GOAL).map((key) => [
-            key,
-            remote[key as keyof GoalInput],
-          ]),
-        ) as GoalInput;
+        const remoteInput = actionInput(remote);
         const merged = mergeAutosaveValues(
           raw.baseValue as GoalInput,
           raw.value as GoalInput,
@@ -135,7 +130,7 @@ export async function resumePendingSettings(
         if (merged.conflict) continue;
         const parsed = goalInputSchema.safeParse({
           ...merged.value,
-          title: merged.value.title.trim() || "Untitled goal",
+          title: merged.value.title.trim() || "Untitled action",
         });
         if (
           !parsed.success ||

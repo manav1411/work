@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -12,6 +12,7 @@ import {
 import {
   SortableContext,
   horizontalListSortingStrategy,
+  rectSortingStrategy,
   verticalListSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
@@ -76,16 +77,20 @@ export function SortableList<T extends { id: string }>({
   children,
   className = "",
   horizontal = false,
+  grid = false,
   label,
   trailing,
+  afterItem,
 }: {
   items: T[];
   onReorder: (ids: string[]) => Promise<void>;
   children: (item: T, handle: ReactNode) => ReactNode;
   className?: string;
   horizontal?: boolean;
+  grid?: boolean;
   label?: string;
   trailing?: ReactNode;
+  afterItem?: (item: T, index: number, visible: T[]) => ReactNode;
 }) {
   const { editing } = useEditMode();
   const [busy, setBusy] = useState(false);
@@ -136,21 +141,26 @@ export function SortableList<T extends { id: string }>({
       <SortableContext
         items={visible.map((item) => item.id)}
         strategy={
-          horizontal
-            ? horizontalListSortingStrategy
-            : verticalListSortingStrategy
+          grid
+            ? rectSortingStrategy
+            : horizontal
+              ? horizontalListSortingStrategy
+              : verticalListSortingStrategy
         }
       >
         <div
           className={className}
           aria-busy={busy}
-          role={horizontal ? "tablist" : undefined}
+          role={horizontal || grid ? "tablist" : undefined}
           aria-label={label}
         >
-          {visible.map((item) => (
-            <SortableItem key={item.id} id={item.id} enabled={editing && !busy}>
-              {(handle) => children(item, handle)}
-            </SortableItem>
+          {visible.map((item, index) => (
+            <Fragment key={item.id}>
+              <SortableItem id={item.id} enabled={editing && !busy}>
+                {(handle) => children(item, handle)}
+              </SortableItem>
+              {afterItem?.(item, index, visible)}
+            </Fragment>
           ))}
           {trailing}
         </div>

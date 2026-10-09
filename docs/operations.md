@@ -12,7 +12,7 @@ Preserve the existing GitHub OAuth applications and Better Auth secrets. Access 
 
 Run `npm run check`, `npm test`, `npm run test:e2e`, `npm run build`, and `npm run test:runtime`. Deploy staging with `npm run deploy:staging`, then production with `npm run deploy`. The deployment scripts validate environment bindings, run the built Worker checks, apply migrations, and deploy Worker/frontend assets together.
 
-Fresh databases use `0001_workspace.sql` and `0009_current_workspace.sql`. Existing databases that applied the former migrations apply only the new migration. Migration 0009 deliberately deletes testing content and removes its old tables, preserving users, provider accounts, and sessions. Do not reapply it to a workspace with wanted content.
+Fresh databases use `0001_workspace.sql`, `0009_current_workspace.sql`, and `0010_goal_actions.sql`. Existing databases apply only unapplied migrations. Migration 0010 adds shared action associations and preserves existing content. Migration 0009 deliberately deletes testing content and removes its old tables, preserving users, provider accounts, and sessions. Do not reapply it to a workspace with wanted content.
 
 GitHub/Cloudflare build configuration is managed by `scripts/cloudflare.mjs`; do not reconnect a working build trigger or expose API tokens. CLI release does not establish that a Git-triggered build completed.
 

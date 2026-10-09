@@ -40,9 +40,9 @@ export function editorDraftsFor(
       let title =
         record?.title ??
         (key.startsWith(`work:goal-draft:${owner}:`)
-          ? "Goal draft"
+          ? "Action draft"
           : key.startsWith(`work:direction-draft:${owner}:`)
-            ? "Direction draft"
+            ? "Goal draft"
             : key.startsWith(`work:latex-draft:${owner}:`)
               ? "LaTeX draft"
               : "Notes draft");
@@ -82,7 +82,9 @@ export function editorDraftsFor(
                             ? recordUrl(record)
                             : key.startsWith(contentPrefix)
                               ? "/interviews"
-                              : "/direction";
+                              : key.startsWith(`work:goal-draft:${owner}:`)
+                                ? `/goals?action=${encodeURIComponent(id)}`
+                                : "/goals";
       drafts.push({
         key: storageKey,
         value,

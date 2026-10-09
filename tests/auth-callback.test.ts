@@ -25,7 +25,11 @@ let profile = {
   email: "owner@example.invalid",
   avatar_url: "https://avatars.example.invalid/owner",
 };
-const migration = ["0001_workspace.sql", "0009_current_workspace.sql"]
+const migration = [
+  "0001_workspace.sql",
+  "0009_current_workspace.sql",
+  "0010_goal_actions.sql",
+]
   .map((filename) =>
     readFileSync(new URL(`../migrations/${filename}`, import.meta.url), "utf8"),
   )

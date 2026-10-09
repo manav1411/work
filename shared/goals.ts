@@ -37,7 +37,16 @@ export const goalFields = z
     targetDate: date.default(""),
     startDate: date.default(""),
     sourceUrl: destination.default(""),
+    scheduleKind: z.enum(["range", "event"]).optional(),
     directionId: z.string().max(120).default(""),
+    goalIds: z
+      .array(z.string().min(1).max(120))
+      .max(100)
+      .refine(
+        (ids) => new Set(ids).size === ids.length,
+        "Linked goals must be unique.",
+      )
+      .optional(),
     measure: z
       .enum(["completion", "leetcode", "neetcode150"])
       .default("completion"),
@@ -48,6 +57,15 @@ export const goalFields = z
   })
   .strict();
 export const goalInputSchema = goalFields
+  .refine(
+    (value) =>
+      value.scheduleKind !== "event" || value.startDate === value.targetDate,
+    "An event must have one date.",
+  )
+  .refine(
+    (value) => actionGoalIds(value).length > 0,
+    "Choose at least one goal for this action.",
+  )
   .refine(
     (value) =>
       !value.startDate ||
@@ -71,6 +89,15 @@ export const goalSchema = goalFields
   .strict()
   .refine(
     (value) =>
+      value.scheduleKind !== "event" || value.startDate === value.targetDate,
+    "An event must have one date.",
+  )
+  .refine(
+    (value) => actionGoalIds(value).length > 0,
+    "Choose at least one goal for this action.",
+  )
+  .refine(
+    (value) =>
       !value.startDate ||
       !value.targetDate ||
       value.startDate <= value.targetDate,
@@ -90,6 +117,7 @@ export const EMPTY_GOAL: GoalInput = {
   targetDate: "",
   startDate: "",
   sourceUrl: "",
+  scheduleKind: "range",
   directionId: "",
   measure: "completion",
   target: 1,
@@ -97,20 +125,68 @@ export const EMPTY_GOAL: GoalInput = {
   status: "active",
   completedAt: null,
 };
+/** Actions can support multiple goals. Older saved actions have one directionId. */
+export function actionGoalIds(
+  action: Pick<GoalInput, "directionId" | "goalIds">,
+): string[] {
+  return action.goalIds ?? (action.directionId ? [action.directionId] : []);
+}
+export function actionLinks(goalIds: string[]) {
+  return { goalIds, directionId: goalIds[0] ?? "" };
+}
+export function actionInput(goal: Goal): GoalInput {
+  return {
+    ...(Object.fromEntries(
+      Object.keys(EMPTY_GOAL).map((key) => [
+        key,
+        goal[key as keyof GoalInput] ?? EMPTY_GOAL[key as keyof GoalInput],
+      ]),
+    ) as GoalInput),
+    ...actionLinks(actionGoalIds(goal)),
+  };
+}
 export function newGoal(input: GoalInput): Goal {
   const at = new Date().toISOString();
   return {
     ...input,
+    ...actionLinks(actionGoalIds(input)),
     id: crypto.randomUUID(),
     version: 1,
     createdAt: at,
     updatedAt: at,
   };
 }
-export function goalProgress(goal: Goal, observedValue?: number) {
+export function eventStatus(date: string, today: string) {
+  return !date
+    ? "Date not set"
+    : date < today
+      ? "Passed"
+      : date > today
+        ? "Upcoming"
+        : "Today";
+}
+export function actionOrder(a: Goal, b: Goal) {
+  return (
+    (a.startDate || "9999-99-99").localeCompare(b.startDate || "9999-99-99") ||
+    (a.targetDate || "9999-99-99").localeCompare(
+      b.targetDate || "9999-99-99",
+    ) ||
+    a.createdAt.localeCompare(b.createdAt) ||
+    a.id.localeCompare(b.id)
+  );
+}
+export function goalProgress(
+  goal: Goal,
+  observedValue?: number,
+  today = new Date().toISOString().slice(0, 10),
+) {
+  const passed =
+    goal.scheduleKind === "event" &&
+    !!goal.targetDate &&
+    goal.targetDate < today;
   const value =
     goal.measure === "completion"
-      ? goal.status === "completed"
+      ? goal.status === "completed" || passed
         ? 1
         : 0
       : (observedValue ?? 0);
@@ -119,6 +195,6 @@ export function goalProgress(goal: Goal, observedValue?: number) {
     value,
     target,
     percent: Math.min(100, Math.max(0, (value / target) * 100)),
-    complete: goal.status === "completed" || value >= target,
+    complete: goal.status === "completed" || value >= target || passed,
   };
 }

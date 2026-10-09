@@ -21,7 +21,7 @@ const EDITABLE_SECTIONS = new Set([
   "/applications",
   "/interviews",
   "/documents",
-  "/direction",
+  "/goals",
 ]);
 
 export function EditModeProvider({ children }: { children: ReactNode }) {

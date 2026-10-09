@@ -77,6 +77,7 @@ try {
   for (const migration of [
     "0001_workspace.sql",
     "0009_current_workspace.sql",
+    "0010_goal_actions.sql",
   ]) {
     const sql = readFileSync(`migrations/${migration}`, "utf8")
       .replace(/--[^\n]*/g, "")
@@ -222,6 +223,39 @@ try {
     409,
   );
   // A native document's current source also survives a full workspace replacement.
+  const firstGoal = await create("path", "Career goal", {
+    category: "direction",
+    status: "Pursuing",
+  });
+  const secondGoal = await create("path", "Networking goal", {
+    category: "direction",
+    status: "Exploring",
+  });
+  const sharedEvent = await api("/api/goals", "POST", {
+    title: "Networking event",
+    goalIds: [firstGoal.id, secondGoal.id],
+    scheduleKind: "event",
+    startDate: "2030-04-01",
+    targetDate: "2030-04-01",
+  });
+  assert.equal(sharedEvent.status, 201, JSON.stringify(sharedEvent.value));
+  assert.equal(
+    (await api("/api/goals", "POST", { title: "Unlinked action" })).status,
+    400,
+  );
+  assert.equal(
+    (
+      await api("/api/goals", "POST", {
+        ...sharedEvent.value.goal,
+        id: undefined,
+        version: undefined,
+        createdAt: undefined,
+        updatedAt: undefined,
+        targetDate: "2030-04-02",
+      })
+    ).status,
+    400,
+  );
   const nativeEntries = readArchive(
     new Uint8Array(await (await send("/api/workspace")).arrayBuffer()),
   );
@@ -260,6 +294,27 @@ try {
   assert.ok(
     transferredSource.value.project.files[0].content.includes("Current 1"),
   );
+  const importedActions = (await api("/api/goals")).value.goals;
+  assert.equal(importedActions.length, 1);
+  assert.equal(importedActions[0].scheduleKind, "event");
+  const importedGoals = nativeRows.value.records.filter(
+    (record) => record.kind === "path",
+  );
+  assert.equal(importedGoals.length, 2);
+  assert.deepEqual(
+    new Set(importedActions[0].goalIds),
+    new Set(importedGoals.map((record) => record.id)),
+  );
+  assert.equal(
+    (await api(`/api/records/${importedGoals[0].id}`, "DELETE")).status,
+    200,
+  );
+  assert.equal((await api("/api/goals")).value.goals[0].goalIds.length, 1);
+  assert.equal(
+    (await api(`/api/records/${importedGoals[1].id}`, "DELETE")).status,
+    200,
+  );
+  assert.equal((await api("/api/goals")).value.goals.length, 0);
   for (const path of [
     "/api/backup",
     "/api/import",
@@ -283,7 +338,7 @@ try {
     200,
   );
   console.log(
-    "Built Worker verified: current schemas, >18 MB full file round trip, atomic replacement, stale-device rejection, permanent deletion, native source pruning, and account removal.",
+    "Built Worker verified: current schemas, >18 MB full file round trip, atomic replacement, stale-device rejection, permanent deletion, native source pruning, shared action/event links, and account removal.",
   );
 } finally {
   await runtime.dispose();

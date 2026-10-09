@@ -1,3 +1,4 @@
+import { actionGoalIds, actionLinks } from "../../shared/goals";
 import {
   demoShowcaseRecords,
   DEMO_SHOWCASE_FILES,
@@ -106,7 +107,7 @@ export function createDemoStore() {
   if (platform)
     initial.goals = initial.goals.map((goal) => ({
       ...goal,
-      directionId: platform.id,
+      ...actionLinks([platform.id]),
     }));
   for (const item of DEMO_SHOWCASE_FILES) {
     const record = byKey.get(item.recordKey);
@@ -209,9 +210,21 @@ export function createDemoStore() {
         links: record.links.filter((id) => !recordIds.has(id)),
         data: detachDataReferences(record.data, recordIds, fileIds),
       }));
-    state.goals = state.goals.map((goal) =>
-      recordIds.has(goal.directionId) ? { ...goal, directionId: "" } : goal,
-    );
+    state.goals = state.goals.flatMap((goal) => {
+      const previous = actionGoalIds(goal);
+      const remaining = previous.filter((id) => !recordIds.has(id));
+      if (!remaining.length) return [];
+      return [
+        remaining.length === previous.length
+          ? goal
+          : {
+              ...goal,
+              ...actionLinks(remaining),
+              version: goal.version + 1,
+              updatedAt: new Date().toISOString(),
+            },
+      ];
+    });
     state.attachments = state.attachments.filter(
       (file) => !fileIds.has(file.id),
     );
@@ -278,14 +291,14 @@ export function createDemoStore() {
     const goalRoute = /^\/api\/goals\/([^/]+)$/.exec(url.pathname);
     if (goalRoute) {
       const goal = state.goals.find((goal) => goal.id === goalRoute[1]);
-      if (!goal) throw new ApiError("Goal not found.", 404);
+      if (!goal) throw new ApiError("Action not found.", 404);
       if (method === "DELETE") {
         state.goals = state.goals.filter((item) => item.id !== goal.id);
         persist();
         return { success: true };
       }
       if (body.version !== goal.version)
-        throw new ApiError("This goal changed. Reload and try again.", 409);
+        throw new ApiError("This action changed. Reload and try again.", 409);
       const { version, ...fields } = body;
       const next: Goal = {
         ...goal,

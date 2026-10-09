@@ -4,6 +4,8 @@ import {
   goalInputSchema,
   goalFields,
   newGoal,
+  actionGoalIds,
+  actionLinks,
   type Goal,
 } from "../shared/goals";
 import { ApiError, type Env, type Variables } from "./env";
@@ -66,7 +68,7 @@ async function getGoal(db: D1Database, owner: string, id: string) {
     .prepare("SELECT * FROM goals WHERE id=? AND owner_id=?")
     .bind(id, owner)
     .first<GoalRow>();
-  if (!row) throw new ApiError(404, "NOT_FOUND", "Goal not found.");
+  if (!row) throw new ApiError(404, "NOT_FOUND", "Action not found.");
   return goalFromRow(row);
 }
 async function saveGoal(
@@ -92,28 +94,29 @@ async function saveGoal(
     throw new ApiError(
       409,
       "VERSION_CONFLICT",
-      "This goal changed in another session. Reload and try again.",
+      "This action changed in another session. Reload and try again.",
     );
   return goalFromRow(row);
 }
 const routes = new Hono<{ Bindings: Env; Variables: Variables }>();
-async function validateDirection(
-  db: D1Database,
-  owner: string,
-  directionId: string,
-) {
-  if (!directionId) return;
-  const record = await db
-    .prepare(
-      "SELECT id FROM records WHERE owner_id=? AND id=? AND kind IN ('path','rotation','decision')",
-    )
-    .bind(owner, directionId)
-    .first();
-  if (!record)
+async function validateGoals(db: D1Database, owner: string, ids: string[]) {
+  if (!ids.length)
     throw new ApiError(
       400,
       "INVALID_DIRECTION",
-      "Choose a career path, stream, or decision in your workspace.",
+      "Choose at least one goal for this action.",
+    );
+  const records = await db
+    .prepare(
+      "SELECT id FROM records WHERE owner_id=? AND id IN (SELECT value FROM json_each(?)) AND kind IN ('path','rotation','decision')",
+    )
+    .bind(owner, JSON.stringify(ids))
+    .all();
+  if (records.results.length !== ids.length)
+    throw new ApiError(
+      400,
+      "INVALID_DIRECTION",
+      "Choose goals in your workspace.",
     );
 }
 routes.get("/", async (c) =>
@@ -129,7 +132,7 @@ routes.post("/", async (c) => {
     input,
   );
   if (state.response) return c.json(state.response);
-  await validateDirection(c.env.DB, owner, input.directionId);
+  await validateGoals(c.env.DB, owner, actionGoalIds(input));
   const goal = newGoal(input);
   try {
     await c.env.DB.batch([
@@ -149,20 +152,30 @@ routes.patch("/:id", async (c) => {
     await readJson(c.req.raw),
   );
   const { version, ...fields } = input;
-  parse(goalInputSchema, fields);
   const owner = c.get("user").id,
     before = await getGoal(c.env.DB, owner, c.req.param("id"));
   if (version !== before.version)
     throw new ApiError(
       409,
       "VERSION_CONFLICT",
-      "This goal changed in another session. Your draft is still open.",
+      "This action changed in another session. Your draft is still open.",
     );
   const at = new Date().toISOString();
-  await validateDirection(c.env.DB, owner, fields.directionId);
+  // Older clients only submit the primary link. Preserve additional links when it is unchanged.
+  const links = actionLinks(
+    fields.goalIds === undefined && fields.directionId === before.directionId
+      ? actionGoalIds(before)
+      : actionGoalIds(fields),
+  );
+  const normalized = parse(goalInputSchema, {
+    ...fields,
+    ...links,
+    scheduleKind: fields.scheduleKind ?? before.scheduleKind ?? "range",
+  });
+  await validateGoals(c.env.DB, owner, links.goalIds);
   const goal = await saveGoal(c.env.DB, owner, before, {
     ...before,
-    ...fields,
+    ...normalized,
     version: version + 1,
     updatedAt: at,
   });

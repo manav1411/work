@@ -1,3 +1,4 @@
+import { actionGoalIds, actionLinks } from "./goals";
 import { z } from "zod";
 import {
   RECORD_KINDS,
@@ -198,11 +199,13 @@ export function workspacePackageError(
     }
   }
   if (
-    manifest.goals.some(
-      (goal) => !belongs(goal.directionId, ["path", "rotation", "decision"]),
+    manifest.goals.some((goal) =>
+      actionGoalIds(goal).some(
+        (id) => !belongs(id, ["path", "rotation", "decision"]),
+      ),
     )
   )
-    return "A goal needs an existing direction.";
+    return "An action needs existing goals.";
   return null;
 }
 
@@ -214,7 +217,7 @@ export function remapWorkspace(
     if (typeof value === "string") {
       if (ids.has(value)) return ids.get(value)!;
       return value.replace(
-        /(record|interview|tab|track)=([^&#\s]+)/g,
+        /(record|interview|tab|track|goal|action)=([^&#\s]+)/g,
         (match, key, id) => {
           try {
             return ids.has(decodeURIComponent(id))
@@ -247,7 +250,7 @@ export function remapWorkspace(
       ...goal,
       id: ids.get(goal.id)!,
       version: 1,
-      directionId: ids.get(goal.directionId) ?? "",
+      ...actionLinks(actionGoalIds(goal).map((id) => ids.get(id)!)),
     })),
     attachments: manifest.attachments.map((file) => ({
       ...file,

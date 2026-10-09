@@ -126,7 +126,7 @@ export const recordUrl = (record: WorkRecord): string => {
   if (record.kind === "asset" || record.kind === "resource")
     return `/documents?record=${id}`;
   if (["path", "rotation", "decision"].includes(record.kind))
-    return `/direction?record=${id}`;
+    return `/goals?goal=${id}`;
   if (record.kind === "topic" || record.data.scope === "learn")
     return `/learn?track=${encodeURIComponent(field(record, "track", field(record, "seedId", record.id)))}`;
   if (record.kind === "story") return "/interviews?tab=behavioural";

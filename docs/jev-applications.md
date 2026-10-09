@@ -8,14 +8,14 @@ Researched 7 October 2026. Recommendations based on the current repository and T
 
 Work is a private career workspace connecting six activities:
 
-| Area           | What exists today                                                                                              | Opportunity for JEV                                                         |
-| -------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Home           | A timeline of appointments, application deadlines, follow-ups, goals and milestones                            | Turn upcoming events into a small, useful preparation queue                 |
-| Learn          | A 150-problem DSA roadmap, public LeetCode statistics, Pomodoro, eight default learning tracks and custom tabs | Select practice that addresses a specific opportunity or observed mistake   |
-| Applications   | Saved roles, ordered recruitment processes, appointments and a company Radar                                   | Judge relevance, interpret incoming updates and connect preparation         |
-| Interviews     | Behavioural/technical/custom tabs, appointment preparation and STAR stories                                    | Find suitable stories, expose weak evidence and choose follow-up questions  |
-| Documents      | Private files, profile links, editable LaTeX resumes/letters and independent document copies                   | Audit the actual rendered text and select existing evidence for a role      |
-| Your Direction | Paths, experiences and decisions, plus goals linked to directions                                              | Make tradeoffs explicit and identify questions that would change a decision |
+| Area         | What exists today                                                                                              | Opportunity for JEV                                                         |
+| ------------ | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Home         | A timeline of appointments, application deadlines, follow-ups, goals and milestones                            | Turn upcoming events into a small, useful preparation queue                 |
+| Learn        | A 150-problem DSA roadmap, public LeetCode statistics, Pomodoro, eight default learning tracks and custom tabs | Select practice that addresses a specific opportunity or observed mistake   |
+| Applications | Saved roles, ordered recruitment processes, appointments and a company Radar                                   | Judge relevance, interpret incoming updates and connect preparation         |
+| Interviews   | Behavioural/technical/custom tabs, appointment preparation and STAR stories                                    | Find suitable stories, expose weak evidence and choose follow-up questions  |
+| Documents    | Private files, profile links, editable LaTeX resumes/letters and independent document copies                   | Audit the actual rendered text and select existing evidence for a role      |
+| Goals        | Goals with shared actions and milestones                                                                       | Make tradeoffs explicit and identify questions that would change a decision |
 
 This reads as a system for moving from career intention to prepared action. Its existing content is unusually well suited to decision models: stories have Situation/Task/Action/Result/Lessons fields; applications have explicit stages; notes have scopes; goals have dates and measures; records have stable IDs and relationships.
 

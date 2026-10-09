@@ -103,15 +103,16 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
   ).toBeVisible();
   await page
     .locator(".sidebar")
-    .getByRole("link", { name: "Your Direction", exact: true })
+    .getByRole("link", { name: "Goals", exact: true })
     .click();
+  await page.getByRole("tab").first().click();
   await expect(
     page.getByRole("link", { name: "Aussie engineers, get to the states!" }),
   ).toHaveAttribute(
     "href",
     "https://thundergolfer.com/blog/get-to-the-states#fnref:1",
   );
-  await enterEditMode(page, "Your Direction");
+  await enterEditMode(page, "Goals");
   await expect(
     page.getByRole("heading", { name: "Notes", exact: true }),
   ).toBeVisible();
@@ -121,7 +122,7 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
   await expect(page.locator(".direction-card .rich-block-handle")).toHaveCount(
     0,
   );
-  const status = page.getByRole("combobox", { name: "Direction status" });
+  const status = page.getByRole("combobox", { name: "Goal status" });
   await status.focus();
   await page.keyboard.press("Enter");
   await page.getByRole("option", { name: "Pursuing", exact: true }).click();

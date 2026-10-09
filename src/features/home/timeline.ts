@@ -81,7 +81,7 @@ export function timelineItems(
             record.kind === "company"
               ? "Radar review"
               : field(record, "reviewDate")
-                ? "Direction review"
+                ? "Goal review"
                 : "Experience milestone",
           kind: "followup",
           record,
@@ -90,7 +90,7 @@ export function timelineItems(
     }
   }
   for (const goal of goals) {
-    const complete = goalProgress(goal, observed?.(goal)).complete;
+    const complete = goalProgress(goal, observed?.(goal), today).complete;
     if (goal.targetDate)
       add({
         id: `${goal.id}:target`,

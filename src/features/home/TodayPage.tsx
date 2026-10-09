@@ -66,7 +66,7 @@ export function TodayPage() {
     return () => observer.disconnect();
   }, [model.loading]);
   const openEvent = (item: TimelineItem) => {
-    if (item.goal) navigate(`/direction?goal=${item.goal.id}`);
+    if (item.goal) navigate(`/goals?action=${item.goal.id}`);
     else if (item.record?.kind === "interview")
       navigate(`/applications?interview=${item.record.id}`);
     else if (item.record?.kind === "company")
@@ -75,7 +75,7 @@ export function TodayPage() {
       item.record &&
       ["path", "rotation", "decision"].includes(item.record.kind)
     )
-      navigate(`/direction?record=${item.record.id}`);
+      navigate(`/goals?goal=${item.record.id}`);
     else if (item.record) navigate(`/applications?record=${item.record.id}`);
   };
   return (
@@ -218,6 +218,7 @@ export function TodayPage() {
                 const progress = goalProgress(
                   goal,
                   observedProgress(goal, learning),
+                  today,
                 );
                 return (
                   <button
@@ -228,7 +229,7 @@ export function TodayPage() {
                       width: `${Math.max(3, right - left)}%`,
                       top: `${lanes * 100 + 64 + index * 48}px`,
                     }}
-                    onClick={() => navigate(`/direction?goal=${goal.id}`)}
+                    onClick={() => navigate(`/goals?action=${goal.id}`)}
                     aria-label={`${goal.title}: ${goal.startDate} to ${goal.targetDate}, ${Math.round(progress.percent)}% complete`}
                   >
                     <span

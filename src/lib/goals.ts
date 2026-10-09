@@ -23,7 +23,7 @@ export function useGoals() {
     } catch (error) {
       if (current.current === scope)
         setError(
-          error instanceof Error ? error.message : "Goals could not load.",
+          error instanceof Error ? error.message : "Actions could not load.",
         );
     } finally {
       if (current.current === scope) setLoading(false);

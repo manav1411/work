@@ -1,32 +1,24 @@
 import { useRef } from "react";
 import { Trash2 } from "lucide-react";
 import {
-  EMPTY_GOAL,
+  actionInput,
+  actionGoalIds,
+  actionLinks,
   goalInputSchema,
   type Goal,
   type GoalInput,
   goalProgress,
+  eventStatus,
 } from "../../../shared/goals";
 import { type WorkRecord, niceDate } from "../../../shared/model";
-import {
-  Button,
-  Card,
-  CompactSelect,
-  Field,
-  Input,
-} from "../../components/ui";
+import { Button, Card, CompactSelect, Field, Input } from "../../components/ui";
 import { ApiError } from "../../lib/api";
 import { useEditMode } from "../../lib/edit-mode";
 import { useAutosave } from "../../lib/autosave";
+import { ActionDateBar } from "./ScheduleBars";
+import type { DateAxis } from "./goalSchedule";
 import { roadmapTotalProblems } from "../../content/problems";
-export function goalInput(goal: Goal): GoalInput {
-  return Object.fromEntries(
-    Object.keys(EMPTY_GOAL).map((key) => [
-      key,
-      goal[key as keyof GoalInput] ?? EMPTY_GOAL[key as keyof GoalInput],
-    ]),
-  ) as GoalInput;
-}
+export const goalInput = actionInput;
 export function GoalEditor({
   goal,
   owner,
@@ -35,6 +27,8 @@ export function GoalEditor({
   onRefresh,
   onDelete,
   observed,
+  dateAxis,
+  today,
 }: {
   goal: Goal;
   owner: string;
@@ -43,6 +37,8 @@ export function GoalEditor({
   onRefresh: () => Promise<void>;
   onDelete: () => Promise<void>;
   observed?: number;
+  dateAxis: DateAxis | null;
+  today: string;
 }) {
   const { editing } = useEditMode();
   const current = useRef(goal);
@@ -65,7 +61,7 @@ export function GoalEditor({
     persist: async (value, expectedVersion) => {
       const parsed = goalInputSchema.parse({
         ...value,
-        title: value.title.trim() || "Untitled goal",
+        title: value.title.trim() || "Untitled action",
       });
       const base =
         expectedVersion === undefined || goal.version === expectedVersion
@@ -75,7 +71,7 @@ export function GoalEditor({
             : null;
       if (!base)
         throw new ApiError(
-          "This goal changed elsewhere. Review both copies.",
+          "This action changed elsewhere. Review both copies.",
           409,
         );
       current.current = await onSave(parsed, base);
@@ -87,14 +83,18 @@ export function GoalEditor({
   });
   const set = (patch: Partial<GoalInput>) =>
     setValue((previous) => ({ ...previous, ...patch }));
-  const progress = goalProgress({ ...goal, ...form }, observed);
+  const progress = goalProgress({ ...goal, ...form }, observed, today);
+  const linkedNames = directions
+    .filter((record) => actionGoalIds(form).includes(record.id))
+    .map((record) => record.title);
   return (
     <Card
-      className={`stack goal-inline-card ${progress.complete ? "goal-complete" : ""}`}
+      id={`direction-item-${goal.id}`}
+      className={`stack goal-inline-card ${progress.complete ? "goal-complete" : ""} ${editing ? "is-editing" : ""}`}
     >
       {conflict && (
         <div className="notice notice-warning" role="alert">
-          {error || "This goal changed elsewhere."}
+          {error || "This action changed elsewhere."}
           <div className="inline-actions">
             <Button variant="secondary" onClick={() => void keepLocal()}>
               Keep my changes
@@ -109,9 +109,9 @@ export function GoalEditor({
         {editing ? (
           <Input
             className="inline-title"
-            aria-label="Goal name"
-            value={form.title === "Untitled goal" ? "" : form.title}
-            placeholder="Goal name"
+            aria-label="Action name"
+            value={form.title === "Untitled action" ? "" : form.title}
+            placeholder="Action name"
             onChange={(event) => set({ title: event.target.value })}
             onBlur={flush}
           />
@@ -128,36 +128,65 @@ export function GoalEditor({
           </Button>
         )}
       </div>
+      <ActionDateBar
+        start={form.startDate}
+        end={form.targetDate}
+        axis={dateAxis}
+      />
       {editing ? (
-        <>
-          <Field label="Direction">
+        <div className="action-edit-fields">
+          <Field label="Schedule">
             <CompactSelect
-              value={form.directionId}
-              onChange={(event) => set({ directionId: event.target.value })}
+              value={form.scheduleKind ?? "range"}
+              onChange={(event) => {
+                const scheduleKind = event.target.value as "event" | "range";
+                const date = form.startDate || form.targetDate;
+                set({
+                  scheduleKind,
+                  ...(scheduleKind === "event"
+                    ? { startDate: date, targetDate: date }
+                    : {}),
+                });
+              }}
             >
-              <option value="">No linked direction</option>
-              {directions.map((record) => (
-                <option value={record.id} key={record.id}>
-                  {record.title}
-                </option>
-              ))}
+              <option value="range">Date range</option>
+              <option value="event">One-day event</option>
             </CompactSelect>
           </Field>
           <div className="form-grid direction-date-fields">
-            <Field label="Start date">
-              <Input
-                type="date"
-                value={form.startDate}
-                onChange={(event) => set({ startDate: event.target.value })}
-              />
-            </Field>
-            <Field label="Target date">
-              <Input
-                type="date"
-                value={form.targetDate}
-                onChange={(event) => set({ targetDate: event.target.value })}
-              />
-            </Field>
+            {form.scheduleKind === "event" ? (
+              <Field label="Event date">
+                <Input
+                  type="date"
+                  value={form.targetDate}
+                  onChange={(event) =>
+                    set({
+                      startDate: event.target.value,
+                      targetDate: event.target.value,
+                    })
+                  }
+                />
+              </Field>
+            ) : (
+              <>
+                <Field label="Start date">
+                  <Input
+                    type="date"
+                    value={form.startDate}
+                    onChange={(event) => set({ startDate: event.target.value })}
+                  />
+                </Field>
+                <Field label="End date">
+                  <Input
+                    type="date"
+                    value={form.targetDate}
+                    onChange={(event) =>
+                      set({ targetDate: event.target.value })
+                    }
+                  />
+                </Field>
+              </>
+            )}
           </div>
           <Field label="Progress measure">
             <CompactSelect
@@ -194,54 +223,98 @@ export function GoalEditor({
               />
             </Field>
           )}
-        </>
-      ) : (
-        <>
-          <p className="muted">
-            {directions.find((record) => record.id === form.directionId)
-              ?.title || "No linked direction"}
-          </p>
-          <p>
-            {form.startDate ? niceDate(form.startDate) : "No start date"} →{" "}
-            {form.targetDate ? niceDate(form.targetDate) : "No target date"}
-          </p>
-        </>
-      )}
-      <p>
-        {form.measure === "completion"
-          ? progress.complete
-            ? "Complete"
-            : "In progress"
-          : form.measure === "neetcode150"
-            ? `${progress.value} / ${progress.target} NeetCode problems`
-            : `${progress.value} / ${progress.target} LeetCode problems`}
-      </p>
-      {form.measure === "leetcode" && (
-        <small className="muted">
-          Total unique LeetCode problems solved: {progress.value}. Target:{" "}
-          {progress.target}.
-        </small>
-      )}
-      {form.measure === "neetcode150" && (
-        <small className="muted">
-          Problems solved from the NeetCode 150 roadmap: {progress.value} of{" "}
-          {progress.target}.
-        </small>
-      )}
-      <Button
-        variant="secondary"
-        onClick={() =>
-          set({
-            status: form.status === "completed" ? "active" : "completed",
-            completedAt:
-              form.status === "completed" ? null : new Date().toISOString(),
-          })
-        }
-      >
-        {form.status === "completed" ? "Reopen" : "Mark complete"}
-      </Button>
+          <fieldset className="action-goal-links">
+            <legend>Goals</legend>
+            {directions.length ? (
+              directions.map((record) => (
+                <label className="action-goal-option" key={record.id}>
+                  <input
+                    type="checkbox"
+                    checked={actionGoalIds(form).includes(record.id)}
+                    disabled={
+                      actionGoalIds(form).length === 1 &&
+                      actionGoalIds(form).includes(record.id)
+                    }
+                    onChange={(event) => {
+                      const ids = actionGoalIds(form);
+                      set(
+                        actionLinks(
+                          event.target.checked
+                            ? [...ids, record.id]
+                            : ids.filter((id) => id !== record.id),
+                        ),
+                      );
+                    }}
+                  />
+                  <span>{record.title}</span>
+                </label>
+              ))
+            ) : (
+              <p className="muted">Add a goal to link this action.</p>
+            )}
+          </fieldset>
+        </div>
+      ) : linkedNames.length > 1 ? (
+        <p className="action-shared-goals">
+          Supports {linkedNames.join(" · ")}
+        </p>
+      ) : null}
+      <div className="action-footer">
+        {form.scheduleKind === "event" && (
+          <span className="action-event-badge">Event</span>
+        )}
+        {form.scheduleKind === "event" && form.measure !== "completion" && (
+          <span className="action-status">
+            {eventStatus(form.targetDate, today)}
+          </span>
+        )}
+        {form.measure === "completion" ? (
+          <span className="action-status">
+            {form.scheduleKind === "event"
+              ? eventStatus(form.targetDate, today)
+              : progress.complete
+                ? "Complete"
+                : "In progress"}
+          </span>
+        ) : (
+          <div className="action-progress">
+            <span>
+              {form.measure === "neetcode150" ? "NeetCode 150" : "LeetCode"}
+            </span>
+            <div
+              role="progressbar"
+              aria-label={`${form.measure === "neetcode150" ? "NeetCode" : "LeetCode"} progress`}
+              aria-valuenow={Math.min(progress.value, progress.target)}
+              aria-valuemin={0}
+              aria-valuemax={progress.target}
+            >
+              <span style={{ width: `${progress.percent}%` }} />
+            </div>
+            <strong>
+              {progress.value} / {progress.target}
+            </strong>
+          </div>
+        )}
+        {form.sourceUrl && (
+          <a href={form.sourceUrl} target="_blank" rel="noreferrer">
+            Reference
+          </a>
+        )}
+        <Button
+          variant="secondary"
+          onClick={() =>
+            set({
+              status: form.status === "completed" ? "active" : "completed",
+              completedAt:
+                form.status === "completed" ? null : new Date().toISOString(),
+            })
+          }
+        >
+          {form.status === "completed" ? "Reopen" : "Mark complete"}
+        </Button>
+      </div>
       {form.milestones.length > 0 && (
-        <div className="stack">
+        <div className="action-milestones">
           {form.milestones.map((item) => (
             <label className="goal-milestone" key={item.id}>
               <input

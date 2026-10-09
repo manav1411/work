@@ -87,7 +87,11 @@ beforeAll(async () => {
     ALLOWED_GITHUB_USERS: '[{"login":"synthetic-owner","id":"12345"}]',
     APP_ORIGIN: "http://localhost",
   };
-  const migrations = ["0001_workspace.sql", "0009_current_workspace.sql"]
+  const migrations = [
+    "0001_workspace.sql",
+    "0009_current_workspace.sql",
+    "0010_goal_actions.sql",
+  ]
     .map((name) =>
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"),
     )

@@ -75,13 +75,27 @@ const DirectionPage = lazy(() =>
   })),
 );
 
+function LegacyDirectionRedirect() {
+  const location = useLocation();
+  const old = new URLSearchParams(location.search);
+  const next = new URLSearchParams();
+  if (old.get("record")) next.set("goal", old.get("record")!);
+  if (old.get("goal")) next.set("action", old.get("goal")!);
+  return (
+    <Navigate
+      replace
+      to={`/goals${next.size ? `?${next}` : ""}${location.hash}`}
+    />
+  );
+}
+
 const NAV = [
   { to: "/home", label: "Home", icon: Home },
   { to: "/learn", label: "Learn", icon: BookOpen },
   { to: "/applications", label: "Applications", icon: BriefcaseBusiness },
   { to: "/interviews", label: "Interviews", icon: MessagesSquare },
   { to: "/documents", label: "Documents", icon: FileText },
-  { to: "/direction", label: "Your Direction", icon: Compass },
+  { to: "/goals", label: "Goals", icon: Compass },
 ];
 
 class PageBoundary extends Component<
@@ -581,7 +595,8 @@ export default function App() {
         <Route path="documents" element={<AssetsPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
         <Route path="interviews" element={<InterviewsPage />} />
-        <Route path="direction" element={<DirectionPage />} />
+        <Route path="goals" element={<DirectionPage />} />
+        <Route path="direction" element={<LegacyDirectionRedirect />} />
         <Route
           path="*"
           element={
