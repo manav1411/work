@@ -27,6 +27,7 @@ import { radarRoutes } from "./radar";
 import { scheduleRadar } from "./radar-runner";
 import { scheduleRadarMail } from "./radar-mail";
 import { trackingStatements } from "./radar-store";
+import { logoDevPublishableKey } from "../shared/company-logos";
 import { learningRoutes } from "./learning";
 import { latexRoutes, resumePendingLatexJobs } from "./latex";
 import { documentPdfFilename } from "../shared/documents";
@@ -145,9 +146,14 @@ app.get("/api/health", (context) =>
     emailDeliveryConfigured: authMailConfigured(context.env),
   }),
 );
-app.get("/api/session", async (context) =>
-  context.json(await resolveSession(context.env, context.req.raw)),
-);
+app.get("/api/session", async (context) => {
+  const session = await resolveSession(context.env, context.req.raw);
+  const key = logoDevPublishableKey(context.env.LOGO_DEV_PUBLISHABLE_KEY);
+  return context.json({
+    ...session,
+    ...(session.user && key ? { logoDevPublishableKey: key } : {}),
+  });
+});
 app.on(["GET", "POST"], "/api/auth/*", async (context) => {
   const path = new URL(context.req.url).pathname.slice("/api/auth".length);
   const methods: Record<string, string> = {

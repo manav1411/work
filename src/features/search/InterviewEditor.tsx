@@ -16,7 +16,7 @@ import { isoToZonedInput, zonedDateTimeToISO } from "../prepare/helpers";
 import { errorMessage } from "./domain";
 import { useSavingWorkspace as useWorkspace } from "./useSaving";
 import { applicationCompany, interviewTime } from "./applicationRecords";
-import { CompanyGlyph } from "../../components/CompanyGlyph";
+import { EmployerLogo } from "../../components/EmployerLogo";
 import { useEditMode } from "../../lib/edit-mode";
 import "./applications.css";
 export { associatedInterviews, interviewTime } from "./applicationRecords";
@@ -51,7 +51,7 @@ export function InterviewEditor(props: InterviewEditorProps) {
         <div className="stack">
           {application && (
             <strong>
-              <CompanyGlyph name={applicationCompany(application, records)} />
+              <EmployerLogo name={applicationCompany(application, records)} />
               {applicationCompany(application, records)}
             </strong>
           )}

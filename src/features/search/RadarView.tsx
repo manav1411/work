@@ -13,8 +13,6 @@ import {
   Pause,
   Play,
   Plus,
-  Radar,
-  RefreshCw,
   Settings2,
   X,
 } from "lucide-react";
@@ -38,7 +36,8 @@ import {
   Modal,
   Select,
 } from "../../components/ui";
-import { CompanyGlyph, companyMark } from "../../components/CompanyGlyph";
+import { EmployerLogo } from "../../components/EmployerLogo";
+import { companyInitials } from "../../../shared/company-logos";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
 import { getAttachmentUrl, jsonRequest, request } from "../../lib/api";
@@ -98,9 +97,13 @@ function salaryLabel(job: Opportunity) {
 export function RadarView({
   view,
   onApplication,
+  refreshKey = 0,
+  setupRequest = 0,
 }: {
   view: "radar" | "interested";
   onApplication: (job: Opportunity) => void;
+  refreshKey?: number;
+  setupRequest?: number;
 }) {
   const { user, preferences } = useWorkspace(),
     { editing } = useEditMode();
@@ -130,6 +133,9 @@ export function RadarView({
     target: Opportunity;
   } | null>(null);
   const generation = useRef(0);
+  useEffect(() => {
+    if (setupRequest) setPreferencesOpen(true);
+  }, [setupRequest]);
   const load = useCallback(
     async (append = false, cursor?: string) => {
       const stamp = ++generation.current;
@@ -174,7 +180,7 @@ export function RadarView({
       clearTimeout(timer);
       generation.current++;
     };
-  }, [load]);
+  }, [load, refreshKey]);
   const running = settings?.runs.some(
     (r) => r.status === "queued" || r.status === "running",
   );
@@ -220,6 +226,27 @@ export function RadarView({
         jsonRequest("PATCH", { version: job.version, ...patch }),
       ),
     );
+  async function toggleFlag(job: Opportunity) {
+    setBusy(true);
+    setError("");
+    setJobs((old) =>
+      old.map((j) => (j.id === job.id ? { ...j, flagged: !job.flagged } : j)),
+    );
+    try {
+      await request(
+        `/api/radar/opportunities/${job.id}/state`,
+        jsonRequest("PATCH", { version: job.version, flagged: !job.flagged }),
+      );
+      await load();
+    } catch (failure) {
+      setJobs((old) =>
+        old.map((j) => (j.id === job.id ? { ...j, flagged: job.flagged } : j)),
+      );
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function toggle() {
     if (!settings?.version) {
       setPreferencesOpen(true);
@@ -242,83 +269,50 @@ export function RadarView({
         view === "radar" ? "Radar opportunities" : "Saved opportunities"
       }
     >
-      <div className="radar-toolbar">
-        <div>
-          <h2>
-            {view === "radar" ? (
-              <>
-                <Radar size={22} />
-                Your next opportunity
-              </>
-            ) : (
-              <>
+      {(view === "interested" || editing) && (
+        <div className="radar-toolbar">
+          {view === "interested" && (
+            <div>
+              <h2>
                 <Bookmark size={20} />
                 Saved opportunities
+              </h2>
+              <p className="muted">Specific roles you want to come back to.</p>
+            </div>
+          )}
+          <div className="inline-actions">
+            {editing && (
+              <Button variant="secondary" onClick={() => setCaptureOpen(true)}>
+                <Plus size={15} />
+                Save opportunity
+              </Button>
+            )}
+            {view === "radar" && editing && (
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={() => setPreferencesOpen(true)}
+                >
+                  <Settings2 size={16} />
+                  Preferences
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void toggle()}
+                >
+                  {settings?.config.enabled ? (
+                    <Pause size={16} />
+                  ) : (
+                    <Play size={16} />
+                  )}{" "}
+                  {settings?.config.enabled ? "Pause Radar" : "Enable Radar"}
+                </Button>
               </>
             )}
-          </h2>
-          <p className="muted">
-            {view === "radar"
-              ? "Discover roles across your interests. Keep the possibilities open."
-              : "Specific roles you want to come back to."}
-          </p>
+          </div>
         </div>
-        <div className="inline-actions">
-          {editing && (
-            <Button variant="secondary" onClick={() => setCaptureOpen(true)}>
-              <Plus size={15} />
-              Save opportunity
-            </Button>
-          )}
-          {view === "radar" && (
-            <>
-              {editing && (
-                <>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setPreferencesOpen(true)}
-                  >
-                    <Settings2 size={16} />
-                    Preferences
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => void toggle()}
-                  >
-                    {settings?.config.enabled ? (
-                      <Pause size={16} />
-                    ) : (
-                      <Play size={16} />
-                    )}{" "}
-                    {settings?.config.enabled ? "Pause Radar" : "Enable Radar"}
-                  </Button>
-                  <Button
-                    disabled={busy || running}
-                    onClick={() =>
-                      settings?.version
-                        ? void action(() =>
-                            request("/api/radar/ping", jsonRequest("POST", {})),
-                          )
-                        : setPreferencesOpen(true)
-                    }
-                  >
-                    <RefreshCw
-                      size={16}
-                      className={running ? "radar-spinning" : ""}
-                    />
-                    {running
-                      ? "Searching…"
-                      : settings?.config.enabled
-                        ? "Ping"
-                        : "Run once"}
-                  </Button>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      )}
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -329,6 +323,7 @@ export function RadarView({
           <Badge tone={settings.config.enabled ? "lime" : "muted"}>
             {settings.config.enabled ? "Radar on" : "Automation paused"}
           </Badge>
+          {running && <span role="status">Searching…</span>}
           <span>Email: {settings.config.emailFrequency}</span>
           {settings.nextRunAt && (
             <span>
@@ -665,27 +660,43 @@ export function RadarView({
             <Card className="opportunity-card" key={job.id}>
               <div className="opportunity-card-header">
                 <div className="opportunity-employer">
-                  <CompanyGlyph name={job.company} url={job.companyUrl} />
-                  {!companyMark(job.company, job.companyUrl) && (
-                    <span className="opportunity-initials" aria-hidden="true">
-                      {job.company
-                        .split(/\s+/)
-                        .slice(0, 2)
-                        .map((s) => s[0])
-                        .join("")
-                        .toUpperCase()}
-                    </span>
-                  )}
+                  <EmployerLogo
+                    name={job.company}
+                    fallback={
+                      <span className="opportunity-initials" aria-hidden="true">
+                        {companyInitials(job.company)}
+                      </span>
+                    }
+                  />
                   <span>{job.company}</span>
                 </div>
-                <a
-                  className="radar-careers-button application-destination external-link"
-                  href={job.sources[0].url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Listing <ArrowUpRight size={15} />
-                </a>
+                <div className="opportunity-listing-actions">
+                  <button
+                    type="button"
+                    className="opportunity-flag"
+                    aria-label={`${job.flagged ? "Unflag" : "Flag"} ${job.title}`}
+                    aria-pressed={job.flagged}
+                    title={
+                      job.flagged ? "Unflag opportunity" : "Flag opportunity"
+                    }
+                    disabled={busy}
+                    onClick={() => void toggleFlag(job)}
+                  >
+                    <Flag
+                      size={17}
+                      fill={job.flagged ? "currentColor" : "none"}
+                      aria-hidden="true"
+                    />
+                  </button>
+                  <a
+                    className="radar-careers-button application-destination external-link"
+                    href={job.sources[0].url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Listing <ArrowUpRight size={15} />
+                  </a>
+                </div>
               </div>
               <h3>{job.title}</h3>
               <p className="opportunity-location">
@@ -733,7 +744,6 @@ export function RadarView({
               <div className="opportunity-labels">
                 {job.saved && <Badge tone="lime">Saved</Badge>}
                 {job.tracked && <Badge tone="blue">In Applications</Badge>}
-                {job.flagged && <Badge tone="pink">Flagged</Badge>}
                 {job.assessment?.information !== "enough" && (
                   <Badge>Limited information</Badge>
                 )}
@@ -816,18 +826,6 @@ export function RadarView({
                 </span>
                 {editing && (
                   <div className="inline-actions">
-                    <Button
-                      variant="ghost"
-                      aria-label={`${job.flagged ? "Unflag" : "Flag"} ${job.title}`}
-                      aria-pressed={job.flagged}
-                      disabled={busy}
-                      onClick={() => void state(job, { flagged: !job.flagged })}
-                    >
-                      <Flag
-                        size={16}
-                        fill={job.flagged ? "currentColor" : "none"}
-                      />
-                    </Button>
                     <Button
                       variant="ghost"
                       aria-label={`${job.saved ? "Unsave" : "Save"} ${job.title}`}
@@ -1304,8 +1302,8 @@ function RadarPreferences({
           </Field>
         </div>
         <p className="muted">
-          Pausing keeps your opportunities. Run once works while paused and
-          never emails automatically.
+          Pausing keeps your opportunities. Hold the Radar tab for 3 seconds to
+          search now, even while paused. A ping never emails automatically.
         </p>
       </div>
       <div className="radar-preference-section">

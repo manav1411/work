@@ -20,6 +20,7 @@ export interface Env {
   TYPESAFE_API_KEY?: string;
   JSEARCH_API_KEY?: string;
   APIFY_TOKEN?: string;
+  LOGO_DEV_PUBLISHABLE_KEY?: string;
 }
 
 export interface Variables {

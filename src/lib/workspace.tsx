@@ -68,6 +68,7 @@ interface WorkspaceValue {
   syncIssues: { id: string; recordId: string; message: string }[];
   error: string;
   configured: boolean;
+  logoDevPublishableKey: string;
   toasts: Toast[];
   create: (input: RecordInput) => Promise<WorkRecord>;
   update: (
@@ -100,6 +101,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<WorkspaceMode>("cloud");
   const [loading, setLoading] = useState(true);
   const [configured, setConfigured] = useState(false);
+  const [logoDevPublishableKey, setLogoDevPublishableKey] = useState("");
   const [pending, setPending] = useState(0);
   const [outboxRevision, setOutboxRevision] = useState(0);
   const [error, setError] = useState("");
@@ -230,6 +232,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const nextUser = { id: "demo", name: "Manav", email: "Preview workspace" };
     userRef.current = nextUser;
     setUser(nextUser);
+    setLogoDevPublishableKey("");
     setPreferences(demo.getPreferences());
     setMode("demo");
     setConfigured(true);
@@ -254,6 +257,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         userRef.current = session.user;
         signingOutRef.current = false;
         setUser(session.user);
+        setLogoDevPublishableKey(
+          session.user ? session.logoDevPublishableKey || "" : "",
+        );
         setConfigured(session.configured);
         setMode(session.local ? "local" : "cloud");
         if (session.user) {
@@ -857,6 +863,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setApiAdapter(null);
     userRef.current = null;
     setUser(null);
+    setLogoDevPublishableKey("");
     setRecords([]);
     recordsRef.current = [];
     outboxRef.current = [];
@@ -902,6 +909,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       syncIssues,
       error,
       configured,
+      logoDevPublishableKey,
       toasts,
       create,
       update,
@@ -927,6 +935,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       syncIssues,
       error,
       configured,
+      logoDevPublishableKey,
       toasts,
       create,
       update,

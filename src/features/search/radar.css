@@ -10,6 +10,9 @@
   gap: 1rem;
   flex-wrap: wrap;
 }
+.radar-toolbar > .inline-actions {
+  margin-left: auto;
+}
 .radar-toolbar h2 {
   display: flex;
   align-items: center;
@@ -80,6 +83,29 @@
   justify-content: space-between;
   gap: 1rem;
 }
+.opportunity-listing-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+.opportunity-flag {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #565a63;
+  border-radius: 7px;
+  background: #292d37;
+  color: #fff;
+}
+.opportunity-flag:hover {
+  background: #3a3f4b;
+}
+.opportunity-flag[aria-pressed="true"] {
+  color: #f6cf49;
+}
 .opportunity-employer {
   display: flex;
   gap: 0.6rem;
@@ -90,6 +116,18 @@
 }
 .opportunity-employer > span:last-child {
   overflow-wrap: anywhere;
+}
+.opportunity-employer .employer-logo,
+.opportunity-employer .employer-logo-fallback {
+  width: 26px;
+  height: 26px;
+  flex-basis: 26px;
+  margin-inline-end: 0;
+}
+.opportunity-employer .employer-logo-image {
+  inset: 4px;
+  width: 18px;
+  height: 18px;
 }
 .opportunity-initials {
   display: inline-grid;
@@ -270,19 +308,6 @@
 .radar-run p {
   margin: 0.4rem 0;
   font-size: 0.8rem;
-}
-.radar-spinning {
-  animation: radar-spin 2s linear infinite;
-}
-@keyframes radar-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .radar-spinning {
-    animation: none;
-  }
 }
 @media (max-width: 600px) {
   .opportunity-card {

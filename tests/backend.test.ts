@@ -148,6 +148,27 @@ beforeEach(async () => {
   epoch = (await json("/api/records")).data.epoch as string;
 });
 describe("current workspace and replacement", () => {
+  it("only exposes a configured publishable logo key to signed-in sessions", async () => {
+    const original = env.LOGO_DEV_PUBLISHABLE_KEY;
+    const localAuth = env.LOCAL_DEV_AUTH;
+    try {
+      env.LOGO_DEV_PUBLISHABLE_KEY = "pk_synthetic-logo-key";
+      let session = await json("/api/session");
+      expect(session.data.logoDevPublishableKey).toBe("pk_synthetic-logo-key");
+      expect(session.data).not.toHaveProperty("JSEARCH_API_KEY");
+      env.LOGO_DEV_PUBLISHABLE_KEY = "sk_never-publish-this";
+      session = await json("/api/session");
+      expect(session.data).not.toHaveProperty("logoDevPublishableKey");
+      env.LOGO_DEV_PUBLISHABLE_KEY = "pk_synthetic-logo-key";
+      env.LOCAL_DEV_AUTH = "false";
+      session = await json("/api/session");
+      expect(session.data.user).toBeNull();
+      expect(session.data).not.toHaveProperty("logoDevPublishableKey");
+    } finally {
+      env.LOGO_DEV_PUBLISHABLE_KEY = original;
+      env.LOCAL_DEV_AUTH = localAuth;
+    }
+  });
   it("rejects retired schemas and endpoints and stores no revision or trash tables", async () => {
     for (const path of [
       "/api/backup",

@@ -4,13 +4,14 @@ Implemented on 16 October 2026 and released to staging and production during 16â
 
 ## Credentials
 
-No further API accounts are required. The existing ignored `.dev.vars` entries are sufficient:
+Discovery uses the existing ignored `.dev.vars` entries. Employer logo enrichment optionally uses a Logo.dev account:
 
 | Variable | Purpose |
 | --- | --- |
 | `TYPESAFE_API_KEY` | Server-side JEV evaluation using the existing balance |
 | `JSEARCH_API_KEY` | Direct OpenWeb Ninja JSearch discovery; not RapidAPI |
 | `APIFY_TOKEN` | Optional, explicitly enabled board collectors on an Apify Free plan |
+| `LOGO_DEV_PUBLISHABLE_KEY` | Optional Logo.dev CDN images for employers outside the bundled logo set |
 
 Public Greenhouse, Lever, and Ashby feeds do not need keys. Adzuna is excluded because the user's activation terms require payment after 25 test calls. Existing private email transport settings are reused; a new email provider is unnecessary. Never add these tokens to `VITE_*` variables or browser code.
 
@@ -18,21 +19,23 @@ Public Greenhouse, Lever, and Ashby feeds do not need keys. Adzuna is excluded b
 
 ## What is available
 
-Applications now has Interested and Radar tabs. Interested retains the existing company watchlist and adds saved opportunities. Existing saved company records and relationships are preserved. The release uses Interested draft keys and removes the old company-tab fallback and notes migration branch. Older unsaved company drafts are not migrated.
+Applications has three tabs in order: Applications, Radar, Interested. Interested retains the existing company watchlist and adds saved opportunities. Existing saved company records and relationships are preserved. The release uses Interested draft keys and removes the old company-tab fallback and notes migration branch. Older unsaved company drafts are not migrated.
 
-Radar offers separate search profiles, editable About you and resume snapshots, automatic discovery on a daily/weekly/monthly cadence, pause, and **Run once**. A manual run is allowed while automation is paused. Discovery and email have separate frequencies. All schedules use the selected timezone and handle daylight saving and short months. Automation starts paused and email disabled.
+Radar offers separate search profiles, editable About you and resume snapshots, automatic discovery on a daily/weekly/monthly cadence, pause, and manual pings. Hold the Radio-icon Radar tab for three seconds (or focus it and hold Space) to search immediately in either edit or browse mode. The tab fills during the hold and emits green rings after server acceptance; early release, movement, cancellation, or blur cancels the hold. First-time users are directed to preferences before a ping can run. The former Ping and Run once buttons called the same endpoint; only the label depended on automation being enabled. A manual run is allowed while automation is paused and does not enable it or send an email. Discovery and email have separate frequencies. All schedules use the selected timezone and handle daylight saving and short months. Automation starts paused and email disabled.
 
 The initial profiles cover software engineering in Melbourne/Sydney, Australian cybersecurity, and software engineering around Silicon Valley/New York. These are editable search defaults, not claims about the user's experience or eligibility. Add personal qualifications and work rights to About you before relying on qualification assessments.
 
 Resume import uses an existing successful document compilation's extracted text. The imported text is shown for editing and becomes a saved snapshot. A later resume edit does not silently change the evaluation context; import again to refresh it. If extraction is unavailable, paste the text.
 
-Cards reuse company logos, with initials for unmatched employers, and show a separate publisher mark, green Listing link, disclosed salary and dates, descriptions, and all known source links. JEV supplies separate interest, qualification, seniority, feasibility, information sufficiency, and confidence. Interest is a rubric score, not a calibrated probability of taking the job. Missing qualification evidence remains unknown. Qualification and confidence do not silently suppress opportunities.
+Cards reuse bundled monochrome company logos first. Other employers use a direct Logo.dev company-name CDN lookup (`https://img.logo.dev/name/{encoded name}`), without finding or looking up an employer website. This uses the CDN request allowance and never calls the credit-billed Search or Brand API. The optional publishable key is read at runtime from the Worker binding and returned only with signed-in sessions; it is not built into frontend assets. No secret API key is accepted. Images are lazy-loaded, rendered in monochrome, and use the browser's normal cache. Initials remain visible while loading and replace unavailable or failed images, including when no key is configured. The same employer component is used in Radar, Interested, Applications and linked interview headings; tutorial and profile icons retain their local-only behavior. Names alone can be ambiguous, so a CDN match is not proof of employer identity. [Logo.dev name lookup](https://www.logo.dev/docs/logo-images/name), [CDN documentation](https://www.logo.dev/docs/logo-images/introduction).
+
+Cards also show a separate publisher mark, green Listing link, disclosed salary and dates, descriptions, and all known source links. JEV supplies separate interest, qualification, seniority, feasibility, information sufficiency, and confidence. Interest is a rubric score, not a calibrated probability of taking the job. Missing qualification evidence remains unknown. Qualification and confidence do not silently suppress opportunities.
 
 Sorting covers interest, qualification, confidence, discovery/posting/closing dates, company, role, and comparable salary. Filters include text, profile, source, location, country, workplace, salary disclosure/currency/period/bounds, dates, seniority, employment type, assessment status, score, confidence, flagged, unread, dismissed, tracked, and closed. Salary comparisons use disclosed, comparable bounds without currency conversion; unknown or estimated pay remains eligible. Missing job dates remain included. Results are paginated in batches of 100; use Load more to continue.
 
 Flags, saved state, dismissal, notification history, and application tracking belong to the user's opportunity, independently of source advertisements. Saved or tracked jobs disappear from the normal Radar view. Saving an application through Radar creates the application and tracking link atomically. Cancelling the prefilled form does neither. Ordinary manually created applications also reconcile by known listing identities. Deleting an application preserves the tracked opportunity's suppression until the user explicitly restores it.
 
-The app's existing edit-mode convention applies: hold the Applications navigation item to enable editing, then use Preferences, Run once, save/flag, and application actions.
+The app's existing edit-mode convention applies to Preferences, saving opportunities, and application actions: hold the Applications navigation item to enable editing. Flags are always available immediately to the left of each Listing link: white outline when clear, solid yellow when flagged. Flag changes are optimistic and roll back on a failed save. Manual pings are also available outside edit mode.
 
 ## Sources and observed pilot results
 
@@ -91,7 +94,7 @@ The database/app deployment and existing Pi sender update are complete. Personal
 2. Install the three provider secrets in the intended Worker environment. Keep the existing email transport credentials.
 3. Apply D1 migration `0012_radar.sql` and deploy the built Worker through the existing release workflow. Staging and production have separate databases and secrets.
 4. Update the Pi mailer using the existing installer, preserving its SQLite state and credentials. The deployed sender must contain `/radar-digests`. For staging, configure `WORK_APP_ORIGIN` to that Work environment's exact origin; production defaults to `https://work.manavdodia.com`. Verify the new template with tests and protected health checks.
-5. In Radar Preferences, add personal context, review profiles and sources, and save. Run once with JSearch and any supported employer feeds first. Enable Apify selectively if needed.
+5. In Radar Preferences, add personal context, review profiles and sources, and save. Hold the Radar tab to ping with JSearch and any supported employer feeds first. Enable Apify selectively if needed.
 6. Preview a digest. Enable Radar and, when the user explicitly wants a real message, use Email new results now and confirm inbox arrival. Then enable the chosen email cadence. Discovery can remain on a disabled cadence while email uses its own cadence; pausing Radar disables both automatic processes.
 
 Workspace export/import accepts only the current version 2 format, including Radar preferences, opportunities, aliases and personal state. Version 1 packages are rejected; no import conversion is retained. Imports remap record relationships and pause automation. Exports exclude credentials, ephemeral queues, cached model responses and shared spending counters. Replacing/importing a workspace does not reset credential spending limits. Migration 0012 removes the redundant company `data.radar` flag in place; the company record kind identifies Interested companies directly. Demo storage uses a fresh seed version instead of upgrading old preview state.

@@ -73,6 +73,7 @@ export interface SessionResponse {
   user: WorkUser | null;
   local: boolean;
   configured: boolean;
+  logoDevPublishableKey?: string;
 }
 
 export const field = (

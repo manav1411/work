@@ -42,14 +42,15 @@ import {
 import { errorMessage } from "./domain";
 import { useSavingWorkspace as useWorkspace } from "./useSaving";
 import { applicationCompany, applicationContact } from "./applicationRecords";
-import { CompanyGlyph } from "../../components/CompanyGlyph";
+import { EmployerLogo } from "../../components/EmployerLogo";
 import { useEditMode } from "../../lib/edit-mode";
 import "./applications.css";
 import { InlineProcess } from "./InlineProcess";
 import { InlineApplicationFields } from "./InlineApplicationFields";
 import { InlineInterestedFields } from "./InlineInterestedFields";
 import { RadarView } from "./RadarView";
-import type { Opportunity } from "../../../shared/radar";
+import { RadarTab } from "./RadarTab";
+import type { Opportunity, RadarSettings } from "../../../shared/radar";
 import { request, jsonRequest } from "../../lib/api";
 
 export const APPLICATION_STAGES = APPLICATION_STATUSES;
@@ -70,6 +71,8 @@ export function ApplicationsPage() {
   const [sort, setSort] = useState("updated");
   const [deleting, setDeleting] = useState<WorkRecord>();
   const [error, setError] = useState("");
+  const [radarRefresh, setRadarRefresh] = useState(0);
+  const [radarSetup, setRadarSetup] = useState(0);
   const applications = records.filter(
     (record) => record.kind === "application",
   );
@@ -162,6 +165,22 @@ export function ApplicationsPage() {
     setPrefilledCompany(companies.find((c) => c.id === opportunity.companyId));
     setEditing(null);
   }
+  async function pingRadar() {
+    setError("");
+    try {
+      const settings = await request<RadarSettings>("/api/radar/settings");
+      if (!settings.version) {
+        setRadarSetup((value) => value + 1);
+        return false;
+      }
+      await request("/api/radar/ping", jsonRequest("POST", {}));
+      setRadarRefresh((value) => value + 1);
+      return true;
+    } catch (failure) {
+      setError(errorMessage(failure));
+      return false;
+    }
+  }
   async function deleteRecord() {
     if (!deleting) return;
     setError("");
@@ -204,6 +223,11 @@ export function ApplicationsPage() {
         >
           Applications <span>{applications.length}</span>
         </button>
+        <RadarTab
+          selected={discovery}
+          onSelect={() => setParams({ tab: "radar" })}
+          onPing={pingRadar}
+        />
         <button
           role="tab"
           aria-selected={radar}
@@ -213,16 +237,11 @@ export function ApplicationsPage() {
         >
           Interested <span>{companies.length}</span>
         </button>
-        <button
-          role="tab"
-          aria-selected={discovery}
-          tabIndex={discovery ? 0 : -1}
-          className={discovery ? "active" : ""}
-          onClick={() => setParams({ tab: "radar" })}
-        >
-          Radar
-        </button>
       </SectionTabs>
+      <span id="radar-ping-help" className="sr-only">
+        Hold Radar for 3 seconds to search now, or focus it and hold Space.
+        Available while automation is paused. Sends no email.
+      </span>
       {error && (
         <p className="form-error" role="alert">
           {error}
@@ -266,7 +285,12 @@ export function ApplicationsPage() {
         </div>
       )}
       {discovery ? (
-        <RadarView view="radar" onApplication={newRadarApplication} />
+        <RadarView
+          view="radar"
+          onApplication={newRadarApplication}
+          refreshKey={radarRefresh}
+          setupRequest={radarSetup}
+        />
       ) : radar ? (
         <>
           <RadarView view="interested" onApplication={newRadarApplication} />
@@ -303,18 +327,12 @@ export function ApplicationsPage() {
                               target="_blank"
                               rel="noopener noreferrer"
                             >
-                              <CompanyGlyph
-                                name={company.title}
-                                url={field(company, "careersUrl")}
-                              />
+                              <EmployerLogo name={company.title} />
                               {company.title}
                             </a>
                           ) : (
                             <>
-                              <CompanyGlyph
-                                name={company.title}
-                                url={field(company, "careersUrl")}
-                              />
+                              <EmployerLogo name={company.title} />
                               {company.title}
                             </>
                           )}
@@ -426,7 +444,7 @@ export function ApplicationsPage() {
                     }}
                   >
                     <td>
-                      <CompanyGlyph
+                      <EmployerLogo
                         name={applicationCompany(record, records)}
                       />
                       {applicationCompany(record, records)}
@@ -481,7 +499,7 @@ export function ApplicationsPage() {
                     to={`/applications?record=${encodeURIComponent(record.id)}`}
                   >
                     <span className="application-company">
-                      <CompanyGlyph
+                      <EmployerLogo
                         name={applicationCompany(record, records)}
                       />
                       {applicationCompany(record, records)}
@@ -538,7 +556,7 @@ export function ApplicationsPage() {
             <div className="section-heading">
               <div className="inline-actions">
                 <strong>
-                  <CompanyGlyph name={applicationCompany(selected, records)} />
+                  <EmployerLogo name={applicationCompany(selected, records)} />
                   {applicationCompany(selected, records)}
                 </strong>
                 <Status record={selected} />
