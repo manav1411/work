@@ -99,7 +99,7 @@ test("display name, theme, custom status and typed/calendar dates persist", asyn
   await expect(
     page
       .locator(".sidebar")
-      .getByRole("button", { name: "Account: Chosen name" }),
+      .getByRole("link", { name: "Account: Chosen name" }),
   ).toBeVisible();
   await page
     .locator(".sidebar")

@@ -1,6 +1,7 @@
 [Unit]
 Description=Work private verification email sender (%i)
-After=network.target postfix.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple

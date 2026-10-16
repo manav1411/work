@@ -1,6 +1,6 @@
 # Email authentication setup and cutover
 
-The implementation replaces GitHub sign-in with Work's own email/password screens. Better Auth stays in the Worker; D1 stores users, password hashes, sessions and encrypted challenges. The Pi delivery service is described in [mailer operations](../mailer/README.md). It is not live until its network and SMTP prerequisites pass.
+The implementation replaces GitHub sign-in with Work's own email/password screens. Better Auth stays in the Worker; D1 stores users, password hashes, sessions and encrypted challenges. Production email delivery now uses the Pi with Gmail's authenticated SMTP service; see [mailer operations](../mailer/README.md). The unused direct-to-recipient Postfix transport still requires its own ISP/DNS prerequisites.
 
 ## Configuration
 
@@ -38,7 +38,11 @@ The pending registration is bound to a host-scoped HttpOnly cookie. Lost/older r
 
 ## Owner migration
 
-The operator's ignored `.private/email-owner.json` contains exactly the pinned `githubId`, `githubLogin` and destination `email`; it never contains a password. Production was inspected read-only: the existing owner already uses the requested destination email. No identity or data changes were needed for that inspection.
+The operator's ignored `.private/email-owner.json` contains exactly the pinned `githubId`, `githubLogin` and destination `email`; it never contains a password.
+
+Production recovery on 16 October 2026: email/password authentication was already live, but the existing verified owner had no password credential and `/api/health` reported `emailDeliveryConfigured: false`. With the owner's explicit instruction, an operator created the missing credential using Better Auth's password hashing on the account selected by its pinned GitHub identity and verified destination email. The guarded operation preserved the user ID and all 18 workspace records and revoked old sessions through the database trigger. Live production sign-in and session resolution passed; the test session was then signed out. No password or hash is recorded here. At that point the mail sender was unconfigured, leaving sign-up, verification and emailed recovery unavailable.
+
+Production mail activation later that day: the owner selected Gmail SMTP on the Pi. A dedicated `work-mailer@production` service now connects to Gmail over verified TLS with an App Password stored privately on the Pi. Its localhost endpoint is exposed through `work-mailer.manavdodia.com` with a dedicated Cloudflare Access Service Auth identity and bearer token. Five sender settings were uploaded to the existing Worker while preserving its auth secret. Production health reports `emailDeliveryConfigured: true`; a real owner recovery email was accepted on the first attempt, and the owner confirmed inbox arrival. The recovery test did not change the password. The existing compiler and tunnel remained active.
 
 ```sh
 npm run auth:owner -- production check
@@ -46,7 +50,7 @@ npm run auth:owner -- production check
 
 The check is read-only and reports whether the email matches, whether a credential exists, and the owner's record count. It requires both pinned GitHub ID and login to identify exactly one account and rejects target-email conflicts. Do not auto-merge accounts by email.
 
-When the email already matches, use **Forgot password** after delivery is ready to create the missing password credential on that same user ID. Enter the code and choose the password privately. The app permits 8–128 characters, supports password managers and encourages a longer phrase. Do not reuse a password disclosed in chat.
+For future migrations where the email already matches and the password is missing, use **Forgot password** after delivery is ready to create the credential on that same user ID. Enter the code and choose the password privately. The app permits 8–128 characters, supports password managers and encourages a longer phrase. Do not reuse a password disclosed in chat.
 
 If a different destination email is needed, `npm run auth:owner -- production prepare` requires a healthy protected mailer and performs a guarded email update on the same user. Database triggers mark the new address unverified and revoke sessions; verified recovery is still required before signing in. Rehearse against a synthetic staging account before any production mutation.
 
@@ -60,4 +64,4 @@ This refuses to proceed without a verified destination and a stored password cre
 
 ## Production release gate
 
-Prepare and verify the mail transport, staging runtime limits, real inbox delivery, and owner recovery before removing the live GitHub flow. Do not deploy this cutover while sender configuration is absent or the owner has no working recovery route. Coordinate any session interruption with the owner. The current implementation work leaves the live Worker and owner credential unchanged until these gates are met.
+Prepare and verify the mail transport, staging runtime limits, real inbox delivery, and owner recovery before removing the live GitHub flow. Do not deploy this cutover while sender configuration is absent or the owner has no working recovery route. Coordinate any session interruption with the owner. The initial production deployment crossed this gate without sender configuration; owner sign-in and production Gmail delivery have since been restored and verified. Staging's sender requires its own configuration before staging inbox acceptance.

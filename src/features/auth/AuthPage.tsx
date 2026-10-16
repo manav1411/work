@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, Check, Eye, EyeOff, Mail } from "lucide-react";
 import { BrandArrow } from "../../components/BrandArrow";
@@ -28,6 +34,32 @@ function readFlow(): Flow | null {
 function maskEmail(email: string) {
   const [name, domain] = email.split("@");
   return `${name.slice(0, 2)}${"•".repeat(Math.min(5, Math.max(2, name.length - 2)))}@${domain}`;
+}
+
+function AuthEntryActions({
+  children,
+  busy,
+  onDemo,
+}: {
+  children: ReactNode;
+  busy: boolean;
+  onDemo: () => void;
+}) {
+  return (
+    <div className="auth-entry-actions">
+      <div className="auth-account-actions">{children}</div>
+      <hr className="auth-action-divider" />
+      <Button
+        type="button"
+        variant="secondary"
+        className="auth-see-demo"
+        disabled={busy}
+        onClick={onDemo}
+      >
+        See demo
+      </Button>
+    </div>
+  );
 }
 
 export function AuthPage() {
@@ -122,6 +154,10 @@ export function AuthPage() {
       /* Cookie auth still works. */
     }
     window.location.assign("/home");
+  }
+  function enterDemo() {
+    openDemo();
+    navigate("/home");
   }
   function report(error: unknown) {
     setFailure(error instanceof Error ? error.message : "Please try again.");
@@ -433,52 +469,33 @@ export function AuthPage() {
                 demo.
               </p>
             )}
-            <div
-              className={
-                entryView ? "auth-entry-actions" : "auth-primary-action"
-              }
-            >
-              {entryView ? (
-                <>
-                  <div className="auth-account-actions">
-                    <Button
-                      type="submit"
-                      name="action"
-                      value="signin"
-                      disabled={!configured || busy}
-                    >
-                      {busy && pendingAction === "signin"
-                        ? "Signing in…"
-                        : "Sign in"}
-                    </Button>
-                    <Button
-                      type="submit"
-                      name="action"
-                      value="signup"
-                      variant="secondary"
-                      className="auth-alternate-action"
-                      disabled={!configured || busy}
-                    >
-                      {busy && pendingAction === "signup"
-                        ? "Signing up…"
-                        : "Sign up"}
-                    </Button>
-                  </div>
-                  <hr className="auth-action-divider" />
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="auth-see-demo"
-                    disabled={busy}
-                    onClick={() => {
-                      openDemo();
-                      navigate("/home");
-                    }}
-                  >
-                    See demo
-                  </Button>
-                </>
-              ) : (
+            {entryView ? (
+              <AuthEntryActions busy={busy} onDemo={enterDemo}>
+                <Button
+                  type="submit"
+                  name="action"
+                  value="signin"
+                  disabled={!configured || busy}
+                >
+                  {busy && pendingAction === "signin"
+                    ? "Signing in…"
+                    : "Sign in"}
+                </Button>
+                <Button
+                  type="submit"
+                  name="action"
+                  value="signup"
+                  variant="secondary"
+                  className="auth-alternate-action"
+                  disabled={!configured || busy}
+                >
+                  {busy && pendingAction === "signup"
+                    ? "Signing up…"
+                    : "Sign up"}
+                </Button>
+              </AuthEntryActions>
+            ) : (
+              <div className="auth-primary-action">
                 <Button
                   type="submit"
                   disabled={
@@ -488,8 +505,8 @@ export function AuthPage() {
                   {busy ? "One moment…" : primary}
                   {!busy && <ArrowRight size={18} />}
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
             {codeView && (
               <div className="auth-code-actions">
                 <button
@@ -508,27 +525,24 @@ export function AuthPage() {
           </form>
         )}
         {!entryView && (
-          <div className="auth-secondary-actions">
+          <AuthEntryActions busy={busy} onDemo={enterDemo}>
             <Button
               type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => {
-                openDemo();
-                navigate("/home");
-              }}
-            >
-              Demo
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
               disabled={busy}
               onClick={() => navigate("/sign-in")}
             >
               Sign in
             </Button>
-          </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="auth-alternate-action"
+              disabled={busy}
+              onClick={() => navigate("/sign-up")}
+            >
+              Sign up
+            </Button>
+          </AuthEntryActions>
         )}
         {view === "verify" && (
           <p className="auth-recovery-hint">

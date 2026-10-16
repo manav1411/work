@@ -10,6 +10,7 @@ import {
 import { BrandArrow } from "../components/BrandArrow";
 import {
   Link,
+  NavLink,
   Navigate,
   Outlet,
   Route,
@@ -26,9 +27,7 @@ import {
   Compass,
   MessagesSquare,
   Home,
-  LogOut,
   Menu,
-  Settings,
   X,
 } from "lucide-react";
 import { Button, EmptyState } from "../components/ui";
@@ -133,18 +132,7 @@ function Loading() {
 }
 
 function AccountControls({ className = "" }: { className?: string }) {
-  const { user, mode, preferences, signOut, notify } = useWorkspace();
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const location = useLocation();
-  useEffect(() => {
-    setConfirming(false);
-  }, [location.pathname]);
-  useEffect(() => {
-    if (!confirming) return;
-    const timeout = window.setTimeout(() => setConfirming(false), 3000);
-    return () => window.clearTimeout(timeout);
-  }, [confirming]);
+  const { user, mode, preferences } = useWorkspace();
   const name = mode === "demo" ? "Demo" : displayName(preferences, user);
   return (
     <div
@@ -152,56 +140,17 @@ function AccountControls({ className = "" }: { className?: string }) {
       role="group"
       aria-label="Account and settings"
     >
-      <button
-        className={`account-trigger ${confirming ? "account-confirming" : ""}`}
-        type="button"
-        aria-label={
-          confirming ? "Log out?" : `Account: ${name}. Show log out option`
+      <NavLink
+        className={({ isActive }) =>
+          `nav-link account-trigger ${isActive ? "nav-link-active" : ""}`
         }
-        title={confirming ? "Log out?" : name}
-        disabled={busy}
-        onClick={() => {
-          if (!confirming) {
-            setConfirming(true);
-            return;
-          }
-          setBusy(true);
-          void signOut().catch((failure) => {
-            notify(
-              failure instanceof Error
-                ? failure.message
-                : "Could not sign out.",
-              "error",
-            );
-            setBusy(false);
-            setConfirming(false);
-          });
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape" && confirming) {
-            event.preventDefault();
-            setConfirming(false);
-          }
-        }}
-      >
-        {confirming ? (
-          <LogOut size={18} aria-hidden="true" />
-        ) : (
-          <CircleUserRound size={18} aria-hidden="true" />
-        )}
-        <span className="account-trigger-label">
-          {confirming ? "Log out?" : name}
-        </span>
-      </button>
-      <Link
-        className="settings-trigger"
         to="/settings"
-        aria-label="Settings"
-        title="Settings"
-        onClick={() => setConfirming(false)}
+        aria-label={`Account: ${name}. Open settings`}
+        title={`${name} · Settings`}
       >
-        <Settings size={20} />
-      </Link>
+        <CircleUserRound size={19} strokeWidth={1.8} aria-hidden="true" />
+        <span className="account-trigger-label">{name}</span>
+      </NavLink>
     </div>
   );
 }

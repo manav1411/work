@@ -172,6 +172,6 @@ test("auth layouts fit a small mobile viewport and recover when a code flow is m
   }
   await expect(page.getByRole("link", { name: /Start again/ })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Demo", exact: true }),
+    page.getByRole("button", { name: "See demo", exact: true }),
   ).toBeVisible();
 });

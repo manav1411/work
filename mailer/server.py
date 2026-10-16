@@ -7,6 +7,7 @@ import os
 import re
 import smtplib
 import sqlite3
+import ssl
 import time
 from contextlib import contextmanager
 from email.message import EmailMessage
@@ -24,10 +25,15 @@ class SubmissionError(Exception):
 
 
 class Mailer:
-    def __init__(self, state_dir, token, sender, smtp_port=25):
+    def __init__(self, state_dir, token, sender, smtp_port=25, smtp_mode="local", smtp_password=""):
         if len(token) < 32 or not EMAIL.fullmatch(sender):
             raise ValueError("Configure a strong token and a valid sender address.")
+        if smtp_mode not in {"local", "gmail"}:
+            raise ValueError("Choose local or gmail SMTP transport.")
+        if smtp_mode == "gmail" and (not sender.endswith("@gmail.com") or not re.fullmatch(r"[A-Za-z0-9]{16}", smtp_password)):
+            raise ValueError("Gmail needs its sender address and a 16-character App Password.")
         self.token, self.sender, self.smtp_port = token, sender, int(smtp_port)
+        self.smtp_mode, self.smtp_password = smtp_mode, smtp_password
         directory = Path(state_dir)
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.db_path = directory / "submissions.sqlite3"
@@ -48,6 +54,24 @@ class Mailer:
         finally:
             db.close()
 
+    @contextmanager
+    def transport(self, timeout=12):
+        if self.smtp_mode == "gmail":
+            # The endpoint is fixed; credentials only travel over verified TLS.
+            # They never enter the Worker, HTTP API payloads or service logs.
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=timeout, context=ssl.create_default_context()) as smtp:
+                smtp.login(self.sender, self.smtp_password)
+                yield smtp
+        else:
+            with smtplib.SMTP("127.0.0.1", self.smtp_port, timeout=timeout) as smtp:
+                yield smtp
+
+    def health(self):
+        with self.transport(timeout=8) as smtp:
+            if smtp.noop()[0] != 250:
+                raise smtplib.SMTPException("SMTP health check failed.")
+        return {"ok": True, "transport": "gmail-smtp" if self.smtp_mode == "gmail" else "local-smtp"}
+
     def validate(self, job):
         fields = {"id", "email", "otp", "type", "from", "expiresAt"}
         if not isinstance(job, dict) or set(job) != fields:
@@ -66,7 +90,7 @@ class Mailer:
     def message(self, job):
         verify = job["type"] == "email-verification"
         title = "Your Work verification code" if verify else "Reset your Work password"
-        explanation = "One small step, then you’re in." if verify else "Let’s get you back in."
+        instruction = "Enter this code in work, it expires in 5 minutes. Ignore if you didn't request this."
         message = EmailMessage()
         message["From"] = f"Work <{self.sender}>"
         message["To"] = job["email"]
@@ -74,8 +98,8 @@ class Mailer:
         message["Date"] = formatdate(localtime=False)
         message["Message-ID"] = f'<{job["id"]}@{self.sender.split("@", 1)[1]}>'
         message["Auto-Submitted"] = "auto-generated"
-        message.set_content(f'{title}\n\n{explanation}\n\n{job["otp"]}\n\nEnter this code in Work. It expires 5 minutes after it was requested.\nIf you didn’t request this, you can ignore this email.\nNever share this code.\n')
-        message.add_alternative(f'''<!doctype html><html><body style="margin:0;background:#f5f2e9;color:#202128;font-family:Arial,sans-serif;padding:32px 16px"><div style="max-width:420px;margin:auto"><p style="font-size:36px;font-weight:800;margin:0 0 24px">work<span style="color:#f29bbd">↗</span></p><div style="background:#fffdf7;border:2px solid #202128;border-radius:14px;padding:28px;box-shadow:5px 5px 0 #202128"><h1 style="font-size:23px;margin:0 0 12px">{title}.</h1><p>{explanation}</p><p style="background:#def295;border:2px solid #202128;border-radius:8px;padding:18px;text-align:center;font-size:32px;font-weight:700;letter-spacing:8px">{job["otp"]}</p><p style="font-size:14px;line-height:1.6">Enter this code in Work. It expires 5 minutes after it was requested.</p><p style="font-size:12px;line-height:1.6;color:#5b5b65">If you didn’t request this, you can ignore this email. Never share this code.</p></div></div></body></html>''', subtype="html")
+        message.set_content(f'{title}\n\n{job["otp"]}\n\n{instruction}\n')
+        message.add_alternative(f'''<!doctype html><html><body style="margin:0;background:#f5f2e9;color:#202128;font-family:Arial,sans-serif;padding:32px 16px"><div style="max-width:420px;margin:auto"><p style="font-size:36px;font-weight:800;margin:0 0 24px">work<span style="color:#f29bbd">↗</span></p><div style="background:#fffdf7;border:2px solid #202128;border-radius:14px;padding:28px;box-shadow:5px 5px 0 #202128"><h1 style="font-size:23px;margin:0 0 12px">{title}.</h1><p style="background:#def295;border:2px solid #202128;border-radius:8px;padding:18px;text-align:center;font-size:32px;font-weight:700;letter-spacing:8px">{job["otp"]}</p><p style="font-size:14px;line-height:1.6">{instruction}</p></div></div></body></html>''', subtype="html")
         return message
 
     def submit(self, job):
@@ -99,15 +123,20 @@ class Mailer:
                     raise SubmissionError(429, "Daily sending limit reached.")
                 db.execute("INSERT INTO submissions VALUES(?,?,?,?,?)", (job["id"], fingerprint, "submitting", job["expiresAt"], now))
         state = "accepted"
+        sending = False
+        submitted = False
         try:
-            # Postfix listens only on loopback. Its DKIM signer and outbound
-            # transport own final delivery; no SMTP credentials cross this API.
-            with smtplib.SMTP("127.0.0.1", self.smtp_port, timeout=12) as smtp:
+            with self.transport() as smtp:
+                sending = True
                 smtp.send_message(self.message(job), from_addr=self.sender, to_addrs=[job["email"]])
+                submitted = True
         except (smtplib.SMTPResponseException, smtplib.SMTPRecipientsRefused, ConnectionRefusedError):
-            state = "retry"
+            state = "accepted" if submitted else "retry"
         except (OSError, smtplib.SMTPException):
-            state = "uncertain"
+            # Connection/TLS/login failures cannot have submitted a message.
+            # A disconnect during DATA may have; avoid duplicate delivery.
+            # Once DATA succeeded, a failed QUIT cannot undo acceptance.
+            state = "accepted" if submitted else "uncertain" if sending else "retry"
         finally:
             with self.database() as db:
                 db.execute("UPDATE submissions SET state=? WHERE id=?", (state, job["id"]))
@@ -146,9 +175,7 @@ def handler(mailer):
             if self.path != "/health":
                 return self.reply(404, {"error": "Not found."})
             try:
-                with smtplib.SMTP("127.0.0.1", mailer.smtp_port, timeout=3) as smtp:
-                    smtp.noop()
-                return self.reply(200, {"ok": True, "transport": "local-smtp"})
+                return self.reply(200, mailer.health())
             except (OSError, smtplib.SMTPException):
                 return self.reply(503, {"ok": False, "transport": "unavailable"})
 
@@ -180,7 +207,7 @@ def handler(mailer):
 if __name__ == "__main__":
     os.umask(0o077)
     try:
-        service = Mailer(os.environ.get("WORK_MAIL_STATE_DIR", "/var/lib/work-mailer"), os.environ.get("WORK_MAIL_TOKEN", ""), os.environ.get("WORK_MAIL_FROM", ""), os.environ.get("WORK_SMTP_PORT", "25"))
+        service = Mailer(os.environ.get("WORK_MAIL_STATE_DIR", "/var/lib/work-mailer"), os.environ.get("WORK_MAIL_TOKEN", ""), os.environ.get("WORK_MAIL_FROM", ""), os.environ.get("WORK_SMTP_PORT", "25"), os.environ.get("WORK_SMTP_MODE", "local"), os.environ.get("WORK_SMTP_PASSWORD", ""))
     except (ValueError, OSError):
         raise SystemExit("Work mailer needs valid private configuration and a writable state directory.")
     ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("WORK_MAIL_PORT", "8789"))), handler(service)).serve_forever()

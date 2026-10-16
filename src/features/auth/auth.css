@@ -140,19 +140,6 @@
 .auth-entry-actions .auth-see-demo {
   background: var(--lime);
 }
-.auth-secondary-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: -8px;
-}
-.auth-secondary-actions .button {
-  min-width: 0;
-  min-height: 40px;
-  padding: 9px 12px;
-  font-size: 12px;
-  box-shadow: none;
-}
 .auth-code-actions a,
 .auth-recovery-hint a {
   color: var(--ink);

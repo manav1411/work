@@ -1,6 +1,6 @@
 # Email sign-up and Pi email delivery plan
 
-Planning document, 16 October 2026. The application, private sender, migrations, configuration tools and automated checks are implemented in the working tree. Production authentication, account credentials and infrastructure have not been changed. Live email activation remains pending the ISP/DNS and inbox-delivery checks; see [setup and cutover](email-auth-setup.md).
+Planning document, 16 October 2026. The application, private sender, migrations, configuration tools and automated checks are implemented. Production now serves email/password authentication. A missing owner password credential was repaired and live sign-in verified on the existing account. The owner subsequently selected Gmail SMTP as the free Pi delivery transport; production is configured, and the owner confirmed a real recovery message arrived in the inbox. Direct-to-recipient delivery from the home connection remains unused. See [setup and cutover](email-auth-setup.md).
 
 ## Agreed direction
 
@@ -10,9 +10,10 @@ Planning document, 16 October 2026. The application, private sender, migrations,
 - Normal sign-in uses email and password. Password recovery uses an emailed six-digit code.
 - Preserve the owner's existing `manav1411` account and workspace while moving it to the requested Gmail address. Supply the exact address privately during migration rather than committing it here.
 - Investigate sending email directly from the Pi before choosing an email delivery service.
+- Following that investigation, use the Pi mailer with Gmail SMTP and a privately stored App Password. The direct-delivery plan below records the earlier proposal and its unresolved ISP/DNS requirements.
 - Build every screen in Work's own style: lively, simple, intuitive, and consistent with the rest of the site.
 
-The Pi is an email delivery candidate; the agreed authentication location remains Cloudflare. Passwords and verification codes must never appear in committed configuration, documentation, or logs. Set the owner's password privately through verified account setup.
+The Pi runs the email sender and submits through Gmail; the authentication location remains Cloudflare. Passwords and verification codes must never appear in committed configuration, documentation, or logs. Set the owner's password privately through verified account setup.
 
 ## Architecture and alternatives
 

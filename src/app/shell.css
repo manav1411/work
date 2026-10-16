@@ -33,32 +33,19 @@
   display: none;
 }
 .account-control {
-  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   min-width: 0;
 }
 .account-trigger {
-  display: inline-flex;
   flex: 1 1 0;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  width: 0;
   min-width: 0;
-  min-height: 42px;
-  padding: 0 10px;
-  border: 1.5px solid transparent;
-  background: transparent;
-  border-radius: 8px;
-  color: var(--ink);
-  text-align: left;
-  font-size: 12px;
-  font-weight: 700;
   overflow: hidden;
   white-space: nowrap;
+}
+.account-trigger > svg {
+  flex-shrink: 0;
 }
 .account-trigger-label {
   flex: 1;
@@ -67,29 +54,8 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.account-trigger:hover,
-.settings-trigger:hover {
-  background: var(--surface-tint);
-}
-.account-trigger:focus-visible,
-.settings-trigger:focus-visible {
+.account-trigger:focus-visible {
   outline-offset: 2px;
-}
-.account-confirming {
-  border-color: var(--outline);
-  background: var(--pink);
-}
-.settings-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 42px;
-  width: 42px;
-  height: 42px;
-  margin-left: auto;
-  border: 1.5px solid transparent;
-  border-radius: 8px;
-  color: var(--ink);
 }
 .pending-changes {
   display: flex;
@@ -260,15 +226,7 @@
     min-width: 0;
   }
   .mobile-account .account-trigger {
-    color: var(--ink);
-    padding: 0 10px;
-  }
-  .mobile-account .account-trigger:hover,
-  .mobile-account .settings-trigger:hover {
-    background: var(--canvas);
-  }
-  .mobile-account .settings-trigger {
-    color: var(--ink);
+    padding: 10px;
   }
   .simple-shell .mobile-nav > a {
     min-width: 0;
