@@ -18,7 +18,12 @@ describe("employer logo CDN lookups", () => {
     expect(logo.origin).toBe("https://img.logo.dev");
     expect(logo.pathname).toBe("/name/Culture%20%26%20Amp");
     expect(logo.searchParams.get("format")).toBe("png");
-    expect(logo.searchParams.get("greyscale")).toBe("true");
+    expect(logo.searchParams.has("greyscale")).toBe(false);
+    expect(
+      new URL(logoDevUrl("GitHub", "pk_test", "dark")).searchParams.get(
+        "theme",
+      ),
+    ).toBe("dark");
     expect(logo.searchParams.get("fallback")).toBe("404");
     expect(logoDevUrl("Example/Employer?brand=1", "pk_test")).toContain(
       "/name/Example%2FEmployer%3Fbrand%3D1?",

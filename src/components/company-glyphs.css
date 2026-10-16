@@ -32,22 +32,23 @@
 }
 .employer-logo-image {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  inset: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
   object-fit: contain;
   visibility: hidden;
-  filter: grayscale(1);
-  mix-blend-mode: multiply;
 }
 .employer-logo-image[data-loaded] {
   visibility: visible;
 }
-[data-theme="dark"] .employer-logo-image {
-  filter: grayscale(1) invert(1);
-  mix-blend-mode: screen;
+.employer-logo > .company-glyph,
+.employer-logo-fallback > .company-glyph {
+  margin: 0;
+  width: 80%;
+  height: 80%;
 }
 .employer-logo-initials {
   font-size: 0.65em;
   font-weight: 650;
+  color: var(--ink);
 }

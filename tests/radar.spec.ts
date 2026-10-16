@@ -110,6 +110,27 @@ async function fixture(page: Page, logoKey = "") {
       });
     if (path === "/api/preferences")
       return route.fulfill({ json: { preferences: DEFAULT_PREFERENCES } });
+    if (path === "/api/records" && method === "POST") {
+      const record: WorkRecord = {
+        ...body,
+        id: `manual-${records.length}`,
+        tags: body.tags || [],
+        links: body.links || [],
+        data: body.data || {},
+        version: 1,
+        createdAt: at,
+        updatedAt: at,
+      };
+      records.push(record);
+      return route.fulfill({ json: { record } });
+    }
+    if (path.startsWith("/api/records/") && method === "PATCH") {
+      const record = records.find(
+        (item) => item.id === path.split("/").at(-1),
+      )!;
+      Object.assign(record, body, { version: record.version + 1 });
+      return route.fulfill({ json: { record } });
+    }
     if (path === "/api/records")
       return route.fulfill({ json: { records, epoch: "radar-test-epoch" } });
     if (path === "/api/radar/settings") {
@@ -141,6 +162,17 @@ async function fixture(page: Page, logoKey = "") {
       });
     }
     if (path === "/api/radar/opportunities") {
+      if (method === "POST") {
+        const opportunity: Opportunity = {
+          ...opportunities[0],
+          ...body,
+          id: `manual-opportunity-${opportunities.length}`,
+          saved: true,
+          assessment: null,
+        };
+        opportunities.push(opportunity);
+        return route.fulfill({ status: 201, json: { opportunity } });
+      }
       const view = u.searchParams.get("view"),
         flagged = u.searchParams.get("flagged");
       return route.fulfill({
@@ -377,6 +409,64 @@ test("Radar cancels moved and interrupted holds and does not show success on a f
   await page.keyboard.up("Space");
 });
 
+test("Radar emits one ring at three seconds with the fill cleared before the server responds", async ({
+  page,
+}) => {
+  const data = await fixture(page);
+  let release!: () => void;
+  const responseGate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/radar/ping", async (route) => {
+    await responseGate;
+    await route.fallback();
+  });
+  await page.goto("/applications?tab=radar");
+  await expect(page.locator(".opportunity-card")).toBeVisible();
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 60_000));
+  const tab = page.getByRole("tab", { name: "Radar", exact: true });
+  await tab.focus();
+  await page.keyboard.down("Space");
+  await page.clock.runFor(2999);
+  await expect(page.locator(".radar-tab-pulse")).toHaveCount(0);
+  await page.clock.runFor(1);
+  await expect(page.locator(".radar-tab-pulse")).toHaveCount(1);
+  await expect(tab).not.toHaveClass(/radar-tab-holding/);
+  await expect(tab).toHaveAttribute("aria-busy", "true");
+  expect(
+    await tab.evaluate((el) => getComputedStyle(el, "::before").transform),
+  ).toBe("matrix(0, 0, 0, 1, 0, 0)");
+  const ring = page.locator(".radar-tab-pulse");
+  expect(
+    await ring.evaluate((el) => getComputedStyle(el, "::before").content),
+  ).toBe("none");
+  expect(
+    await ring.evaluate((el) => getComputedStyle(el, "::after").content),
+  ).toBe("none");
+  expect(
+    await ring.evaluate((el) => {
+      const animation = el.getAnimations()[0];
+      animation.pause();
+      animation.currentTime = 1500;
+      return el.getBoundingClientRect().width > window.innerWidth;
+    }),
+  ).toBe(true);
+  await page.screenshot({ path: "/tmp/work-radar-ping-far.png" });
+  await page.keyboard.up("Space");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.clock.runFor(2600);
+  await expect(ring).toHaveCount(0);
+  release();
+  await expect.poll(data.getPings).toBe(1);
+  await expect(tab).toHaveAttribute("aria-busy", "false");
+  await expect(ring).toHaveCount(0);
+});
+
 test("Radar hold opens first-time preferences without sending a ping", async ({
   page,
 }) => {
@@ -407,7 +497,7 @@ test("Radar rolls back a flag when saving fails", async ({ page }) => {
     }),
   );
   await page.goto("/applications?tab=radar");
-  const flag = page.locator(".opportunity-flag");
+  const flag = page.locator(".opportunity-card .opportunity-flag");
   await flag.click();
   await expect(page.getByRole("alert")).toHaveText(
     "Opportunity changed. Reload and try again.",
@@ -460,7 +550,11 @@ test("Radar fits mobile and retains a separate listing-source mark", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/applications?tab=radar");
   await expect(page.locator(".opportunity-card")).toBeVisible();
-  await expect(page.locator(".publisher-linkedin")).toHaveText("in");
+  await expect(
+    page.locator(".opportunity-publishers").getByRole("link", {
+      name: "LinkedIn listing for Junior software engineer",
+    }),
+  ).toHaveAttribute("href", "https://www.linkedin.com/jobs/view/1234");
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
@@ -474,7 +568,7 @@ test("Radar fits mobile and retains a separate listing-source mark", async ({
   });
 });
 
-test("Employer logos keep bundled marks and resolve other companies by name through the CDN", async ({
+test("Employer logos load in colour by name and keep local fallbacks", async ({
   page,
 }) => {
   const data = await fixture(page, "pk_synthetic-cdn-key");
@@ -505,7 +599,7 @@ test("Employer logos keep bundled marks and resolve other companies by name thro
     if (url.pathname.includes("Missing")) return route.fulfill({ status: 404 });
     return route.fulfill({
       contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="#202128" d="M8 8h48v12H20v24h36v12H8z"/></svg>',
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="#315bff" d="M8 8h24v48H8z"/><path fill="#ff57ac" d="M32 8h24v48H32z"/></svg>',
     });
   });
   await page.goto("/applications?tab=radar");
@@ -514,32 +608,33 @@ test("Employer logos keep bundled marks and resolve other companies by name thro
   const domain = cards.filter({ hasText: "Culture Amp" });
   const byName = cards.filter({ hasText: "Example & Employer" });
   const missing = cards.filter({ hasText: "Missing Employer" });
-  await expect(domain.locator(".employer-logo-image")).toHaveAttribute(
-    "data-loaded",
-    "true",
-  );
-  await expect(byName.locator(".employer-logo-image")).toHaveAttribute(
-    "data-loaded",
-    "true",
-  );
+  await expect(
+    domain.locator(".opportunity-employer .employer-logo-image"),
+  ).toHaveAttribute("data-loaded", "true");
+  await expect(
+    byName.locator(".opportunity-employer .employer-logo-image"),
+  ).toHaveAttribute("data-loaded", "true");
   await expect(missing.locator(".employer-logo-fallback")).toHaveText("ME");
-  await expect(missing.locator("img")).toHaveCount(0);
-  await expect(cards.first().locator(".company-glyph")).toBeVisible();
-  expect(requested.map((url) => url.pathname).sort()).toEqual([
+  await expect(missing.locator(".opportunity-employer img")).toHaveCount(0);
+  await expect(
+    cards.first().locator(".opportunity-employer .employer-logo-image"),
+  ).toHaveAttribute("data-loaded", "true");
+  expect([...new Set(requested.map((url) => url.pathname))].sort()).toEqual([
     "/name/Culture%20Amp",
     "/name/Example%20%26%20Employer",
+    "/name/Google",
+    "/name/LinkedIn",
     "/name/Missing%20Employer",
   ]);
   for (const url of requested) {
     expect(url.searchParams.get("token")).toBe("pk_synthetic-cdn-key");
     expect(url.searchParams.get("format")).toBe("png");
-    expect(url.searchParams.get("greyscale")).toBe("true");
+    expect(url.searchParams.has("greyscale")).toBe(false);
     expect(url.searchParams.get("fallback")).toBe("404");
   }
-  await expect(domain.locator(".employer-logo-image")).toHaveCSS(
-    "filter",
-    "grayscale(1)",
-  );
+  await expect(
+    domain.locator(".opportunity-employer .employer-logo-image"),
+  ).toHaveCSS("filter", "none");
   await page.screenshot({
     path: "/tmp/work-employer-logos-light.png",
     fullPage: true,
@@ -547,10 +642,9 @@ test("Employer logos keep bundled marks and resolve other companies by name thro
   await page.evaluate(() => {
     document.documentElement.dataset.theme = "dark";
   });
-  await expect(domain.locator(".employer-logo-image")).toHaveCSS(
-    "filter",
-    "grayscale(1) invert(1)",
-  );
+  await expect(
+    domain.locator(".opportunity-employer .employer-logo-image"),
+  ).toHaveCSS("filter", "none");
   await page.screenshot({
     path: "/tmp/work-employer-logos-dark.png",
     fullPage: true,
@@ -568,7 +662,9 @@ test("Employer logos keep bundled marks and resolve other companies by name thro
   await page.getByRole("tab", { name: /Interested/ }).click();
   await expect(page.locator(".opportunity-card")).toHaveCount(1);
   await expect(
-    page.locator(".opportunity-card .employer-logo-image"),
+    page.locator(
+      ".opportunity-card .opportunity-employer .employer-logo-image",
+    ),
   ).toHaveAttribute("data-loaded", "true");
 });
 
@@ -584,6 +680,212 @@ test("Employer logos fall back locally when the key is not configured", async ({
     return route.abort();
   });
   await page.goto("/applications?tab=radar");
-  await expect(page.locator(".employer-logo-fallback")).toHaveText("EE");
+  await expect(
+    page.locator(".opportunity-employer .employer-logo-fallback"),
+  ).toHaveText("EE");
   expect(remoteRequests).toBe(0);
+});
+
+test("Flag filter is icon-only, uses theme outlines, and fills yellow when active", async ({
+  page,
+}) => {
+  const data = await fixture(page);
+  data.opportunities[0].flagged = true;
+  await page.goto("/applications?tab=radar");
+  const filter = page.getByRole("button", {
+    name: "Show flagged opportunities",
+    exact: true,
+  });
+  await expect(page.locator(".opportunity-card")).toBeVisible();
+  await expect(filter).toHaveText("");
+  await expect(filter).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(filter).toHaveCSS("border-width", "0px");
+  await expect(filter).toHaveCSS("color", "rgb(0, 0, 0)");
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+  await expect(filter).toHaveCSS("color", "rgb(255, 255, 255)");
+  await filter.click();
+  await expect(filter).toHaveAttribute("aria-pressed", "true");
+  await expect(filter).toHaveCSS("color", "rgb(246, 207, 73)");
+  await expect(filter.locator("svg")).toHaveAttribute("fill", "currentColor");
+  await expect(page.locator(".opportunity-card")).toHaveCount(1);
+  await filter.click();
+  await expect(filter).toHaveAttribute("aria-pressed", "false");
+});
+
+test("Publisher footer shows one colour logo per site with the correct listing links", async ({
+  page,
+}) => {
+  const data = await fixture(page, "pk_synthetic-cdn-key");
+  const source = data.opportunities[0].sources[0];
+  data.opportunities[0].sources.push(
+    {
+      ...source,
+      publisher: "Linkedin Jobs",
+      url: "https://au.linkedin.com/jobs/view/5678",
+    },
+    {
+      ...source,
+      publisher: "Indeed",
+      url: "https://au.indeed.com/viewjob?jk=example",
+    },
+    {
+      ...source,
+      publisher: "Glassdoor",
+      url: "https://www.glassdoor.com.au/job-listing/example",
+    },
+  );
+  const requested: string[] = [];
+  await page.route("https://img.logo.dev/**", (route) => {
+    requested.push(decodeURIComponent(new URL(route.request().url()).pathname));
+    return route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#0a66c2" d="M2 2h20v20H2z"/></svg>',
+    });
+  });
+  await page.goto("/applications?tab=radar");
+  const footer = page.locator(".opportunity-publishers");
+  await expect(footer.getByRole("link")).toHaveCount(3);
+  await expect(footer).toHaveText("");
+  await expect(
+    footer.getByRole("link", { name: /LinkedIn listing/ }),
+  ).toHaveAttribute("href", source.url);
+  await expect(
+    footer.getByRole("link", { name: /Indeed listing/ }),
+  ).toHaveAttribute("href", "https://au.indeed.com/viewjob?jk=example");
+  await expect(
+    footer.getByRole("link", { name: /Glassdoor listing/ }),
+  ).toHaveAttribute("href", "https://www.glassdoor.com.au/job-listing/example");
+  await expect(footer.locator("img[data-loaded]")).toHaveCount(3);
+  expect(requested).toContain("/name/Glassdoor");
+  await page.screenshot({
+    path: "/tmp/work-radar-publishers-light.png",
+    fullPage: true,
+  });
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "dark";
+  });
+  await expect(footer.locator("img").first()).toHaveCSS("filter", "none");
+  await page.screenshot({
+    path: "/tmp/work-radar-publishers-dark.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(footer.getByRole("link")).toHaveCount(3);
+  await expect
+    .poll(() =>
+      page
+        .locator(".sidebar")
+        .evaluate((el) => el.getBoundingClientRect().right),
+    )
+    .toBeLessThanOrEqual(0);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "/tmp/work-radar-publishers-mobile.png",
+    fullPage: true,
+  });
+});
+
+test("Manually added Interested companies and Applications use the same colour CDN lookup", async ({
+  page,
+}) => {
+  const data = await fixture(page, "pk_synthetic-cdn-key");
+  const requests: string[] = [];
+  await page.route("https://img.logo.dev/**", (route) => {
+    requests.push(decodeURIComponent(new URL(route.request().url()).pathname));
+    return route.fulfill({
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#36d6bd" d="M2 2h20v20H2z"/></svg>',
+    });
+  });
+  await page.goto("/applications?tab=interested");
+  await enterEditMode(page, "Applications");
+  await page
+    .locator(".page-header")
+    .getByRole("button", { name: "Add company", exact: true })
+    .click();
+  await page
+    .getByRole("textbox", { name: "Company", exact: true })
+    .fill("Culture Amp");
+  await page.getByRole("textbox", { name: "Company", exact: true }).blur();
+  await expect
+    .poll(() => data.records.find((record) => record.kind === "company")?.title)
+    .toBe("Culture Amp");
+  const nav = page
+    .locator(".sidebar")
+    .getByRole("link", { name: "Applications", exact: true });
+  await nav.focus();
+  await page.keyboard.down("Space");
+  await expect(nav).not.toHaveAttribute("data-editing", "true");
+  await page.keyboard.up("Space");
+  await expect(
+    page.locator(".radar-card .employer-logo-image"),
+  ).toHaveAttribute("data-loaded", "true");
+  await expect(
+    page.locator(".radar-card .employer-logo-image"),
+  ).toHaveAttribute("src", /\/name\/Culture%20Amp\?/);
+  await expect(page.locator(".radar-card .employer-logo")).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)",
+  );
+  await page.getByRole("tab", { name: /^Applications/ }).click();
+  await enterEditMode(page, "Applications");
+  await page
+    .locator(".page-header")
+    .getByRole("button", { name: "New application", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "New application",
+    exact: true,
+  });
+  await dialog.getByLabel("Company", { exact: true }).fill("Culture Amp");
+  await dialog.getByLabel("Role", { exact: true }).fill("Platform engineer");
+  await dialog
+    .getByRole("button", { name: "Save application", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await expect(
+    page.locator(".application-detail .employer-logo-image").first(),
+  ).toHaveAttribute("data-loaded", "true");
+  await expect(
+    page.locator(".application-detail .employer-logo-image").first(),
+  ).toHaveAttribute("src", /\/name\/Culture%20Amp\?/);
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Radar", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Save opportunity", exact: true })
+    .click();
+  const capture = page.getByRole("dialog", {
+    name: "Save an opportunity",
+    exact: true,
+  });
+  await capture.getByLabel("Company", { exact: true }).fill("Culture Amp");
+  await capture
+    .getByLabel("Role title", { exact: true })
+    .fill("Manually saved role");
+  await capture
+    .getByLabel("Listing URL", { exact: true })
+    .fill("https://au.indeed.com/viewjob?jk=manual");
+  await capture
+    .getByRole("button", { name: "Save to Interested", exact: true })
+    .click();
+  await expect(capture).not.toBeVisible();
+  await page.getByRole("tab", { name: /Interested/ }).click();
+  const manual = page
+    .locator(".opportunity-card")
+    .filter({ hasText: "Manually saved role" });
+  await expect(manual.locator(".opportunity-employer img")).toHaveAttribute(
+    "data-loaded",
+    "true",
+  );
+  await expect(manual.locator(".opportunity-employer img")).toHaveAttribute(
+    "src",
+    /\/name\/Culture%20Amp\?/,
+  );
+  expect(requests.every((path) => path.startsWith("/name/"))).toBe(true);
 });

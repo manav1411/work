@@ -38,6 +38,7 @@ import {
 } from "../../components/ui";
 import { EmployerLogo } from "../../components/EmployerLogo";
 import { companyInitials } from "../../../shared/company-logos";
+import { radarPublisherLinks } from "../../../shared/radar-publishers";
 import { useWorkspace } from "../../lib/workspace";
 import { useEditMode } from "../../lib/edit-mode";
 import { getAttachmentUrl, jsonRequest, request } from "../../lib/api";
@@ -386,14 +387,24 @@ export function RadarView({
             </option>
           ))}
         </Select>
-        <Button
-          variant={filters.flagged ? "secondary" : "ghost"}
+        <button
+          type="button"
+          className="opportunity-flag radar-flag-filter"
+          aria-label="Show flagged opportunities"
+          title={
+            filters.flagged
+              ? "Show all opportunities"
+              : "Show flagged opportunities"
+          }
           aria-pressed={!!filters.flagged}
           onClick={() => change("flagged", filters.flagged ? "" : "true")}
         >
-          <Flag size={15} />
-          Flagged
-        </Button>
+          <Flag
+            size={23}
+            fill={filters.flagged ? "currentColor" : "none"}
+            aria-hidden="true"
+          />
+        </button>
         <details className="radar-filter-details">
           <summary>All filters</summary>
           <div className="radar-filter-grid">
@@ -816,14 +827,24 @@ export function RadarView({
                 )}
               </details>
               <div className="opportunity-footer">
-                <span
-                  className="opportunity-publisher"
-                  title={`Discovered through ${job.sources[0].provider}`}
+                <nav
+                  className="opportunity-publishers"
+                  aria-label={`Listing sites for ${job.title}`}
                 >
-                  <PublisherIcon publisher={job.sources[0].publisher} />
-                  {job.sources[0].publisher}
-                  {job.sources.length > 1 ? ` +${job.sources.length - 1}` : ""}
-                </span>
+                  {radarPublisherLinks(job.sources).map((publisher) => (
+                    <a
+                      key={publisher.key}
+                      className="opportunity-publisher"
+                      href={publisher.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${publisher.name} listing`}
+                      aria-label={`${publisher.name} listing for ${job.title}`}
+                    >
+                      <EmployerLogo name={publisher.name} />
+                    </a>
+                  ))}
+                </nav>
                 {editing && (
                   <div className="inline-actions">
                     <Button
@@ -1071,24 +1092,6 @@ export function RadarView({
     </section>
   );
 }
-function PublisherIcon({ publisher }: { publisher: string }) {
-  const brand = /linkedin/i.test(publisher)
-    ? "in"
-    : /indeed/i.test(publisher)
-      ? "i"
-      : /seek/i.test(publisher)
-        ? "S"
-        : "↗";
-  return (
-    <span
-      className={`publisher-mark publisher-${brand === "in" ? "linkedin" : brand === "S" ? "seek" : "other"}`}
-      aria-hidden="true"
-    >
-      {brand}
-    </span>
-  );
-}
-
 function RadarPreferences({
   settings,
   onSaved,

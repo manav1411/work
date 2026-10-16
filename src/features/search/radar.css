@@ -108,6 +108,11 @@
 .opportunity-flag[aria-pressed="true"] {
   color: #f6cf49;
 }
+.radar-flag-filter {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+}
 .opportunity-employer {
   display: flex;
   gap: 0.6rem;
@@ -127,9 +132,9 @@
   margin-inline-end: 0;
 }
 .opportunity-employer .employer-logo-image {
-  inset: 4px;
-  width: 18px;
-  height: 18px;
+  inset: 2px;
+  width: 22px;
+  height: 22px;
 }
 .opportunity-initials {
   display: inline-grid;
@@ -229,33 +234,28 @@
   margin-top: 0.2rem;
   gap: 0.6rem;
 }
-.opportunity-publisher {
+.opportunity-publishers {
   display: flex;
-  gap: 0.4rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   align-items: center;
-  font-size: 0.72rem;
-  color: var(--muted);
 }
-.publisher-mark {
+.opportunity-publisher {
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  font-size: 11px;
-  font-weight: 800;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  text-decoration: none;
 }
-.publisher-linkedin {
-  background: #0a66c2;
-  color: white;
-  border-color: #0a66c2;
+.opportunity-publisher:hover {
+  opacity: 0.8;
 }
-.publisher-seek {
-  background: #e60278;
-  color: white;
-  border-color: #e60278;
+.opportunity-publisher .employer-logo,
+.opportunity-publisher .employer-logo-fallback {
+  width: 28px;
+  height: 28px;
+  margin: 0;
 }
 .radar-preference-section {
   border-bottom: 1px solid var(--line);

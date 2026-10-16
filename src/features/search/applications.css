@@ -234,27 +234,23 @@
 .radar-tab-holding::before {
   animation: radar-tab-fill 3s linear forwards;
 }
-.radar-tab-pulse {
-  position: absolute;
-  pointer-events: none;
+.radar-ping-overlay {
+  position: fixed;
   inset: 0;
+  z-index: 100;
+  overflow: hidden;
+  pointer-events: none;
 }
-.radar-tab-pulse::before,
-.radar-tab-pulse::after {
-  content: "";
+.radar-tab-pulse {
   position: absolute;
   pointer-events: none;
   width: 30px;
   height: 30px;
-  left: 50%;
-  top: 50%;
   border: 2px solid #34d879;
   border-radius: 50%;
-  background: rgb(52 216 121 / 12%);
-  animation: radar-tab-ping 1.3s ease-out both;
-}
-.radar-tab-pulse::after {
-  animation-delay: 180ms;
+  box-shadow: 0 0 18px rgb(52 216 121 / 20%);
+  transform: translate(-50%, -50%);
+  animation: radar-tab-ping 2.4s ease-out both;
 }
 @keyframes radar-tab-fill {
   to {
@@ -264,11 +260,13 @@
 @keyframes radar-tab-ping {
   from {
     opacity: 0.9;
-    transform: translate(-50%, -50%) scale(0.6);
+    width: 24px;
+    height: 24px;
   }
   to {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(3.5);
+    width: 200vmax;
+    height: 200vmax;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -276,8 +274,7 @@
     animation: none;
     transform: scaleX(1);
   }
-  .radar-tab-pulse::before,
-  .radar-tab-pulse::after {
+  .radar-tab-pulse {
     animation: none;
     opacity: 0;
   }

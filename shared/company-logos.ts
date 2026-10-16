@@ -4,7 +4,11 @@ export function logoDevPublishableKey(value = ""): string {
   return /^pk_[\w-]{1,200}$/.test(key) ? key : "";
 }
 
-export function logoDevUrl(name: string, publishableKey: string): string {
+export function logoDevUrl(
+  name: string,
+  publishableKey: string,
+  theme: "light" | "dark" = "light",
+): string {
   const token = logoDevPublishableKey(publishableKey);
   if (!token) return "";
   const company = name.trim().replace(/\s+/g, " ");
@@ -19,8 +23,7 @@ export function logoDevUrl(name: string, publishableKey: string): string {
     token,
     format: "png",
     size: "64",
-    greyscale: "true",
-    theme: "light",
+    theme,
     fallback: "404",
   });
   return `https://img.logo.dev/name/${encodeURIComponent(company)}?${params}`;

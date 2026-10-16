@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Radio } from "lucide-react";
 
 const HOLD_DURATION = 3000;
@@ -15,6 +16,8 @@ export function RadarTab({
   const [holding, setHolding] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [pulseOrigin, setPulseOrigin] = useState({ x: 0, y: 0 });
+  const button = useRef<HTMLButtonElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pulse = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const origin = useRef<{ x: number; y: number } | null>(null);
@@ -51,14 +54,19 @@ export function RadarTab({
       pending.current = true;
       setHolding(false);
       setSending(true);
+      const bounds = button.current?.getBoundingClientRect();
+      if (bounds)
+        setPulseOrigin({
+          x: bounds.left + bounds.width / 2,
+          y: bounds.top + bounds.height / 2,
+        });
+      setSent(true);
+      clearTimeout(pulse.current);
+      pulse.current = setTimeout(() => setSent(false), 2600);
       onSelect();
       try {
         const accepted = await onPing();
-        if (mounted.current && accepted) {
-          setSent(true);
-          clearTimeout(pulse.current);
-          pulse.current = setTimeout(() => setSent(false), 1600);
-        }
+        if (mounted.current && !accepted) setSent(false);
       } finally {
         pending.current = false;
         if (mounted.current) setSending(false);
@@ -68,6 +76,7 @@ export function RadarTab({
 
   return (
     <button
+      ref={button}
       role="tab"
       aria-label="Radar"
       aria-selected={selected}
@@ -124,7 +133,16 @@ export function RadarTab({
     >
       <Radio size={17} aria-hidden="true" />
       Radar
-      {sent && <span className="radar-tab-pulse" aria-hidden="true" />}
+      {sent &&
+        createPortal(
+          <div className="radar-ping-overlay" aria-hidden="true">
+            <span
+              className="radar-tab-pulse"
+              style={{ left: pulseOrigin.x, top: pulseOrigin.y }}
+            />
+          </div>,
+          document.body,
+        )}
       <span className="sr-only" role="status">
         {sending ? "Sending ping…" : sent ? "Ping sent." : ""}
       </span>

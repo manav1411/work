@@ -4,7 +4,7 @@ import { useWorkspace } from "../lib/workspace";
 import { CompanyGlyph, companyMark } from "./CompanyGlyph";
 import "./company-glyphs.css";
 
-/** Employer-only lookups: tutorials and profile/resource titles stay local. */
+/** Company and publisher brands; tutorials and profile/resource titles stay local. */
 export function EmployerLogo({
   name,
   fallback,
@@ -12,15 +12,18 @@ export function EmployerLogo({
   name: string;
   fallback?: ReactNode;
 }) {
-  const { logoDevPublishableKey } = useWorkspace();
-  if (companyMark(name)) return <CompanyGlyph name={name} />;
-  const src = logoDevUrl(name, logoDevPublishableKey);
+  const { logoDevPublishableKey, preferences } = useWorkspace();
+  const src = logoDevUrl(name, logoDevPublishableKey, preferences.theme);
   return (
     <RemoteEmployerLogo
       key={src}
       src={src}
       fallback={
-        fallback ?? (
+        (companyMark(name) ? (
+          <CompanyGlyph name={name} colour />
+        ) : (
+          fallback
+        )) ?? (
           <span className="employer-logo-initials">
             {companyInitials(name)}
           </span>

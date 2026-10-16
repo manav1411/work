@@ -8,5 +8,6 @@ Microsoft's four-pane mark is drawn with four rectangles.
 Brands retain their respective trademarks; glyphs identify links and companies.
 
 The local collection also includes language, infrastructure and learning-resource
-marks from the same pinned Simple Icons release. All marks are rendered with an
-ink-coloured CSS mask in Work, regardless of the brand's original colour.
+marks from the same pinned Simple Icons release. Marks use an ink-coloured CSS
+mask by default. Employer and publisher logo fallbacks can use the recorded brand
+colour; their primary full-colour images load separately from Logo.dev.

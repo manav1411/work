@@ -492,10 +492,12 @@ export function CompanyGlyph({
   name = "",
   url = "",
   technology = "",
+  colour = false,
 }: {
   name?: string;
   url?: string;
   technology?: string;
+  colour?: boolean;
 }) {
   if (
     technology.toLowerCase() === "java" ||
@@ -514,6 +516,9 @@ export function CompanyGlyph({
     );
   const style = {
     "--company-glyph-image": `url("/company-glyphs/${mark.slug}.svg")`,
+    ...(colour
+      ? { backgroundColor: mark.colour ? `#${mark.colour}` : "var(--ink)" }
+      : {}),
   } as CSSProperties;
   return <span className="company-glyph" style={style} aria-hidden="true" />;
 }
