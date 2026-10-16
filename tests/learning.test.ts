@@ -84,13 +84,13 @@ beforeAll(async () => {
     FILES: (await miniflare.getR2Bucket("FILES")) as unknown as R2Bucket,
     ENVIRONMENT: "local",
     LOCAL_DEV_AUTH: "true",
-    ALLOWED_GITHUB_USERS: '[{"login":"synthetic-owner","id":"12345"}]',
     APP_ORIGIN: "http://localhost",
   };
   const migrations = [
     "0001_workspace.sql",
     "0009_current_workspace.sql",
     "0010_goal_actions.sql",
+    "0011_email_auth.sql",
   ]
     .map((name) =>
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"),

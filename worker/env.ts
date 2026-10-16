@@ -6,9 +6,11 @@ export interface Env {
   ENVIRONMENT: "local" | "staging" | "production";
   LOCAL_DEV_AUTH?: string;
   BETTER_AUTH_SECRET?: string;
-  GITHUB_CLIENT_ID?: string;
-  GITHUB_CLIENT_SECRET?: string;
-  ALLOWED_GITHUB_USERS?: string;
+  AUTH_MAILER_URL?: string;
+  AUTH_MAILER_TOKEN?: string;
+  AUTH_MAILER_ACCESS_CLIENT_ID?: string;
+  AUTH_MAILER_ACCESS_CLIENT_SECRET?: string;
+  AUTH_MAIL_FROM?: string;
   APP_ORIGIN: string;
   ASSETS?: Fetcher;
   LATEX_COMPILER_URL?: string;

@@ -4,15 +4,21 @@ Work stores private career notes, applications and files. The browser calls a sa
 
 ## Authentication
 
-GitHub OAuth is handled by Better Auth with the Drizzle SQLite/D1 adapter. Interactive adapter transactions are disabled; workspace writes use D1 batches. Sign-in requires `BETTER_AUTH_SECRET` of at least 32 characters, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `APP_ORIGIN` and a valid `ALLOWED_GITHUB_USERS` runtime secret. Without them, `/api/session` returns `user: null, configured: false`; private endpoints return 401. An OAuth endpoint returns 503 rather than creating a fixture account.
+Better Auth uses the Drizzle SQLite/D1 adapter for email/password sign-in, six-digit email verification and password recovery. Interactive adapter transactions are disabled. `BETTER_AUTH_SECRET` must be at least 32 characters and `APP_ORIGIN` must identify this environment. GitHub, social login, passwordless login, public user/email updates and unused auth routes are disabled at the Worker boundary. Signup accepts only email and password; the server supplies a neutral display name.
 
-The initial registration boundary uses the provider-verified GitHub profile. GitHub's numeric user ID and login are mapped into fields that cannot be supplied through public user-update inputs. The private allowlist is an array of objects with a `login` and optional numeric `id` string. When an ID is present, it takes precedence over the login, including after a username rename; a different account with the same login is rejected. Login-only entries use case-insensitive exact matching. Pin numeric IDs for stable account identity. A missing or malformed list denies all access; an empty list also denies everyone. The actual list lives in ignored `.private/github-allowlist.json` and is uploaded as a Cloudflare secret, never bundled into source or frontend assets. See [allowlist setup](github-allowlist.md). Synthetic nonnumeric IDs never satisfy production identity checks.
+Passwords use Better Auth's scrypt implementation with an 8–128 character policy. Email OTPs use the built-in plugin with six digits, five-minute expiry, five wrong attempts and encrypted storage. A unique verification identifier makes code consumption single-use through the real adapter. Resending replaces the old code. Host-scoped HttpOnly registration proof binds signup verification to its initiating browser; an older or lost registration context recovers by proving email ownership and setting a fresh password. This prevents a preregistered attacker password from silently becoming the mailbox owner's credential.
 
-Registration, provider account creation, session creation and private session resolution independently check the allowlist. Removing an entry and applying the list blocks new sign-ins and existing sessions on their next private request. Email/password registration and automatic account linking are disabled. Add or remove users by editing and applying the private allowlist; each account retains its own workspace.
+Session creation and private API resolution independently require verified email. Private APIs additionally require a credential account and matching authentication versions. Secure, HttpOnly, host-scoped SameSite=Lax cookies last seven days, with renewal no more than daily and no cookie session cache. Password insert/update triggers revoke sessions and increment the user's authentication version atomically with the credential change. A session-insert trigger rejects an old password check racing a reset. Email changes revoke sessions and require verification again. A reset failure can spend its code; the user requests a fresh one. No failed database write is reported as a successful reset.
 
-Production and staging session cookies are secure, HttpOnly, host scoped and SameSite=Lax. The app does not share cookies across `manavdodia.com` subdomains. Session state is read from D1, with cookie session caching disabled. Session lifetime is seven days, with renewal no more often than daily. Use separate secrets and GitHub OAuth applications for production and staging.
+Application rate counters live in D1 rather than Worker memory: a 60-second per-email/purpose send cooldown, 10 send attempts per email/hour, 30 per IP/hour and 500 per environment/day; 10 code attempts per email/10 minutes across resends; and 15 password sign-in attempts per email/10 minutes. The broader API/IP guard still applies. HMAC-derived counter keys avoid retaining raw email/IP identifiers in these counters. Password recovery responses have the same status/body for known and unknown accounts, and network email submission happens in the background. Signup explicitly directs an existing address to sign-in/recovery.
 
-Better Auth supplies OAuth state/callback protections. The Worker also checks POST authentication callback, error and new-user destinations against `APP_ORIGIN`, including first sign-in without an existing cookie. Auth bodies are stream limited to 100 KB. Never set origin/CSRF protections to disabled during troubleshooting.
+The shared account form deliberately distinguishes unknown-email and wrong-password sign-in failures to direct users to Sign up or Forgot password. These sign-in responses disclose account existence, as does the existing duplicate-signup response; recovery requests retain their generic acknowledgement.
+
+Email jobs are encrypted in a bounded, leased D1 outbox linked to current challenges. Background/cron submission retries temporary failures and removes sensitive payloads after sender acceptance; expired/replaced challenges remove their jobs. Local SMTP acceptance does not prove remote inbox delivery. The private Pi API requires a bearer token and, for public HTTPS access, a dedicated Cloudflare Access Service Auth policy. It accepts fixed code templates only, validates senders/recipients and deduplicates IDs. No arbitrary public relay is exposed. See [sender operations](../mailer/README.md).
+
+Pending unverified non-GitHub registrations expire after 24 hours; expired challenge, outbox and rate state is cleaned by cron. Legacy owner IDs and workspace/file ownership are preserved. Provider retirement follows verified email recovery and owner acceptance; see [cutover setup](email-auth-setup.md).
+
+Origin/CSRF protections remain enabled. Authentication POST callback destinations are restricted to `APP_ORIGIN`, and bodies are stream limited to 100 KB. Production and staging must use separate databases, buckets, auth secrets, sender credentials and Access tokens. A local emulator test does not establish deployed CPU limits or real inbox delivery.
 
 ## Local and browser-only modes
 
@@ -22,7 +28,7 @@ The frontend may offer a clearly labelled browser-only demo with synthetic start
 
 ## Ownership and writes
 
-Clients do not select an owner. The validated GitHub session scopes records, search, goals, preferences, export/upload, and files. Composite foreign keys and typed relation checks enforce ownership.
+Clients do not select an owner. The validated email/password session scopes records, search, goals, preferences, export/upload, and files. Composite foreign keys and typed relation checks enforce ownership.
 
 PATCH uses a current version counter to reject conflicting writes with 409. The counter is concurrency control; old content is never stored. Retry receipts contain IDs and resolve the current saved record or goal, rather than keeping response snapshots.
 
@@ -42,21 +48,21 @@ Authorised PDFs can be framed only by this origin so the native PDF preview work
 
 ## Runtime limits
 
-| Operation | Implemented limit |
-| --- | --- |
-| JSON request | 32 MB, streamed; do not trust only Content-Length |
-| Authentication request | 100 KB, streamed |
-| One file | Nonempty; at most 10 MB |
-| Multipart request | 10 MB plus 64 KB form overhead |
-| Title / note body | 240 / 500,000 characters |
-| Tags / links | 40 tags of 60 characters; 100 record links |
-| Structured record details | 100,000 JSON characters; nesting depth at most 12 |
-| Explicit starter batch | 400 records |
-| Import batch | 100 records; 20 files per record; 40 files overall |
-| Bundled export | At most 20 MB file bytes; `?files=false` exports metadata only |
-| Workspace package | 5,000 records and files; 1,000 goals; 32 MB manifest |
-| Search response | At most 60 results |
-| IP rate limit | 240 API or 30 auth requests per minute |
+| Operation                 | Implemented limit                                              |
+| ------------------------- | -------------------------------------------------------------- |
+| JSON request              | 32 MB, streamed; do not trust only Content-Length              |
+| Authentication request    | 100 KB, streamed                                               |
+| One file                  | Nonempty; at most 10 MB                                        |
+| Multipart request         | 10 MB plus 64 KB form overhead                                 |
+| Title / note body         | 240 / 500,000 characters                                       |
+| Tags / links              | 40 tags of 60 characters; 100 record links                     |
+| Structured record details | 100,000 JSON characters; nesting depth at most 12              |
+| Explicit starter batch    | 400 records                                                    |
+| Import batch              | 100 records; 20 files per record; 40 files overall             |
+| Bundled export            | At most 20 MB file bytes; `?files=false` exports metadata only |
+| Workspace package         | 5,000 records and files; 1,000 goals; 32 MB manifest           |
+| Search response           | At most 60 results                                             |
+| IP rate limit             | 240 API or 30 auth requests per minute                         |
 
 Rate counters are stored in D1 so different Worker isolates share them. Counters older than five minutes are opportunistically removed. The rate guard returns 429 with Retry-After. This is a personal-workspace control; a larger public service would need more granular abuse controls and quota monitoring.
 

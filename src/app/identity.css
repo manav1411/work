@@ -38,10 +38,12 @@
 .simple-shell .sidebar-bottom {
   border-color: var(--line);
 }
-.simple-shell .account-trigger {
+.simple-shell .account-trigger,
+.simple-shell .settings-trigger {
   color: var(--ink);
 }
-.simple-shell .account-trigger:hover {
+.simple-shell .account-trigger:hover,
+.simple-shell .settings-trigger:hover {
   background: var(--surface-tint);
 }
 .simple-shell .simple-nav-close {

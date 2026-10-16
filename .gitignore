@@ -12,3 +12,4 @@ coverage/
 .DS_Store
 .private/
 .texlive-2025/
+__pycache__/

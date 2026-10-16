@@ -1,91 +1,101 @@
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
+import { emailOTP } from "better-auth/plugins";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./db/auth-schema";
 import type { SessionResponse } from "../shared/model";
 import { ApiError, type Env } from "./env";
-import { parseGitHubAllowlist } from "./github-allowlist";
+import { enqueueAuthEmail } from "./auth-mail";
+import { authDigest, requireRegistrationProof } from "./auth-security";
 
 export function localAuthAllowed(env: Env, request: Request): boolean {
-  const host = new URL(request.url).hostname;
   return (
     env.ENVIRONMENT === "local" &&
     env.LOCAL_DEV_AUTH === "true" &&
-    ["localhost", "127.0.0.1", "[::1]"].includes(host)
+    ["localhost", "127.0.0.1", "[::1]"].includes(new URL(request.url).hostname)
   );
 }
+
 export function authConfigured(env: Env): boolean {
   return Boolean(
     env.BETTER_AUTH_SECRET &&
     env.BETTER_AUTH_SECRET.length >= 32 &&
-    env.GITHUB_CLIENT_ID &&
-    env.GITHUB_CLIENT_SECRET &&
-    parseGitHubAllowlist(env.ALLOWED_GITHUB_USERS) !== null &&
     env.APP_ORIGIN,
   );
 }
-export function allowedIdentity(
-  env: Env,
-  githubId: unknown,
-  githubLogin: unknown,
-): boolean {
-  if (
-    typeof githubId !== "string" ||
-    !/^[1-9]\d*$/.test(githubId) ||
-    typeof githubLogin !== "string"
-  )
-    return false;
-  return (parseGitHubAllowlist(env.ALLOWED_GITHUB_USERS) ?? []).some((user) =>
-    user.id
-      ? githubId === user.id
-      : githubLogin.toLowerCase() === user.login.toLowerCase(),
-  );
+
+interface AuthRequest {
+  request?: Request;
+  registrationProof?: string;
+  signInVersion?: number;
 }
 
-export function createAuth(env: Env) {
+export function createAuth(env: Env, options: AuthRequest = {}) {
   if (!authConfigured(env))
     throw new ApiError(
       503,
       "AUTH_NOT_CONFIGURED",
-      "GitHub sign-in is not configured yet.",
+      "Sign-in is not configured in this environment.",
     );
-  // This auth instance is constructed afresh for each request. Only a verified
-  // provider response can populate this one-use, server-side identity capture.
-  // Better Auth deliberately excludes input:false fields from provider input
-  // parsing, so the database hook supplies them after that parsing boundary.
-  let verifiedIdentity: { githubId: string; githubLogin: string } | null = null;
-  const db = drizzle(env.DB, { schema });
   return betterAuth({
     appName: "Work",
     baseURL: env.APP_ORIGIN,
     basePath: "/api/auth",
     secret: env.BETTER_AUTH_SECRET,
-    database: drizzleAdapter(db, {
+    database: drizzleAdapter(drizzle(env.DB, { schema }), {
       provider: "sqlite",
       schema,
       transaction: false,
     }),
     trustedOrigins: [env.APP_ORIGIN],
-    emailAndPassword: { enabled: false },
-    socialProviders: {
-      github: {
-        clientId: env.GITHUB_CLIENT_ID!,
-        clientSecret: env.GITHUB_CLIENT_SECRET!,
-        scope: ["read:user", "user:email"],
-        mapProfileToUser: async (profile) => {
-          verifiedIdentity = null;
-          const githubId = String(profile.id);
-          if (!allowedIdentity(env, githubId, profile.login))
-            throw new APIError("FORBIDDEN", {
-              message:
-                "This GitHub account does not have access to this workspace.",
-            });
-          verifiedIdentity = { githubId, githubLogin: profile.login };
-          return verifiedIdentity;
-        },
+    // Distributed counters at the Worker boundary replace per-isolate counters.
+    rateLimit: { enabled: false },
+    emailAndPassword: {
+      enabled: true,
+      requireEmailVerification: true,
+      autoSignIn: false,
+      minPasswordLength: 8,
+      maxPasswordLength: 128,
+      revokeSessionsOnPasswordReset: true,
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendOnSignIn: false,
+      autoSignInAfterVerification: false,
+      beforeEmailVerification: async (user, request) => {
+        try {
+          await requireRegistrationProof(
+            env,
+            user.email,
+            request || options.request,
+          );
+        } catch {
+          throw new APIError("BAD_REQUEST", {
+            message:
+              "This registration has expired. Start again or use Forgot password.",
+          });
+        }
       },
     },
+    plugins: [
+      emailOTP({
+        otpLength: 6,
+        expiresIn: 300,
+        allowedAttempts: 5,
+        storeOTP: "encrypted",
+        resendStrategy: "rotate",
+        disableSignUp: true,
+        overrideDefaultEmailVerification: true,
+        sendVerificationOTP: async ({ email, otp, type }) => {
+          if (type !== "email-verification" && type !== "forget-password")
+            throw new APIError("FORBIDDEN", {
+              message: "This authentication method is unavailable.",
+            });
+          await enqueueAuthEmail(env, { email, otp, type });
+        },
+      }),
+    ],
     user: {
       additionalFields: {
         githubId: {
@@ -93,12 +103,28 @@ export function createAuth(env: Env) {
           required: false,
           defaultValue: "",
           input: false,
+          returned: false,
         },
         githubLogin: {
           type: "string",
           required: false,
           defaultValue: "",
           input: false,
+          returned: false,
+        },
+        registrationProof: {
+          type: "string",
+          required: false,
+          defaultValue: "",
+          input: false,
+          returned: false,
+        },
+        authVersion: {
+          type: "number",
+          required: false,
+          defaultValue: 0,
+          input: false,
+          returned: false,
         },
       },
     },
@@ -107,6 +133,15 @@ export function createAuth(env: Env) {
       expiresIn: 60 * 60 * 24 * 7,
       updateAge: 60 * 60 * 24,
       cookieCache: { enabled: false },
+      additionalFields: {
+        authVersion: {
+          type: "number",
+          required: false,
+          defaultValue: 0,
+          input: false,
+          returned: false,
+        },
+      },
     },
     advanced: {
       useSecureCookies: env.ENVIRONMENT !== "local",
@@ -122,37 +157,33 @@ export function createAuth(env: Env) {
       user: {
         create: {
           before: async (user) => {
-            const identity = verifiedIdentity;
-            verifiedIdentity = null;
-            if (
-              !identity ||
-              !allowedIdentity(env, identity.githubId, identity.githubLogin)
-            )
+            if (!options.registrationProof)
               throw new APIError("FORBIDDEN", {
-                message:
-                  "This GitHub account cannot register for this workspace.",
+                message: "Start registration from Work.",
               });
-            return { data: { ...user, ...identity } };
+            return {
+              data: {
+                ...user,
+                name: "Account",
+                registrationProof: await authDigest(
+                  env,
+                  `registration:${options.registrationProof}`,
+                ),
+                authVersion: 0,
+              },
+            };
           },
         },
       },
       account: {
         create: {
           before: async (account) => {
-            const user = await env.DB.prepare(
-              "SELECT github_id,github_login FROM user WHERE id=?",
-            )
-              .bind(account.userId)
-              .first<{ github_id: string; github_login: string }>();
             if (
-              account.providerId !== "github" ||
-              !user ||
-              account.accountId !== user.github_id ||
-              !allowedIdentity(env, user.github_id, user.github_login)
+              account.providerId !== "credential" ||
+              account.accountId !== account.userId
             )
               throw new APIError("FORBIDDEN", {
-                message:
-                  "The provider account must match an allowed GitHub identity.",
+                message: "Only email and password accounts are supported.",
               });
           },
         },
@@ -161,22 +192,28 @@ export function createAuth(env: Env) {
         create: {
           before: async (session) => {
             const user = await env.DB.prepare(
-              "SELECT github_id, github_login FROM user WHERE id=?",
+              "SELECT email_verified,auth_version FROM user WHERE id=?",
             )
               .bind(session.userId)
-              .first<{ github_id: string; github_login: string }>();
+              .first<{ email_verified: number; auth_version: number }>();
             if (
-              !user ||
-              !allowedIdentity(env, user.github_id, user.github_login)
+              !user?.email_verified ||
+              options.signInVersion === undefined ||
+              options.signInVersion !== user.auth_version
             )
-              throw new APIError("FORBIDDEN", {
-                message: "This account does not have access to the workspace.",
+              throw new APIError("UNAUTHORIZED", {
+                message: "Please sign in again with your current password.",
               });
+            return { data: { ...session, authVersion: options.signInVersion } };
           },
         },
       },
     },
     logger: { disabled: true },
+    // The router otherwise prints raw adapter errors, including SQL values.
+    // API errors keep their normal response; unexpected errors reach Hono's
+    // metadata-only handler instead of the library's console error fallback.
+    onAPIError: { throw: true },
   });
 }
 
@@ -215,10 +252,14 @@ export async function resolveSession(
   const session = await createAuth(env).api.getSession({
     headers: request.headers,
   });
-  if (
-    !session ||
-    !allowedIdentity(env, session.user.githubId, session.user.githubLogin)
-  )
+  const current =
+    session &&
+    (await env.DB.prepare(
+      "SELECT s.id FROM session s JOIN user u ON u.id=s.user_id WHERE s.id=? AND u.id=? AND u.email_verified=1 AND s.auth_version=u.auth_version AND EXISTS(SELECT 1 FROM account a WHERE a.user_id=u.id AND a.provider_id='credential' AND a.password IS NOT NULL)",
+    )
+      .bind(session.session.id, session.user.id)
+      .first());
+  if (!session || !session.user.emailVerified || !current)
     return { user: null, local: false, configured: true };
   return {
     user: {

@@ -46,6 +46,13 @@
   max-width: 260px;
   gap: 5px;
 }
+.settings-timezone-field .compact-select {
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+}
+.settings-timezone-field .compact-select-width {
+  max-width: 100%;
+}
 .settings-preferences .field-label {
   font-size: 12px;
   font-weight: 750;

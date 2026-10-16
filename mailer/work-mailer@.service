@@ -1,0 +1,25 @@
+[Unit]
+Description=Work private verification email sender (%i)
+After=network.target postfix.service
+
+[Service]
+Type=simple
+User=work-mailer-%i
+StateDirectory=work-mailer-%i
+EnvironmentFile=/etc/work-mailer-%i.env
+Environment=WORK_MAIL_STATE_DIR=/var/lib/work-mailer-%i
+ExecStart=/usr/bin/python3 /opt/work-mailer/server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/work-mailer-%i
+MemoryMax=128M
+TasksMax=32
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

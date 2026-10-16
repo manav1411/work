@@ -38,12 +38,16 @@ if (config.vars?.LOCAL_DEV_AUTH)
     "Local fixture authentication must never be in a deployed configuration.",
   );
 if (
-  ["ALLOWED_GITHUB_USERS", "OWNER_GITHUB_LOGIN", "OWNER_GITHUB_ID"].some(
-    (name) => Object.hasOwn(config.vars ?? {}, name),
-  )
+  [
+    "BETTER_AUTH_SECRET",
+    "AUTH_MAILER_TOKEN",
+    "AUTH_MAILER_ACCESS_CLIENT_SECRET",
+    "ALLOWED_GITHUB_USERS",
+    "GITHUB_CLIENT_SECRET",
+  ].some((name) => Object.hasOwn(config.vars ?? {}, name))
 )
   throw new Error(
-    "The GitHub allowlist must be a runtime secret, not build vars.",
+    "Authentication and sender credentials must be runtime secrets, not build vars.",
   );
 if (environment === "staging" && config.routes?.length)
   throw new Error("Staging must not attach production domain routes.");

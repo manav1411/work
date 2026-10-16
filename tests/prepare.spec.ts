@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
 import { markdownDocument } from "../src/features/content/markdownDocument";
 import { DEMO_STATS } from "../src/features/learn/demo";
+import { makeRecord } from "../src/lib/demo";
 import { enterEditMode } from "./edit-mode-helper";
 
 test.beforeEach(async ({ page }) => {
@@ -22,6 +23,13 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
       sourceRequests.push(request.url());
   });
   await page.goto("/learn?problem=binary-search");
+  await page.evaluate(() => {
+    const state = JSON.parse(sessionStorage.getItem("work-demo-current")!);
+    state.records = [];
+    sessionStorage.setItem("work-demo-current", JSON.stringify(state));
+  });
+  await page.reload();
+  await expect(page.getByRole("tab")).toHaveCount(1);
   await expect(
     page.getByRole("heading", { name: "Roadmap", exact: true }),
   ).toBeVisible();
@@ -84,6 +92,15 @@ test("Learn opens the roadmap and tasteful resources without Weeks or NeetCode d
       selectedTrack.evaluate((tab) => tab.getBoundingClientRect().height),
     )
     .toBe(40);
+  await page.getByRole("button", { name: "Add tab", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Untitled", exact: true })
+    .getByRole("textbox", { name: "Topic name" })
+    .fill("Databases");
+  await page
+    .getByRole("tab", { name: "Untitled", exact: true })
+    .getByRole("textbox", { name: "Topic name" })
+    .blur();
   const databasesTab = page.getByRole("tab", {
     name: "Databases",
     exact: true,
@@ -368,7 +385,16 @@ test("signed-in private learning notes use owned records and never write to publ
   page,
 }) => {
   await page.addInitScript(() => sessionStorage.removeItem("work-demo-active"));
-  const records: WorkRecord[] = [];
+  const records: WorkRecord[] = [
+    {
+      ...makeRecord({
+        kind: "topic",
+        title: "Databases",
+        data: { category: "learn-track" },
+      }),
+      id: "databases",
+    },
+  ];
   const learningWrites: string[] = [];
   const privateWrites: string[] = [];
   await page.route("**/api/**", async (route) => {
@@ -474,7 +500,16 @@ test("track notes retain conflicts through reload until the draft is reviewed", 
 }) => {
   test.setTimeout(45_000);
   await page.addInitScript(() => sessionStorage.removeItem("work-demo-active"));
-  const records: WorkRecord[] = [];
+  const records: WorkRecord[] = [
+    {
+      ...makeRecord({
+        kind: "topic",
+        title: "Databases",
+        data: { category: "learn-track" },
+      }),
+      id: "databases",
+    },
+  ];
   let failWrites = false;
   let writes = 0;
   await page.route("**/api/**", async (route) => {

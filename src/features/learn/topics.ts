@@ -22,6 +22,10 @@ export function learningSubjects(
       const record = overrides.find(
         (item) => field(item, "seedId") === seed.id,
       );
+      const hasNotes = records.some(
+        (item) => item.data.scope === "learn" && item.data.track === seed.id,
+      );
+      if (seed.id !== "dsa" && !record && !hasNotes) return [];
       if (record?.data.hidden && seed.id !== "dsa" && !includeHidden) return [];
       return [
         {

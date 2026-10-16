@@ -2,7 +2,7 @@
 
 A private workspace for career direction, learning, applications, interview preparation, and documents. React/Vite serves the browser; a Cloudflare Worker provides authenticated APIs; D1 stores current content and a private R2 bucket stores files.
 
-GitHub sign-in uses an environment-specific private allowlist. See [authentication setup](docs/github-allowlist.md). Production and staging use separate databases, buckets, and credentials.
+Email/password sign-in uses Better Auth with six-digit email verification and password recovery. See [authentication setup](docs/email-auth-setup.md) and [Pi email delivery](mailer/README.md). Production and staging use separate databases, buckets, and credentials.
 
 ## Development
 
@@ -54,4 +54,4 @@ npm run deploy:staging
 npm run deploy
 ```
 
-See [operations](docs/operations.md), [security](docs/security.md), and [verification](docs/verification.md). Migration `0009_current_workspace.sql` intentionally resets the previous testing workspace while retaining authentication. Old migration implementations were removed; fresh databases use `0001_workspace.sql` plus `0009_current_workspace.sql` and the additive `0010_goal_actions.sql` migration.
+See [operations](docs/operations.md), [security](docs/security.md), and [verification](docs/verification.md). Migration `0009_current_workspace.sql` intentionally resets the previous testing workspace while retaining authentication. Old migration implementations were removed; fresh databases use `0001_workspace.sql` plus `0009_current_workspace.sql` and the additive `0010_goal_actions.sql` and `0011_email_auth.sql` migrations.

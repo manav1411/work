@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 
 const account = "235b7f098227aa97860dfd1d4ea9ee71";
 const action = process.argv[2] || "status";
@@ -185,38 +184,14 @@ if (action === "status") {
     }),
   );
 } else if (action === "secrets") {
-  // Read only the ignored owner-created credential file; values never reach logs or command arguments.
-  const entries = Object.fromEntries(
-    readFileSync(".private/oauth.env", "utf8")
-      .split(/\r?\n/)
-      .filter((line) => /^GITHUB_CLIENT_(ID|SECRET)=/.test(line))
-      .map((line) => {
-        const split = line.indexOf("=");
-        return [
-          line.slice(0, split),
-          line
-            .slice(split + 1)
-            .trim()
-            .replace(/^(['"])(.*)\1$/, "$2"),
-        ];
-      }),
+  // Authentication credentials live only in the environment-specific private file.
+  const result = execFileSync(
+    process.execPath,
+    ["scripts/auth-configure.mjs", "production"],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
-  if (!entries.GITHUB_CLIENT_ID || !entries.GITHUB_CLIENT_SECRET)
-    throw new Error(
-      "Both OAuth credentials are required in .private/oauth.env.",
-    );
-  const existing = JSON.parse(
-    wrangler(["secret", "list", "--config", "wrangler.jsonc"]),
-  );
-  if (!existing.some((secret) => secret.name === "BETTER_AUTH_SECRET"))
-    entries.BETTER_AUTH_SECRET = (await import("node:crypto"))
-      .randomBytes(48)
-      .toString("base64url");
-  wrangler(["secret", "bulk", "--config", "wrangler.jsonc"], {
-    input: JSON.stringify(entries),
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  console.log(
-    "Production OAuth credentials uploaded securely. No secret values were displayed.",
-  );
+  console.log(result.trim());
 } else throw new Error("Use status, connect-builds, or secrets.");

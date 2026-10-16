@@ -4,21 +4,21 @@ Production: `https://work.manavdodia.com` (`work`, D1 `work-prod-current`, R2 `w
 
 ## Authentication and secrets
 
-Preserve the existing GitHub OAuth applications and Better Auth secrets. Access is controlled by the private runtime `ALLOWED_GITHUB_USERS` secret; see [allowlist setup](github-allowlist.md). Local fixture authentication must never be enabled on either deployed environment. The compiler uses its own bearer token and optional Cloudflare Access service token.
+Preserve existing Better Auth secrets. Email/password authentication and owner migration are described in [email setup](email-auth-setup.md); direct Pi email delivery is described in [sender operations](../mailer/README.md). Retire obsolete GitHub OAuth credentials only after email recovery and login have been accepted. Local fixture authentication must never be enabled on either deployed environment. The compiler uses its own bearer token and optional Cloudflare Access service token.
 
-`/api/health` reports environment and authentication configuration without credentials. `/api/session` returns the validated identity or null. Production and staging remain isolated. A health response alone does not prove a successful GitHub callback.
+`/api/health` reports environment and authentication configuration without credentials. `/api/session` returns the validated identity or null. Production and staging remain isolated. Health flags report auth and email configuration separately; they do not prove inbox delivery or deployed password-hashing performance.
 
 ## Release
 
 Run `npm run check`, `npm test`, `npm run test:e2e`, `npm run build`, and `npm run test:runtime`. Deploy staging with `npm run deploy:staging`, then production with `npm run deploy`. The deployment scripts validate environment bindings, run the built Worker checks, apply migrations, and deploy Worker/frontend assets together.
 
-Fresh databases use `0001_workspace.sql`, `0009_current_workspace.sql`, and `0010_goal_actions.sql`. Existing databases apply only unapplied migrations. Migration 0010 adds shared action associations and preserves existing content. Migration 0009 deliberately deletes testing content and removes its old tables, preserving users, provider accounts, and sessions. Do not reapply it to a workspace with wanted content.
+Fresh databases use `0001_workspace.sql`, `0009_current_workspace.sql`, `0010_goal_actions.sql`, and `0011_email_auth.sql`. Existing databases apply only unapplied migrations. Migration 0010 adds shared action associations and preserves existing content. Migration 0009 deliberately deletes testing content and removes its old tables, preserving users, provider accounts, and sessions. Do not reapply it to a workspace with wanted content.
 
 GitHub/Cloudflare build configuration is managed by `scripts/cloudflare.mjs`; do not reconnect a working build trigger or expose API tokens. CLI release does not establish that a Git-triggered build completed.
 
 ## Current persistence
 
-Records, goals, preferences, relationships, and file metadata contain current state only. Deletion is permanent and cascading where child content belongs to a removed parent. A durable cleanup queue retries physical file removal. A one-minute scheduled handler resumes active compilation, expires abandoned uploads, and drains file cleanup.
+Records, goals, preferences, relationships, and file metadata contain current state only. Deletion is permanent and cascading where child content belongs to a removed parent. A durable cleanup queue retries physical file removal. A one-minute scheduled handler resumes active compilation, expires abandoned uploads, drains file cleanup, retries bounded encrypted email jobs and expires authentication challenges/counters.
 
 Settings exports the current full workspace and uploads it by replacement. Upload sessions expire after one hour. Completed upload receipts are temporary; retrying the same commit returns the same result. No scheduled user backups, import undo, trash, or earlier-content storage exists. Version counters and workspace epochs prevent conflicting or obsolete edits; they do not provide content history.
 

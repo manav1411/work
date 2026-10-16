@@ -14,6 +14,12 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { DEFAULT_PREFERENCES, type WorkRecord } from "../shared/model";
 import { authConfigured, createAuth, resolveSession } from "./auth";
+import { authMailConfigured, cleanupAuth, drainAuthMail } from "./auth-mail";
+import {
+  limitAuthRequest,
+  registrationCookieName,
+  requireRegistrationProof,
+} from "./auth-security";
 import { ApiError, now, type Env, type Variables } from "./env";
 import { recordContractStatements, validateRecordContract } from "./contracts";
 import { goalRoutes } from "./goals";
@@ -132,12 +138,32 @@ app.get("/api/health", (context) =>
     service: "work",
     environment: context.env.ENVIRONMENT,
     authenticationConfigured: authConfigured(context.env),
+    emailDeliveryConfigured: authMailConfigured(context.env),
   }),
 );
 app.get("/api/session", async (context) =>
   context.json(await resolveSession(context.env, context.req.raw)),
 );
 app.on(["GET", "POST"], "/api/auth/*", async (context) => {
+  const path = new URL(context.req.url).pathname.slice("/api/auth".length);
+  const methods: Record<string, string> = {
+    "/sign-out": "POST",
+    "/sign-in/email": "POST",
+    "/sign-up/email": "POST",
+    "/email-otp/send-verification-otp": "POST",
+    "/email-otp/verify-email": "POST",
+    "/email-otp/request-password-reset": "POST",
+    "/email-otp/reset-password": "POST",
+  };
+  if (methods[path] !== context.req.method)
+    throw new ApiError(
+      404,
+      "NOT_FOUND",
+      "This authentication method is unavailable.",
+    );
+  let payload: Record<string, unknown> = {};
+  let registrationProof: string | undefined;
+  let signInVersion: number | undefined;
   if (Number(context.req.header("Content-Length")) > 100_000)
     throw new ApiError(
       413,
@@ -147,7 +173,6 @@ app.on(["GET", "POST"], "/api/auth/*", async (context) => {
   if (context.req.method === "POST") {
     const bytes = await readLimitedBody(context.req.raw.clone(), 100_000);
     if (context.req.header("Content-Type")?.includes("application/json")) {
-      let payload: Record<string, unknown>;
       try {
         payload = JSON.parse(new TextDecoder().decode(bytes));
       } catch {
@@ -157,6 +182,12 @@ app.on(["GET", "POST"], "/api/auth/*", async (context) => {
           "The authentication request is not valid JSON.",
         );
       }
+      if (!payload || typeof payload !== "object" || Array.isArray(payload))
+        throw new ApiError(
+          400,
+          "INVALID_JSON",
+          "The authentication request must be a JSON object.",
+        );
       if (payload && typeof payload === "object")
         for (const field of [
           "callbackURL",
@@ -183,9 +214,159 @@ app.on(["GET", "POST"], "/api/auth/*", async (context) => {
               "Authentication callbacks must return to this workspace.",
             );
         }
+    } else {
+      throw new ApiError(
+        400,
+        "INVALID_JSON",
+        "Use JSON for authentication requests.",
+      );
+    }
+    if (path !== "/sign-out") {
+      const email = parse(
+        z.email().max(254),
+        typeof payload.email === "string"
+          ? payload.email.trim().toLowerCase()
+          : payload.email,
+      );
+      payload.email = email;
+      if (
+        [
+          "/sign-up/email",
+          "/email-otp/request-password-reset",
+          "/email-otp/send-verification-otp",
+        ].includes(path) &&
+        !authMailConfigured(context.env)
+      )
+        throw new ApiError(
+          503,
+          "EMAIL_UNAVAILABLE",
+          "Email verification is temporarily unavailable. Please try again later.",
+        );
+      if (
+        path === "/email-otp/send-verification-otp" &&
+        payload.type !== "email-verification"
+      )
+        throw new ApiError(
+          400,
+          "INVALID_OTP_TYPE",
+          "Use the password recovery form to reset your password.",
+        );
+      if (
+        [
+          "/email-otp/send-verification-otp",
+          "/email-otp/verify-email",
+        ].includes(path)
+      )
+        await requireRegistrationProof(context.env, email, context.req.raw);
+      if (path === "/sign-up/email")
+        parse(
+          z.string().min(8, "Use at least 8 characters.").max(128),
+          payload.password,
+        );
+      await limitAuthRequest(
+        context.env,
+        path,
+        email,
+        context.req.header("CF-Connecting-IP") || "local",
+      );
+      if (path === "/sign-up/email") {
+        const existing = await context.env.DB.prepare(
+          "SELECT id FROM user WHERE email=?",
+        )
+          .bind(email)
+          .first();
+        if (existing)
+          throw new ApiError(
+            409,
+            "ACCOUNT_EXISTS",
+            "An account already uses this email. Sign in or use Forgot password to recover it.",
+          );
+        registrationProof = crypto.randomUUID();
+        payload = { email, password: payload.password, name: "Account" };
+      }
+      if (path === "/sign-in/email") {
+        signInVersion = (
+          await context.env.DB.prepare(
+            "SELECT auth_version FROM user WHERE email=?",
+          )
+            .bind(email)
+            .first<{ auth_version: number }>()
+        )?.auth_version;
+      }
+      if (
+        ["/email-otp/verify-email", "/email-otp/reset-password"].includes(path)
+      )
+        parse(
+          z
+            .string()
+            .regex(/^\d{6}$/, "Enter the six-digit code from your email."),
+          payload.otp,
+        );
     }
   }
-  return createAuth(context.env).handler(context.req.raw);
+  const request =
+    context.req.method === "POST"
+      ? new Request(context.req.raw.url, {
+          method: "POST",
+          headers: context.req.raw.headers,
+          body: JSON.stringify(payload),
+        })
+      : context.req.raw;
+  const response = await createAuth(context.env, {
+    request,
+    registrationProof,
+    signInVersion,
+  }).handler(request);
+  if (path === "/sign-in/email" && !response.ok) {
+    const failure = (await response
+      .clone()
+      .json()
+      .catch(() => ({}))) as { code?: string };
+    if (failure.code === "INVALID_EMAIL_OR_PASSWORD")
+      throw new ApiError(
+        401,
+        signInVersion === undefined
+          ? "ACCOUNT_NOT_FOUND"
+          : "INCORRECT_PASSWORD",
+        signInVersion === undefined
+          ? "No account uses this email yet. Choose Sign up to create one."
+          : "That password doesn’t match. Try again or use Forgot password to reset it.",
+      );
+    if (failure.code === "EMAIL_NOT_VERIFIED")
+      throw new ApiError(
+        403,
+        "EMAIL_NOT_VERIFIED",
+        "Verify your email to continue. If you no longer have your sign-up code, use Forgot password to recover your account.",
+      );
+  }
+  const headers = new Headers(response.headers);
+  if (registrationProof && response.ok)
+    headers.append(
+      "Set-Cookie",
+      `${registrationCookieName(context.env)}=${registrationProof}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400${context.env.ENVIRONMENT === "local" ? "" : "; Secure"}`,
+    );
+  if (path === "/email-otp/verify-email" && response.ok)
+    headers.append(
+      "Set-Cookie",
+      `${registrationCookieName(context.env)}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${context.env.ENVIRONMENT === "local" ? "" : "; Secure"}`,
+    );
+  if (
+    response.ok &&
+    [
+      "/sign-up/email",
+      "/email-otp/send-verification-otp",
+      "/email-otp/request-password-reset",
+    ].includes(path)
+  ) {
+    // Always use a background task in the Worker, including for unknown emails,
+    // so transport latency does not disclose account existence.
+    try {
+      context.executionCtx.waitUntil(drainAuthMail(context.env));
+    } catch {
+      /* Direct app.request tests have no execution context; cron still drains the queue. */
+    }
+  }
+  return new Response(response.body, { status: response.status, headers });
 });
 
 // Every route below resolves identity from the request; clients never supply owner IDs.
@@ -874,8 +1055,9 @@ app.onError((error, context) => {
     {
       error: {
         code: "INTERNAL_ERROR",
-        message:
-          "The workspace could not complete this request. Your local draft is safe; please retry.",
+        message: new URL(context.req.url).pathname.startsWith("/api/auth/")
+          ? "Could not complete this request. Please try again."
+          : "The workspace could not complete this request. Your local draft is safe; please retry.",
       },
     },
     500,
@@ -887,7 +1069,12 @@ export default {
   fetch: app.fetch,
   scheduled(_event: ScheduledController, env: Env, context: ExecutionContext) {
     context.waitUntil(
-      Promise.all([resumePendingLatexJobs(env), cleanupTransfers(env)]),
+      Promise.all([
+        resumePendingLatexJobs(env),
+        cleanupTransfers(env),
+        drainAuthMail(env),
+        cleanupAuth(env),
+      ]),
     );
   },
 };

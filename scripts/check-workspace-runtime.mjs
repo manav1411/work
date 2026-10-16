@@ -18,7 +18,6 @@ const runtime = new Miniflare(
     bindings: {
       ENVIRONMENT: "local",
       LOCAL_DEV_AUTH: "true",
-      ALLOWED_GITHUB_USERS: '[{"login":"synthetic-owner","id":"12345"}]',
       APP_ORIGIN: "http://localhost",
       BETTER_AUTH_SECRET: "synthetic-auth-secret-for-runtime-check",
     },
@@ -78,6 +77,7 @@ try {
     "0001_workspace.sql",
     "0009_current_workspace.sql",
     "0010_goal_actions.sql",
+    "0011_email_auth.sql",
   ]) {
     const sql = readFileSync(`migrations/${migration}`, "utf8")
       .replace(/--[^\n]*/g, "")

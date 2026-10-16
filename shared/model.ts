@@ -54,7 +54,7 @@ export interface UserPreferences {
 }
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
-  timezone: "Australia/Melbourne",
+  timezone: "Australia/Sydney",
   theme: "light",
   displayName: "",
   leetcode: "",
@@ -137,7 +137,7 @@ export const recordUrl = (record: WorkRecord): string => {
 
 export function localDate(
   date = new Date(),
-  timezone = "Australia/Melbourne",
+  timezone = "Australia/Sydney",
 ): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -155,7 +155,7 @@ export function addDays(date: string, days: number): string {
 
 export function niceDate(
   value: string,
-  timezone = "Australia/Melbourne",
+  timezone = "Australia/Sydney",
 ): string {
   if (!value) return "No date yet";
   const parsed = new Date(value.length === 10 ? `${value}T12:00:00Z` : value);

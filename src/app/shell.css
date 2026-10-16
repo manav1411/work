@@ -34,84 +34,62 @@
 }
 .account-control {
   position: relative;
-}
-.account-trigger {
-  width: 100%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 5px;
-  border: 0;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.account-trigger {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 0;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1.5px solid transparent;
   background: transparent;
-  border-radius: 7px;
-  color: #f2f2ed;
+  border-radius: 8px;
+  color: var(--ink);
   text-align: left;
   font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
 }
-.account-trigger:hover {
-  background: #ffffff0a;
-}
-.account-avatar {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: 7px;
-  background: var(--pink);
-  color: #202128;
-  font-family: var(--font-heading);
-  font-weight: 750;
-  font-size: 15px;
-}
-.account-name {
+.account-trigger-label {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.account-menu {
-  position: absolute;
-  bottom: calc(100% + 10px);
-  left: 0;
-  right: 0;
-  z-index: 80;
-  padding: 7px;
-  border: 1px solid var(--outline);
-  background: var(--paper);
-  color: var(--ink);
-  border-radius: 9px;
-  box-shadow: 3px 3px 0 var(--shadow-colour);
-}
-.account-menu > a,
-.account-menu > button {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 9px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  text-decoration: none;
-  font-size: 12px;
-}
-.account-menu > a:hover,
-.account-menu > button:hover,
-.account-menu > a:focus-visible,
-.account-menu > button:focus-visible {
+.account-trigger:hover,
+.settings-trigger:hover {
   background: var(--surface-tint);
-  color: var(--ink);
 }
-.account-email {
-  margin: 0 0 4px;
-  padding: 7px 9px 10px;
-  border-bottom: 1px solid var(--line);
-  font-size: 10px;
-  color: var(--muted);
-  overflow-wrap: anywhere;
+.account-trigger:focus-visible,
+.settings-trigger:focus-visible {
+  outline-offset: 2px;
+}
+.account-confirming {
+  border-color: var(--outline);
+  background: var(--pink);
+}
+.settings-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  margin-left: auto;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  color: var(--ink);
 }
 .pending-changes {
   display: flex;
@@ -276,21 +254,21 @@
   }
   .mobile-account {
     margin-left: auto;
+    width: 100%;
+    flex: 0 1 170px;
     max-width: 170px;
+    min-width: 0;
   }
   .mobile-account .account-trigger {
     color: var(--ink);
-    padding: 3px;
+    padding: 0 10px;
   }
-  .mobile-account .account-trigger:hover {
+  .mobile-account .account-trigger:hover,
+  .mobile-account .settings-trigger:hover {
     background: var(--canvas);
   }
-  .mobile-account .account-menu {
-    top: calc(100% + 9px);
-    bottom: auto;
-    left: auto;
-    right: 0;
-    width: 200px;
+  .mobile-account .settings-trigger {
+    color: var(--ink);
   }
   .simple-shell .mobile-nav > a {
     min-width: 0;

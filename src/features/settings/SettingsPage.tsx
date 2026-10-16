@@ -7,6 +7,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  Select,
 } from "../../components/ui";
 import { request, jsonRequest } from "../../lib/api";
 import { useWorkspace } from "../../lib/workspace";
@@ -20,6 +21,46 @@ import {
 import { clearWorkspaceDeviceStorage } from "../../lib/device-storage";
 import { learningUsername } from "../../../shared/learning";
 import "./settings.css";
+
+const TIMEZONE_CITIES = [
+  { value: "Australia/Sydney", label: "Sydney" },
+  { value: "Pacific/Auckland", label: "Auckland" },
+  { value: "Asia/Tokyo", label: "Tokyo" },
+  { value: "Asia/Seoul", label: "Seoul" },
+  { value: "Asia/Shanghai", label: "Shanghai" },
+  { value: "Asia/Singapore", label: "Singapore" },
+  { value: "Asia/Kolkata", label: "Mumbai" },
+  { value: "Asia/Dubai", label: "Dubai" },
+  { value: "Europe/Istanbul", label: "Istanbul" },
+  { value: "Europe/Paris", label: "Paris" },
+  { value: "Europe/London", label: "London" },
+  { value: "Africa/Johannesburg", label: "Johannesburg" },
+  { value: "America/Sao_Paulo", label: "São Paulo" },
+  { value: "America/Toronto", label: "Toronto" },
+  { value: "America/New_York", label: "New York" },
+  { value: "America/Chicago", label: "Chicago" },
+  { value: "America/Denver", label: "Denver" },
+  { value: "America/Los_Angeles", label: "Los Angeles" },
+  { value: "Pacific/Honolulu", label: "Honolulu" },
+];
+function utcOffsetLabel(timezone: string) {
+  const offset = new Intl.DateTimeFormat("en", {
+    timeZone: timezone,
+    timeZoneName: "shortOffset",
+  })
+    .formatToParts(new Date())
+    .find((part) => part.type === "timeZoneName")?.value;
+  const groups = offset?.match(
+    /^GMT(?:(?<sign>[+-])(?<hours>\d{1,2})(?::(?<minutes>\d{2}))?)?$/,
+  )?.groups;
+  if (!groups?.sign || !groups.hours) return "UTC+0";
+  return `UTC${groups.sign}${groups.hours}${groups.minutes ? `:${groups.minutes}` : ""}`;
+}
+const TIMEZONE_OPTIONS = TIMEZONE_CITIES.map((city) => ({
+  ...city,
+  label: `${city.label} (${utcOffsetLabel(city.value)})`,
+}));
+
 export function SettingsPage() {
   const workspace = useWorkspace();
   const { preferences, user, mode, pending, syncIssues } = workspace;
@@ -45,6 +86,10 @@ export function SettingsPage() {
       value: await workspace.savePreferences(value),
     }),
   });
+  const selectedTimezone =
+    draft.value.timezone === "Australia/Melbourne"
+      ? "Australia/Sydney"
+      : draft.value.timezone;
   const run = async (action: () => Promise<void>) => {
     setError("");
     try {
@@ -93,16 +138,34 @@ export function SettingsPage() {
             }
           />
         </Field>
-        <Field label="Timezone">
-          <Input
-            value={draft.value.timezone}
+        <Field
+          label="Timezone"
+          hint="UTC offsets reflect daylight saving for today."
+          className="settings-timezone-field"
+        >
+          <Select
+            value={selectedTimezone}
+            aria-label="Timezone"
             onChange={(event) =>
               draft.setValue((value) => ({
                 ...value,
                 timezone: event.target.value,
               }))
             }
-          />
+          >
+            {!TIMEZONE_OPTIONS.some(
+              (city) => city.value === selectedTimezone,
+            ) && (
+              <option value={selectedTimezone}>
+                Current timezone ({selectedTimezone})
+              </option>
+            )}
+            {TIMEZONE_OPTIONS.map((city) => (
+              <option key={city.value} value={city.value}>
+                {city.label}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="LeetCode username">
           <Input

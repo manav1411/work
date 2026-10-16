@@ -3,7 +3,6 @@ import {
   Suspense,
   lazy,
   useEffect,
-  useId,
   useRef,
   useState,
   type ReactNode,
@@ -16,31 +15,29 @@ import {
   Route,
   Routes,
   useLocation,
-  useNavigate,
 } from "react-router-dom";
 import {
   ArrowRight,
   BookOpen,
   BriefcaseBusiness,
   Check,
-  ChevronDown,
+  CircleUserRound,
   FileText,
   Compass,
   MessagesSquare,
   Home,
   LogOut,
   Menu,
-  Settings2,
+  Settings,
   X,
 } from "lucide-react";
-import { GitHubIcon as Github } from "../components/GitHubIcon";
 import { Button, EmptyState } from "../components/ui";
-import { jsonRequest, request } from "../lib/api";
 import { useWorkspace } from "../lib/workspace";
 import { displayName } from "../lib/display-name";
 import { EditModeProvider, useEditMode } from "../lib/edit-mode";
 import { EditNavigation } from "./EditNavigation";
 import { TodayPage } from "../features/home/TodayPage";
+import { AuthPage } from "../features/auth/AuthPage";
 import "./shell.css";
 
 const LearnPage = lazy(() =>
@@ -135,224 +132,76 @@ function Loading() {
   );
 }
 
-function Login() {
-  const { openDemo, configured, error } = useWorkspace();
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-  const [failureMessage, setFailureMessage] = useState("");
-  const [saveNotice] = useState(() => {
-    try {
-      return sessionStorage.getItem("work:signout-save-notice") || "";
-    } catch {
-      return "";
-    }
-  });
-  const login = async () => {
-    setBusy(true);
-    setFailureMessage("");
-    try {
-      const response = await request<{ url: string }>(
-        "/api/auth/sign-in/social",
-        jsonRequest("POST", {
-          provider: "github",
-          callbackURL: `${window.location.origin}/home`,
-        }),
-      );
-      if (!response.url) throw new Error("Sign-in is unavailable.");
-      window.location.assign(response.url);
-    } catch (failure) {
-      setFailureMessage(
-        failure instanceof Error ? failure.message : "Could not start sign-in.",
-      );
-      setBusy(false);
-    }
-  };
-  return (
-    <main className="work-signin-page">
-      <Link to="/" className="brand signin-brand" aria-label="Work">
-        <span className="brand-word">
-          work
-          <BrandArrow />
-        </span>
-      </Link>
-      <section className="signin-card">
-        <div className="signin-mark" aria-hidden="true">
-          <i />
-          <i />
-          <i />
-          <BrandArrow />
-        </div>
-        <h1>Sign in</h1>
-        <Button disabled={!configured || busy} onClick={() => void login()}>
-          <Github size={18} />
-          {busy ? "Opening GitHub…" : "Sign in with GitHub"}
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            openDemo();
-            navigate("/home");
-          }}
-        >
-          Open demo
-          <ArrowRight size={17} />
-        </Button>
-        {!configured && (
-          <p className="field-hint">
-            Sign-in is unavailable in this environment. You can open the demo.
-          </p>
-        )}
-        {saveNotice && (
-          <p className="field-hint" role="status">
-            {saveNotice}
-          </p>
-        )}
-        {(failureMessage || error) && (
-          <p className="notice notice-warning" role="alert">
-            {failureMessage || error}
-          </p>
-        )}
-      </section>
-    </main>
-  );
-}
-
-function AccountMenu({ className = "" }: { className?: string }) {
+function AccountControls({ className = "" }: { className?: string }) {
   const { user, mode, preferences, signOut, notify } = useWorkspace();
-  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const firstFocus = useRef<"first" | "last">("first");
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
-  const menuId = useId();
   const location = useLocation();
   useEffect(() => {
-    setOpen(false);
+    setConfirming(false);
   }, [location.pathname]);
   useEffect(() => {
-    if (!open) return;
-    const items =
-      menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
-    items?.[firstFocus.current === "last" ? items.length - 1 : 0]?.focus();
-    const outside = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", outside);
-    return () => document.removeEventListener("pointerdown", outside);
-  }, [open]);
-  const close = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
+    if (!confirming) return;
+    const timeout = window.setTimeout(() => setConfirming(false), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [confirming]);
   const name = mode === "demo" ? "Demo" : displayName(preferences, user);
   return (
     <div
-      ref={root}
       className={`account-control ${className}`}
-      onBlur={(event) => {
-        if (
-          event.relatedTarget &&
-          !event.currentTarget.contains(event.relatedTarget as Node)
-        )
-          setOpen(false);
-      }}
+      role="group"
+      aria-label="Account and settings"
     >
       <button
-        ref={trigger}
-        className="account-trigger"
-        aria-label={`Account: ${name}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={menuId}
+        className={`account-trigger ${confirming ? "account-confirming" : ""}`}
+        type="button"
+        aria-label={
+          confirming ? "Log out?" : `Account: ${name}. Show log out option`
+        }
+        title={confirming ? "Log out?" : name}
+        disabled={busy}
         onClick={() => {
-          firstFocus.current = "first";
-          setOpen(!open);
+          if (!confirming) {
+            setConfirming(true);
+            return;
+          }
+          setBusy(true);
+          void signOut().catch((failure) => {
+            notify(
+              failure instanceof Error
+                ? failure.message
+                : "Could not sign out.",
+              "error",
+            );
+            setBusy(false);
+            setConfirming(false);
+          });
         }}
         onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          if (event.key === "Escape" && confirming) {
             event.preventDefault();
-            firstFocus.current = event.key === "ArrowUp" ? "last" : "first";
-            setOpen(true);
+            setConfirming(false);
           }
-          if (event.key === "Escape") close();
         }}
       >
-        <span className="account-avatar" aria-hidden="true">
-          {name.slice(0, 1).toUpperCase()}
+        {confirming ? (
+          <LogOut size={18} aria-hidden="true" />
+        ) : (
+          <CircleUserRound size={18} aria-hidden="true" />
+        )}
+        <span className="account-trigger-label">
+          {confirming ? "Log out?" : name}
         </span>
-        <span className="account-name">{name}</span>
-        <ChevronDown size={15} />
       </button>
-      {open && (
-        <div
-          ref={menu}
-          id={menuId}
-          className="account-menu"
-          role="menu"
-          aria-label="Account"
-          onKeyDown={(event) => {
-            const items = [
-              ...(menu.current?.querySelectorAll<HTMLElement>(
-                '[role="menuitem"]',
-              ) ?? []),
-            ];
-            const index = items.indexOf(document.activeElement as HTMLElement);
-            if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? items.length - 1
-                    : (index +
-                        (event.key === "ArrowDown" ? 1 : -1) +
-                        items.length) %
-                      items.length;
-              items[next]?.focus();
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              close();
-            }
-          }}
-        >
-          {user?.email && mode !== "demo" && (
-            <p className="account-email" role="presentation">
-              {user.email}
-            </p>
-          )}
-          <Link role="menuitem" to="/settings" onClick={() => setOpen(false)}>
-            <Settings2 size={16} />
-            Settings
-          </Link>
-          <button
-            role="menuitem"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void signOut().catch((failure) => {
-                notify(
-                  failure instanceof Error
-                    ? failure.message
-                    : "Could not sign out.",
-                  "error",
-                );
-                setBusy(false);
-                close();
-              });
-            }}
-          >
-            <LogOut size={16} />
-            {busy
-              ? "Signing out…"
-              : mode === "demo"
-                ? "Leave demo"
-                : "Sign out"}
-          </button>
-        </div>
-      )}
+      <Link
+        className="settings-trigger"
+        to="/settings"
+        aria-label="Settings"
+        title="Settings"
+        onClick={() => setConfirming(false)}
+      >
+        <Settings size={20} />
+      </Link>
     </div>
   );
 }
@@ -466,7 +315,7 @@ function Shell() {
         </nav>
         <div className="sidebar-bottom">
           <p className="edit-mode-hint">Hold a section to edit.</p>
-          <AccountMenu />
+          <AccountControls />
         </div>
       </aside>
       <div className="workspace-main" inert={mobileOpen || undefined}>
@@ -488,7 +337,7 @@ function Shell() {
             work
             <BrandArrow />
           </Link>
-          <AccountMenu className="mobile-account" />
+          <AccountControls className="mobile-account" />
         </header>
         <main id="main-content" className="page-container">
           {editing && (
@@ -576,9 +425,18 @@ function Shell() {
 }
 
 export default function App() {
-  const { user, loading } = useWorkspace();
+  const { user, loading, mode } = useWorkspace();
+  const { pathname } = useLocation();
   if (loading) return <Loading />;
-  if (!user) return <Login />;
+  if (
+    !user ||
+    ["/forgot-password", "/reset-password"].includes(pathname) ||
+    (mode === "demo" &&
+      ["/sign-in", "/sign-up", "/verify-email"].includes(pathname))
+  )
+    return <AuthPage />;
+  if (["/sign-in", "/sign-up", "/verify-email"].includes(pathname))
+    return <Navigate to="/home" replace />;
   return (
     <Routes>
       <Route

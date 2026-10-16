@@ -13,6 +13,8 @@ export const user = sqliteTable("user", {
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   githubId: text("github_id").notNull().default(""),
   githubLogin: text("github_login").notNull().default(""),
+  registrationProof: text("registration_proof").notNull().default(""),
+  authVersion: integer("auth_version").notNull().default(0),
 });
 
 export const session = sqliteTable(
@@ -25,6 +27,7 @@ export const session = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    authVersion: integer("auth_version").notNull().default(0),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
