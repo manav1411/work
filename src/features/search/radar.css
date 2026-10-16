@@ -95,13 +95,15 @@
   width: 34px;
   height: 34px;
   padding: 0;
-  border: 1px solid #565a63;
-  border-radius: 7px;
-  background: #292d37;
-  color: #fff;
+  border: 0;
+  background: transparent;
+  color: #000;
 }
 .opportunity-flag:hover {
-  background: #3a3f4b;
+  opacity: 0.75;
+}
+[data-theme="dark"] .opportunity-flag:not([aria-pressed="true"]) {
+  color: #fff;
 }
 .opportunity-flag[aria-pressed="true"] {
   color: #f6cf49;
