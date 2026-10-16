@@ -70,7 +70,7 @@ export function TodayPage() {
     else if (item.record?.kind === "interview")
       navigate(`/applications?interview=${item.record.id}`);
     else if (item.record?.kind === "company")
-      navigate(`/applications?tab=radar&record=${item.record.id}`);
+      navigate(`/applications?tab=interested&record=${item.record.id}`);
     else if (
       item.record &&
       ["path", "rotation", "decision"].includes(item.record.kind)

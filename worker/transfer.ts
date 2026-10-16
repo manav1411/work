@@ -23,6 +23,7 @@ import {
 } from "./db/records";
 import { bulkInsertAttachments, validateFile } from "./files";
 import { listGoals, bulkInsertGoals } from "./goals";
+import { exportRadar, restoreRadarStatements } from "./radar-store";
 import {
   parse,
   preferencesSchema,
@@ -95,7 +96,7 @@ export async function exportWorkspace(
   owner: string,
 ): Promise<Response> {
   const state = await workspaceState(env, owner);
-  const [recordRows, fileRows, prefs, goals] = await Promise.all([
+  const [recordRows, fileRows, prefs, goals, radar] = await Promise.all([
     env.DB.prepare(
       "SELECT * FROM records WHERE owner_id=? ORDER BY created_at,id",
     )
@@ -110,10 +111,12 @@ export async function exportWorkspace(
       .bind(owner)
       .first<{ data: string }>(),
     listGoals(env.DB, owner),
+    exportRadar(env, owner),
   ]);
   const manifest: WorkspaceManifest = {
     format: "work-workspace",
-    version: 1,
+    version: 2,
+    ...(radar ? { radar } : {}),
     exportedAt: now(),
     records: recordRows.results.map(fromRow),
     goals,
@@ -217,9 +220,12 @@ export async function beginWorkspaceUpload(
   const state = await workspaceState(env, owner),
     uploadId = id();
   const ids = new Map(
-    [...original.records, ...original.goals, ...original.attachments].map(
-      (item) => [item.id, id()],
-    ),
+    [
+      ...original.records,
+      ...original.goals,
+      ...original.attachments,
+      ...(original.radar?.opportunities || []),
+    ].map((item) => [item.id, id()]),
   );
   const manifest = remapWorkspace(original, ids);
   const files = manifest.attachments.map((file) => ({
@@ -477,6 +483,7 @@ export async function commitWorkspaceUpload(
       ...bulkInsertLinks(env.DB, owner, manifest.records),
       ...bulkInsertAttachments(env.DB, stagedFiles),
       ...bulkInsertGoals(env.DB, owner, manifest.goals),
+      ...(await restoreRadarStatements(env.DB, owner, manifest.radar)),
       env.DB.prepare(
         "INSERT INTO preferences(owner_id,data,updated_at) VALUES(?,?,?) ON CONFLICT(owner_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at",
       ).bind(owner, JSON.stringify(manifest.preferences), now()),

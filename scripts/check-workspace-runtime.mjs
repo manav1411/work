@@ -78,6 +78,7 @@ try {
     "0009_current_workspace.sql",
     "0010_goal_actions.sql",
     "0011_email_auth.sql",
+    "0012_radar.sql",
   ]) {
     const sql = readFileSync(`migrations/${migration}`, "utf8")
       .replace(/--[^\n]*/g, "")

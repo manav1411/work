@@ -1,16 +1,13 @@
 import { NoteInput } from "../content/NoteInput";
 import { useRef } from "react";
 import { field, type WorkRecord } from "../../../shared/model";
-import { RadarCompanyDataSchema } from "../../../shared/applications";
+import { InterestedCompanyDataSchema } from "../../../shared/applications";
 import { Button, Input } from "../../components/ui";
 import { useWorkspace } from "../../lib/workspace";
 import { useAutosave } from "../../lib/autosave";
 import { normalizeWebUrl } from "../../../shared/urls";
 
-export function radarNotes(record: WorkRecord) {
-  return record.body;
-}
-export function InlineRadarFields({ record }: { record: WorkRecord }) {
+export function InlineInterestedFields({ record }: { record: WorkRecord }) {
   const { user, update, isPending, refresh } = useWorkspace();
   const current = useRef(record);
   current.current = record;
@@ -23,10 +20,10 @@ export function InlineRadarFields({ record }: { record: WorkRecord }) {
   const draft = useAutosave({
     initial,
     version: record.version,
-    storageKey: `work:radar-draft:${user?.id || "local"}:${record.id}`,
+    storageKey: `work:interested-draft:${user?.id || "local"}:${record.id}`,
     refresh,
     persist: async (value, expectedVersion) => {
-      const data = RadarCompanyDataSchema.parse({
+      const data = InterestedCompanyDataSchema.parse({
         ...current.current.data,
         careersUrl: value.careersUrl,
         location: value.location,

@@ -127,6 +127,7 @@ beforeAll(async () => {
     "0009_current_workspace.sql",
     "0010_goal_actions.sql",
     "0011_email_auth.sql",
+    "0012_radar.sql",
   ]
     .map((name) =>
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8"),
@@ -379,7 +380,7 @@ describe("current workspace and replacement", () => {
     });
     const manifest: WorkspaceManifest = {
       format: "work-workspace",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       records: [{ ...foreign, links: ["missing-id"] }],
       goals: [],

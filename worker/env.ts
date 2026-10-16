@@ -17,6 +17,9 @@ export interface Env {
   LATEX_COMPILER_TOKEN?: string;
   LATEX_ACCESS_CLIENT_ID?: string;
   LATEX_ACCESS_CLIENT_SECRET?: string;
+  TYPESAFE_API_KEY?: string;
+  JSEARCH_API_KEY?: string;
+  APIFY_TOKEN?: string;
 }
 
 export interface Variables {

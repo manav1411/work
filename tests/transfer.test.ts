@@ -24,7 +24,7 @@ function pkg(
 }
 const manifest = (): WorkspaceManifest => ({
   format: "work-workspace",
-  version: 1,
+  version: 2,
   exportedAt: new Date().toISOString(),
   records: [
     makeRecord({
@@ -61,6 +61,11 @@ describe("current workspace files", () => {
   });
   it("rejects earlier backup formats and legacy metadata", async () => {
     const current = manifest();
+    await expect(
+      readWorkspacePackage(
+        pkg({ ...current, version: 1 } as unknown as WorkspaceManifest),
+      ),
+    ).rejects.toThrow();
     await expect(
       readWorkspacePackage(
         pkg({

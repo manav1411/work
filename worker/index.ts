@@ -23,6 +23,10 @@ import {
 import { ApiError, now, type Env, type Variables } from "./env";
 import { recordContractStatements, validateRecordContract } from "./contracts";
 import { goalRoutes } from "./goals";
+import { radarRoutes } from "./radar";
+import { scheduleRadar } from "./radar-runner";
+import { scheduleRadarMail } from "./radar-mail";
+import { trackingStatements } from "./radar-store";
 import { learningRoutes } from "./learning";
 import { latexRoutes, resumePendingLatexJobs } from "./latex";
 import { documentPdfFilename } from "../shared/documents";
@@ -376,7 +380,11 @@ app.use("/api/*", async (context, next) => {
     /^\/api\/(goals(?:\/[^/]+)?|learning\/stats|latex\/[^/]+(?:\/(?:copy|compile|jobs\/[^/]+))?|records(?:\/(?:batch|reorder)|\/[^/]+(?:\/(?:related|attachments))?)?|search|preferences|attachments\/[^/]+|workspace(?:\/uploads(?:\/[^/]+(?:\/(?:commit|files\/[^/]+))?)?)?|account\/delete)$/.test(
       path,
     );
-  if (!known)
+  const radarKnown =
+    /^\/api\/radar\/(settings|ping|runs\/[^/]+(?:\/advance)?|opportunities(?:\/[^/]+(?:\/(?:state|application|merge))?)?|digests\/(?:preview|send|[^/]+\/retry))$/.test(
+      path,
+    );
+  if (!known && !radarKnown)
     throw new ApiError(404, "NOT_FOUND", "This API endpoint does not exist.");
   const session = await resolveSession(context.env, context.req.raw);
   if (!session.user)
@@ -407,6 +415,7 @@ app.use("/api/*", async (context, next) => {
 });
 
 app.route("/api/goals", goalRoutes);
+app.route("/api/radar", radarRoutes);
 app.route("/api/learning", learningRoutes);
 app.route("/api/latex", latexRoutes);
 
@@ -570,6 +579,13 @@ app.post("/api/records/batch", async (context) => {
       ...bulkInsertLinks(context.env.DB, owner, records),
       ...recordContractStatements(context.env.DB, owner, records),
       ...idempotencyStatement(context.env.DB, owner, state, response),
+      ...(
+        await Promise.all(
+          records.map((record) =>
+            trackingStatements(context.env.DB, owner, record),
+          ),
+        )
+      ).flat(),
     ]);
   } catch (error) {
     const raced = await raceResponse(context.env.DB, owner, state);
@@ -610,6 +626,7 @@ app.post("/api/records", async (context) => {
       ...insertLinks(context.env.DB, owner, record),
       ...recordContractStatements(context.env.DB, owner, [record]),
       ...idempotencyStatement(context.env.DB, owner, state, response),
+      ...(await trackingStatements(context.env.DB, owner, record)),
     ]);
   } catch (error) {
     const raced = await raceResponse(context.env.DB, owner, state);
@@ -1074,6 +1091,8 @@ export default {
         cleanupTransfers(env),
         drainAuthMail(env),
         cleanupAuth(env),
+        scheduleRadar(env),
+        scheduleRadarMail(env),
       ]),
     );
   },

@@ -1,0 +1,298 @@
+.radar-feature {
+  display: grid;
+  gap: 1.3rem;
+  min-width: 0;
+}
+.radar-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.radar-toolbar h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+  font-size: 1.3rem;
+}
+.radar-toolbar p {
+  margin: 0.4rem 0 0;
+  max-width: 46ch;
+}
+.radar-status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.2rem;
+  align-items: center;
+  font-size: 0.8rem;
+  padding: 0.85rem 1rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.radar-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+.radar-filter-bar > .input {
+  flex: 1 1 260px;
+}
+.radar-filter-bar > select,
+.radar-filter-bar > .themed-select {
+  flex: 0 1 220px;
+}
+.radar-filter-details {
+  width: 100%;
+  padding: 0.5rem 0;
+}
+.radar-filter-details summary,
+.radar-activity summary,
+.radar-profile summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.radar-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.9rem;
+  padding: 1rem 0;
+}
+.opportunity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 350px), 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+.opportunity-card {
+  padding: 1.3rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+.opportunity-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.opportunity-employer {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.9rem;
+  font-weight: 650;
+  min-width: 0;
+}
+.opportunity-employer > span:last-child {
+  overflow-wrap: anywhere;
+}
+.opportunity-initials {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+.opportunity-card h3 {
+  margin: 0.1rem 0 0;
+  font-size: 1.25rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.opportunity-location,
+.opportunity-salary {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.opportunity-location {
+  color: var(--muted);
+}
+.opportunity-salary {
+  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.opportunity-signals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 0.8rem 0.7rem;
+  gap: 0.5rem;
+}
+.opportunity-signals div {
+  display: grid;
+  gap: 0.3rem;
+}
+.opportunity-signals span {
+  font-size: 0.67rem;
+  color: var(--muted);
+}
+.opportunity-signals strong {
+  font-size: 0.95rem;
+}
+.opportunity-match {
+  margin: 0;
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+.opportunity-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.opportunity-details {
+  font-size: 0.85rem;
+}
+.opportunity-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.opportunity-description {
+  white-space: pre-wrap;
+  max-height: 330px;
+  overflow: auto;
+  line-height: 1.6;
+  margin: 1rem 0;
+  overflow-wrap: anywhere;
+}
+.opportunity-source-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.8rem 0;
+}
+.opportunity-source-list a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.opportunity-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+  margin-top: 0.2rem;
+  gap: 0.6rem;
+}
+.opportunity-publisher {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.publisher-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 800;
+}
+.publisher-linkedin {
+  background: #0a66c2;
+  color: white;
+  border-color: #0a66c2;
+}
+.publisher-seek {
+  background: #e60278;
+  color: white;
+  border-color: #e60278;
+}
+.radar-preference-section {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1.2rem;
+  display: grid;
+  gap: 1rem;
+}
+.radar-preference-section h3,
+.radar-preference-section p {
+  margin: 0;
+}
+.radar-checkbox {
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+.radar-checkbox input {
+  accent-color: var(--ink);
+}
+.radar-profile {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem;
+}
+.radar-profile > .stack {
+  margin-top: 1rem;
+}
+.radar-source-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0;
+}
+.radar-source-setting .muted {
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+.radar-activity {
+  padding: 1rem;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+.radar-run {
+  border-top: 1px solid var(--line);
+  padding: 0.8rem 0;
+}
+.radar-run p {
+  margin: 0.4rem 0;
+  font-size: 0.8rem;
+}
+.radar-spinning {
+  animation: radar-spin 2s linear infinite;
+}
+@keyframes radar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .radar-spinning {
+    animation: none;
+  }
+}
+@media (max-width: 600px) {
+  .opportunity-card {
+    padding: 1rem;
+  }
+  .radar-toolbar > .inline-actions {
+    width: 100%;
+  }
+  .opportunity-footer .button {
+    padding: 0.45rem 0.6rem;
+    font-size: 0.75rem;
+  }
+}

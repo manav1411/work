@@ -148,7 +148,15 @@ test("application status, process and scheduling stay inline and preserve each o
   await page
     .getByRole("option", { name: "Online assessment", exact: true })
     .click();
-  await expect.poll(() => records[0].data.selectedStepId).not.toBe("");
+  await expect(details.getByLabel("Status", { exact: true })).toContainText(
+    "Online assessment",
+  );
+  const assessmentStep = (
+    records[0].data.recruitmentSteps as { id: string; title: string }[]
+  ).find((step) => step.title === "Online assessment")!;
+  await expect
+    .poll(() => records[0].data.selectedStepId)
+    .toBe(assessmentStep.id);
   await details
     .getByRole("textbox", { name: "Application notes", exact: true })
     .fill("Follow up with the platform team.");

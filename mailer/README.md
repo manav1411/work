@@ -1,6 +1,6 @@
 # Work's private Pi email sender
 
-The application uses Better Auth on Cloudflare/D1. This small Python service submits only Work verification and password-recovery messages through Gmail's authenticated SMTP service or a prepared local send-only Postfix instance. The existing compiler remains a separate service. The Gmail App Password stays in the Pi's root-readable service configuration; the Worker receives only private HTTP sender credentials.
+The application uses Better Auth on Cloudflare/D1. This small Python service submits fixed Work verification, password-recovery, and Radar digest templates through Gmail's authenticated SMTP service or a prepared local send-only Postfix instance. The existing compiler remains a separate service. The Gmail App Password stays in the Pi's root-readable service configuration; the Worker receives only private HTTP sender credentials.
 
 ## Gmail setup
 
@@ -27,6 +27,8 @@ npm run auth:configure -- production
 ```
 
 The installer first tests Gmail authentication without sending mail. It transfers the App Password over SSH into `/etc/work-mailer-production.env` (root-owned, mode `0600`) and removes the temporary credential file on the Pi after installation. The local ignored credential copy remains available for reinstalling; it is not committed. A protected `/health` check authenticates to Gmail and runs SMTP NOOP; only a real inbox test proves delivery. Staging uses a separate instance, HTTP port, bearer token and Access identity; replace `production` with `staging` in the commands.
+
+For a code-only update of the existing sender, run `node scripts/mailer-pi.mjs production update`, followed by `node scripts/mailer-pi.mjs production health`. The update uploads code, runs fake-SMTP tests on the Pi, and restarts the service. It preserves the existing private Gmail configuration and SQLite delivery state. Health reports `radarDigestSupported` after this release. It sends no email.
 
 The service configuration for Gmail is:
 
@@ -91,6 +93,7 @@ All routes require `Authorization: Bearer …`; tunnel requests additionally req
 
 - `GET /health`: checks the selected SMTP service without sending mail, including authentication for Gmail. It does not claim inbox delivery.
 - `POST /emails`: bounded JSON with `{id,email,otp,type,from,expiresAt}`. `type` is `email-verification` or `forget-password`, `otp` is exactly six digits, `from` must equal the configured sender, and `expiresAt` is an absolute Unix millisecond timestamp. No arbitrary HTML, subjects or headers are accepted.
+- `POST /radar-digests`: separately validated, bounded JSON with `{id,email,type,from,expiresAt,appUrl,items}`. `type` must be `radar-digest`; up to 15 strict opportunity summaries are rendered into a fixed escaped template. The destination Work origin defaults to `https://work.manavdodia.com`; set `WORK_APP_ORIGIN` in the private service configuration for staging. The Worker supplies only its verified account email. See [Radar activation](../docs/radar-implementation.md) before enabling digests. The production sender was updated during the 16–17 October 2026 release, preserving its Gmail credentials and submission database; protected health confirms Radar support.
 
 A `202` response means submission was accepted or deduplicated. The service constructs Work-styled text/HTML messages itself. IDs are idempotent; reusing an ID with different content fails. SMTP connection, TLS, authentication and explicit submission refusals return `503` so the Work outbox can retry. Ambiguous failures during submission or after a process crash retain an `uncertain` state and are not resubmitted, avoiding duplicate messages; the user can request a fresh code. SMTP acceptance is not proof of inbox delivery.
 

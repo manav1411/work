@@ -4,10 +4,10 @@ import { readFileSync } from "node:fs";
 const [environment, action] = process.argv.slice(2);
 if (
   !["production", "staging"].includes(environment) ||
-  !["install", "tunnel", "health"].includes(action)
+  !["install", "update", "tunnel", "health"].includes(action)
 )
   throw new Error(
-    "Use node scripts/mailer-pi.mjs production|staging install|tunnel|health.",
+    "Use node scripts/mailer-pi.mjs production|staging install|update|tunnel|health.",
   );
 const config = JSON.parse(
   readFileSync(`.private/email-auth-${environment}.json`, "utf8"),
@@ -41,15 +41,7 @@ function sudo(remote) {
   );
 }
 const directory = "/home/manav/base/work_project/mailer";
-if (action === "install") {
-  const password = readFileSync(".private/gmail-app-password", "utf8").replace(
-    /\s/g,
-    "",
-  );
-  if (!/^[A-Za-z0-9]{16}$/.test(password))
-    throw new Error(
-      "Save a valid Gmail App Password with python3 scripts/auth-gmail-password.py.",
-    );
+if (action === "install" || action === "update") {
   ssh(`mkdir -p ${directory}`);
   command("scp", [
     "mailer/server.py",
@@ -59,6 +51,25 @@ if (action === "install") {
     "mailer/work-mailer@.service",
     `pi:${directory}/`,
   ]);
+  const tests = ssh(
+    `python3 -m unittest discover -s ${directory} -p 'test_*.py'`,
+  );
+  if (tests.trim()) console.log(tests.trim());
+}
+if (action === "update") {
+  console.log(sudo(`sh ${directory}/install-pi.sh ${environment}`).trim());
+  console.log(
+    "Mailer code updated; existing sender credentials and submission state preserved.",
+  );
+} else if (action === "install") {
+  const password = readFileSync(".private/gmail-app-password", "utf8").replace(
+    /\s/g,
+    "",
+  );
+  if (!/^[A-Za-z0-9]{16}$/.test(password))
+    throw new Error(
+      "Save a valid Gmail App Password with python3 scripts/auth-gmail-password.py.",
+    );
   const privatePath = "/home/manav/.work-mailer-setup.json";
   ssh(
     `python3 -c 'import os,sys; os.umask(0o077); f=open("${privatePath}","w"); f.write(sys.stdin.read()); f.close(); os.chmod("${privatePath}",0o600)'`,
@@ -68,10 +79,6 @@ if (action === "install") {
       password,
     }),
   );
-  const tests = ssh(
-    `python3 -m unittest discover -s ${directory} -p 'test_*.py'`,
-  );
-  if (tests.trim()) console.log(tests.trim());
   console.log(
     sudo(
       `python3 ${directory}/configure-pi.py install ${environment} ${privatePath}`,
@@ -100,6 +107,7 @@ if (action === "install") {
     JSON.stringify({
       protectedPiMailerHealthy: true,
       gmailAuthenticationVerified: true,
+      radarDigestSupported: result.templates?.includes("radar-digest") === true,
     }),
   );
 }

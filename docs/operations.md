@@ -12,7 +12,7 @@ Preserve existing Better Auth secrets. Email/password authentication and owner m
 
 Run `npm run check`, `npm test`, `npm run test:e2e`, `npm run build`, and `npm run test:runtime`. Deploy staging with `npm run deploy:staging`, then production with `npm run deploy`. The deployment scripts validate environment bindings, run the built Worker checks, apply migrations, and deploy Worker/frontend assets together.
 
-Fresh databases use `0001_workspace.sql`, `0009_current_workspace.sql`, `0010_goal_actions.sql`, and `0011_email_auth.sql`. Existing databases apply only unapplied migrations. Migration 0010 adds shared action associations and preserves existing content. Migration 0009 deliberately deletes testing content and removes its old tables, preserving users, provider accounts, and sessions. Do not reapply it to a workspace with wanted content.
+Fresh databases use `0001_workspace.sql`, `0009_current_workspace.sql`, `0010_goal_actions.sql`, `0011_email_auth.sql`, and `0012_radar.sql`. Existing databases apply only unapplied migrations. Migration 0012 adds Radar and removes the redundant company `data.radar` marker while preserving the companies. Migration 0010 adds shared action associations and preserves existing content. Migration 0009 deliberately deletes testing content and removes its old tables, preserving users, provider accounts, and sessions. Do not reapply it to a workspace with wanted content.
 
 GitHub/Cloudflare build configuration is managed by `scripts/cloudflare.mjs`; do not reconnect a working build trigger or expose API tokens. CLI release does not establish that a Git-triggered build completed.
 
@@ -21,6 +21,8 @@ GitHub/Cloudflare build configuration is managed by `scripts/cloudflare.mjs`; do
 Records, goals, preferences, relationships, and file metadata contain current state only. Deletion is permanent and cascading where child content belongs to a removed parent. A durable cleanup queue retries physical file removal. A one-minute scheduled handler resumes active compilation, expires abandoned uploads, drains file cleanup, retries bounded encrypted email jobs and expires authentication challenges/counters.
 
 Settings exports the current full workspace and uploads it by replacement. Upload sessions expire after one hour. Completed upload receipts are temporary; retrying the same commit returns the same result. No scheduled user backups, import undo, trash, or earlier-content storage exists. Version counters and workspace epochs prevent conflicting or obsolete edits; they do not provide content history.
+
+Current workspace packages use version 2 only, including optional Radar state. Older packages are rejected. D1 SQL exports are unavailable for this database because it contains FTS5 virtual tables; record a private D1 Time Travel bookmark before a release that needs a recovery point.
 
 [Cloudflare D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) is always enabled by the provider. Fresh databases detach the app from the deleted databases’ recovery history; new provider recovery history still accumulates.
 

@@ -10,6 +10,7 @@ import { goalSchema, type Goal } from "./goals";
 import { recordDataError } from "./record-contract";
 import { dataReferences } from "./references";
 import { recruitmentSteps } from "./applications";
+import { radarExportSchema, type RadarExport } from "./radar";
 
 export const MANIFEST_PATH = "workspace.json";
 export const MANIFEST_MAX_BYTES = 32 * 1024 * 1024;
@@ -18,7 +19,8 @@ const identifier = z.string().min(1).max(120);
 export const workspaceManifestSchema = z
   .object({
     format: z.literal("work-workspace"),
-    version: z.literal(1),
+    version: z.literal(2),
+    radar: radarExportSchema.optional(),
     exportedAt: z.string().datetime(),
     records: z
       .array(
@@ -65,7 +67,8 @@ export const workspaceManifestSchema = z
   .strict();
 export interface WorkspaceManifest {
   format: "work-workspace";
-  version: 1;
+  version: 2;
+  radar?: RadarExport;
   exportedAt: string;
   records: WorkRecord[];
   goals: Goal[];
@@ -102,6 +105,25 @@ export function workspacePackageError(
     (typeof id === "string" &&
       kinds.includes(records.get(id)?.kind ?? "") &&
       (!category || records.get(id)?.data.category === category));
+  if (manifest.radar) {
+    const radar = manifest.radar;
+    if (
+      new Set(radar.opportunities.map((o) => o.id)).size !==
+        radar.opportunities.length ||
+      radar.opportunities.some((o) => records.has(o.id) || files.has(o.id))
+    )
+      return "Radar opportunity IDs must be unique.";
+    if (
+      !belongs(radar.config.resumeId, ["asset"]) ||
+      radar.config.sources.some((s) => !belongs(s.companyId, ["company"])) ||
+      radar.opportunities.some(
+        (o) =>
+          !belongs(o.companyId, ["company"]) ||
+          !belongs(o.applicationId, ["application"]),
+      )
+    )
+      return "A Radar relationship refers to a missing or invalid record.";
+  }
   if (
     new Set(manifest.attachments.map((file) => file.path)).size !==
     manifest.attachments.length
@@ -238,6 +260,30 @@ export function remapWorkspace(
   };
   return {
     ...manifest,
+    ...(manifest.radar
+      ? {
+          radar: {
+            config: {
+              ...manifest.radar.config,
+              enabled: false,
+              emailFrequency: "disabled" as const,
+              resumeId: ids.get(manifest.radar.config.resumeId) || "",
+              sources: manifest.radar.config.sources.map((s) => ({
+                ...s,
+                companyId: ids.get(s.companyId) || "",
+              })),
+            },
+            opportunities: manifest.radar.opportunities.map((o) => ({
+              ...o,
+              id: ids.get(o.id)!,
+              companyId: ids.get(o.companyId) || "",
+              applicationId: ids.get(o.applicationId) || "",
+              assessment: null,
+              version: 1,
+            })),
+          },
+        }
+      : {}),
     records: manifest.records.map((record) => ({
       ...record,
       id: ids.get(record.id)!,

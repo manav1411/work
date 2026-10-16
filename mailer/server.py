@@ -9,6 +9,8 @@ import smtplib
 import sqlite3
 import ssl
 import time
+from html import escape
+from urllib.parse import urlparse
 from contextlib import contextmanager
 from email.message import EmailMessage
 from email.utils import formatdate
@@ -70,9 +72,11 @@ class Mailer:
         with self.transport(timeout=8) as smtp:
             if smtp.noop()[0] != 250:
                 raise smtplib.SMTPException("SMTP health check failed.")
-        return {"ok": True, "transport": "gmail-smtp" if self.smtp_mode == "gmail" else "local-smtp"}
+        return {"ok": True, "transport": "gmail-smtp" if self.smtp_mode == "gmail" else "local-smtp", "templates": ["email-verification", "forget-password", "radar-digest"]}
 
     def validate(self, job):
+        if isinstance(job, dict) and job.get("type") == "radar-digest":
+            return self.validate_digest(job)
         fields = {"id", "email", "otp", "type", "from", "expiresAt"}
         if not isinstance(job, dict) or set(job) != fields:
             raise SubmissionError(400, "Invalid mail job.")
@@ -87,7 +91,54 @@ class Mailer:
         if isinstance(expiry, bool) or not isinstance(expiry, int) or not now + 30_000 < expiry <= now + 600_000:
             raise SubmissionError(410, "This email code has expired. Request a fresh code.")
 
+    def validate_digest(self, job):
+        if set(job) != {"id", "email", "type", "from", "expiresAt", "appUrl", "items"}:
+            raise SubmissionError(400, "Invalid Radar digest.")
+        if any(not isinstance(job.get(k), str) for k in {"id", "email", "type", "from", "appUrl"}):
+            raise SubmissionError(400, "Invalid Radar digest.")
+        if not JOB_ID.fullmatch(job["id"]) or not EMAIL.fullmatch(job["email"]) or len(job["email"]) > 254 or job["from"] != self.sender:
+            raise SubmissionError(400, "Invalid Radar digest.")
+        expiry = job["expiresAt"]
+        current = int(time.time() * 1000)
+        if isinstance(expiry, bool) or not isinstance(expiry, int) or not current + 30_000 < expiry <= current + 3_660_000:
+            raise SubmissionError(410, "This Radar digest expired.")
+        app_url = urlparse(job["appUrl"])
+        allowed_origin = os.environ.get("WORK_APP_ORIGIN", "https://work.manavdodia.com")
+        if f"{app_url.scheme}://{app_url.netloc}" != allowed_origin or app_url.path != "/applications":
+            raise SubmissionError(400, "Invalid Work destination.")
+        items = job["items"]
+        if not isinstance(items, list) or not 1 <= len(items) <= 15:
+            raise SubmissionError(400, "Invalid Radar opportunities.")
+        fields = {"id", "title", "company", "location", "salary", "interest", "qualification", "publisher", "url"}
+        for item in items:
+            if not isinstance(item, dict) or set(item) != fields or any(not isinstance(item[k], str) for k in fields):
+                raise SubmissionError(400, "Invalid Radar opportunity.")
+            if not JOB_ID.fullmatch(item["id"]) or any(len(item[k]) > (2048 if k == "url" else 1000) for k in fields):
+                raise SubmissionError(400, "Invalid Radar opportunity.")
+            destination = urlparse(item["url"])
+            if destination.scheme not in {"http", "https"} or not destination.hostname or destination.username or destination.password or any(c in item["url"] for c in "\r\n"):
+                raise SubmissionError(400, "Invalid listing destination.")
+
+    def digest_message(self, job):
+        message = EmailMessage()
+        message["From"] = f"Work <{self.sender}>"
+        message["To"] = job["email"]
+        message["Subject"] = f'{len(job["items"])} new opportunities on your Work Radar'
+        message["Date"] = formatdate(localtime=False)
+        message["Message-ID"] = f'<{job["id"]}@{self.sender.split("@", 1)[1]}>'
+        message["Auto-Submitted"] = "auto-generated"
+        lines, cards = [], []
+        for item in job["items"]:
+            lines.append(f'{item["title"]} — {item["company"]}\n{item["location"]}\n{item["salary"]}\nInterest: {item["interest"]}; qualification fit: {item["qualification"]}\n{item["publisher"]}: {item["url"]}')
+            safe = {k: escape(v, quote=True) for k, v in item.items()}
+            cards.append(f'<div style="background:#fffdf7;border:2px solid #202128;border-radius:12px;padding:20px;margin:18px 0"><p>{safe["company"]}</p><h2 style="font-size:19px">{safe["title"]}</h2><p>{safe["location"]}</p><p>{safe["salary"]}</p><p>Interest: {safe["interest"]} · Qualification fit: {safe["qualification"]}</p><a href="{safe["url"]}" style="color:#174831">Listing ↗ · {safe["publisher"]}</a></div>')
+        message.set_content("Your Work Radar\n\n" + "\n\n".join(lines) + f'\n\nView all opportunities or change email frequency:\n{job["appUrl"]}\n\nScores describe rubric fit, not hiring probability.\n')
+        message.add_alternative(f'<!doctype html><html><body style="margin:0;padding:24px;background:#f5f2e9;color:#202128;font-family:Arial,sans-serif"><div style="max-width:560px;margin:auto"><h1>Your Work Radar.</h1>{"".join(cards)}<p>Scores describe rubric fit, not hiring probability.</p><a href="{escape(job["appUrl"], quote=True)}">View Radar · Change email frequency or disable emails</a></div></body></html>', subtype="html")
+        return message
+
     def message(self, job):
+        if job["type"] == "radar-digest":
+            return self.digest_message(job)
         verify = job["type"] == "email-verification"
         title = "Your Work verification code" if verify else "Reset your Work password"
         instruction = "Enter this code in work, it expires in 5 minutes. Ignore if you didn't request this."
@@ -182,18 +233,21 @@ def handler(mailer):
         def do_POST(self):
             if not self.authorised():
                 return self.reply(401, {"error": "Unauthorised."})
-            if self.path != "/emails":
+            if self.path not in {"/emails", "/radar-digests"}:
                 return self.reply(404, {"error": "Not found."})
             try:
                 if self.headers.get("Transfer-Encoding") or self.headers.get_content_type() != "application/json":
                     raise SubmissionError(400, "Use a bounded JSON body.")
                 length = int(self.headers.get("Content-Length", "0"))
-                if not 0 < length <= 4096:
+                if not 0 < length <= (65536 if self.path == "/radar-digests" else 4096):
                     raise SubmissionError(413, "Invalid message size.")
                 body = self.rfile.read(length)
                 if len(body) != length:
                     raise SubmissionError(400, "Incomplete request.")
-                result = mailer.submit(json.loads(body))
+                job = json.loads(body)
+                if not isinstance(job, dict) or (job.get("type") == "radar-digest") != (self.path == "/radar-digests"):
+                    raise SubmissionError(400, "Invalid message type for this endpoint.")
+                result = mailer.submit(job)
                 return self.reply(202, result)
             except (ValueError, UnicodeDecodeError):
                 return self.reply(400, {"error": "Invalid mail job."})

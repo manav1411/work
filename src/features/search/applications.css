@@ -226,14 +226,20 @@
 .application-filters > .compact-select > .themed-select-trigger {
   gap: 0.5rem;
 }
-.application-filters > .compact-select > .themed-select-trigger > span:first-child {
+.application-filters
+  > .compact-select
+  > .themed-select-trigger
+  > span:first-child {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.application-filters > .compact-select > .themed-select-trigger > span:last-child {
+.application-filters
+  > .compact-select
+  > .themed-select-trigger
+  > span:last-child {
   flex: 0 0 auto;
 }
 .application-notice {
@@ -426,7 +432,8 @@
   outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }
-.radar-card .radar-careers-button {
+.radar-card .radar-careers-button,
+.opportunity-card .radar-careers-button {
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
@@ -447,12 +454,14 @@
     transform 120ms ease,
     box-shadow 120ms ease;
 }
-.radar-card .radar-careers-button:hover {
+.radar-card .radar-careers-button:hover,
+.opportunity-card .radar-careers-button:hover {
   color: #202128;
   transform: translate(-1px, -1px);
   box-shadow: 3px 3px 0 var(--shadow-colour);
 }
-.radar-card .radar-careers-button:focus-visible {
+.radar-card .radar-careers-button:focus-visible,
+.opportunity-card .radar-careers-button:focus-visible {
   outline: 2px solid var(--focus-colour);
   outline-offset: 3px;
 }

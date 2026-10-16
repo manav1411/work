@@ -47,7 +47,10 @@ import { useEditMode } from "../../lib/edit-mode";
 import "./applications.css";
 import { InlineProcess } from "./InlineProcess";
 import { InlineApplicationFields } from "./InlineApplicationFields";
-import { InlineRadarFields, radarNotes } from "./InlineRadarFields";
+import { InlineInterestedFields } from "./InlineInterestedFields";
+import { RadarView } from "./RadarView";
+import type { Opportunity } from "../../../shared/radar";
+import { request, jsonRequest } from "../../lib/api";
 
 export const APPLICATION_STAGES = APPLICATION_STATUSES;
 
@@ -57,6 +60,8 @@ export function ApplicationsPage() {
   const [params, setParams] = useSearchParams();
   const [editing, setEditing] = useState<WorkRecord | null | undefined>();
   const [prefilledCompany, setPrefilledCompany] = useState<WorkRecord>();
+  const [prefilledOpportunity, setPrefilledOpportunity] =
+    useState<Opportunity>();
   const [interviewEditing, setInterviewEditing] = useState<
     WorkRecord | null | undefined
   >();
@@ -69,7 +74,8 @@ export function ApplicationsPage() {
     (record) => record.kind === "application",
   );
   const companies = records.filter((record) => record.kind === "company");
-  const radar = params.get("tab") === "radar";
+  const radar = params.get("tab") === "interested";
+  const discovery = params.get("tab") === "radar";
   const linkedInterview = records.find(
     (item) => item.kind === "interview" && item.id === params.get("interview"),
   );
@@ -136,14 +142,24 @@ export function ApplicationsPage() {
         kind: "company",
         title: "Untitled",
         body: "",
-        data: { radar: true },
+        data: {},
       });
     } catch (failure) {
       setError(errorMessage(failure));
     }
   }
   function newApplication(company?: WorkRecord) {
+    setPrefilledOpportunity(undefined);
     setPrefilledCompany(company);
+    setEditing(null);
+  }
+  function newRadarApplication(opportunity: Opportunity) {
+    if (opportunity.applicationId) {
+      setParams({ record: opportunity.applicationId });
+      return;
+    }
+    setPrefilledOpportunity(opportunity);
+    setPrefilledCompany(companies.find((c) => c.id === opportunity.companyId));
     setEditing(null);
   }
   async function deleteRecord() {
@@ -152,7 +168,7 @@ export function ApplicationsPage() {
     try {
       await remove(deleting.id);
       setDeleting(undefined);
-      setParams(radar ? { tab: "radar" } : {});
+      setParams(radar ? { tab: "interested" } : {});
     } catch (failure) {
       setError(errorMessage(failure));
     }
@@ -164,7 +180,7 @@ export function ApplicationsPage() {
         title="Applications"
         description="Keep the opportunity, the process, and your next conversation together."
         action={
-          editMode ? (
+          editMode && !discovery ? (
             <Button
               onClick={() => (radar ? void addCompany() : newApplication())}
             >
@@ -181,9 +197,9 @@ export function ApplicationsPage() {
       >
         <button
           role="tab"
-          aria-selected={!radar}
-          tabIndex={radar ? -1 : 0}
-          className={!radar ? "active" : ""}
+          aria-selected={!radar && !discovery}
+          tabIndex={radar || discovery ? -1 : 0}
+          className={!radar && !discovery ? "active" : ""}
           onClick={() => setParams({})}
         >
           Applications <span>{applications.length}</span>
@@ -193,9 +209,18 @@ export function ApplicationsPage() {
           aria-selected={radar}
           tabIndex={radar ? 0 : -1}
           className={radar ? "active" : ""}
+          onClick={() => setParams({ tab: "interested" })}
+        >
+          Interested <span>{companies.length}</span>
+        </button>
+        <button
+          role="tab"
+          aria-selected={discovery}
+          tabIndex={discovery ? 0 : -1}
+          className={discovery ? "active" : ""}
           onClick={() => setParams({ tab: "radar" })}
         >
-          On your radar <span>{companies.length}</span>
+          Radar
         </button>
       </SectionTabs>
       {error && (
@@ -203,49 +228,54 @@ export function ApplicationsPage() {
           {error}
         </p>
       )}
-      <div className="application-filters">
-        <Input
-          aria-label={radar ? "Search companies" : "Search applications"}
-          placeholder={radar ? "Find a company…" : "Find a company or role…"}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {!radar && (
-          <>
-            <Select
-              aria-label="Filter application status"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-            >
-              <option value="">Every status</option>
-              {[...new Set(applications.map(applicationStatusLabel))].map(
-                (value) => (
-                  <option key={value}>{value}</option>
-                ),
-              )}
-            </Select>
-            <Select
-              aria-label="Sort applications"
-              value={sort}
-              onChange={(event) => setSort(event.target.value)}
-            >
-              <option value="updated">Recently updated</option>
-              <option value="company">Company A–Z</option>
-              <option value="role">Role A–Z</option>
-              <option value="date">Application date</option>
-              <option value="status">Status</option>
-            </Select>
-          </>
-        )}
-      </div>
-      {radar ? (
+      {!discovery && (
+        <div className="application-filters">
+          <Input
+            aria-label={radar ? "Search companies" : "Search applications"}
+            placeholder={radar ? "Find a company…" : "Find a company or role…"}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {!radar && (
+            <>
+              <Select
+                aria-label="Filter application status"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option value="">Every status</option>
+                {[...new Set(applications.map(applicationStatusLabel))].map(
+                  (value) => (
+                    <option key={value}>{value}</option>
+                  ),
+                )}
+              </Select>
+              <Select
+                aria-label="Sort applications"
+                value={sort}
+                onChange={(event) => setSort(event.target.value)}
+              >
+                <option value="updated">Recently updated</option>
+                <option value="company">Company A–Z</option>
+                <option value="role">Role A–Z</option>
+                <option value="date">Application date</option>
+                <option value="status">Status</option>
+              </Select>
+            </>
+          )}
+        </div>
+      )}
+      {discovery ? (
+        <RadarView view="radar" onApplication={newRadarApplication} />
+      ) : radar ? (
         <>
+          <RadarView view="interested" onApplication={newRadarApplication} />
           {!filteredCompanies.length ? (
             <EmptyState
               title={
                 companies.length
                   ? "No matching companies"
-                  : "Who is on your radar?"
+                  : "Companies you're interested in"
               }
               description="Save a company before there is a particular role to apply for."
               action={
@@ -259,7 +289,7 @@ export function ApplicationsPage() {
               {filteredCompanies.map((company) => (
                 <Card className="radar-card" key={company.id}>
                   {editMode ? (
-                    <InlineRadarFields record={company} />
+                    <InlineInterestedFields record={company} />
                   ) : (
                     <>
                       <div className="radar-title-row">
@@ -300,11 +330,7 @@ export function ApplicationsPage() {
                           {field(company, "location")}
                         </p>
                       )}
-                      <p className="radar-notes-preview">
-                        {company.data.radarNotesMigrated
-                          ? company.body
-                          : radarNotes(company)}
-                      </p>
+                      <p className="radar-notes-preview">{company.body}</p>
                     </>
                   )}
                   {editMode && (
@@ -643,13 +669,15 @@ export function ApplicationsPage() {
       >
         {editing !== undefined && (
           <ApplicationForm
-            key={`${editing?.id || "new"}:${editing?.version || 0}:${prefilledCompany?.id || ""}`}
+            key={`${editing?.id || "new"}:${editing?.version || 0}:${prefilledCompany?.id || ""}:${prefilledOpportunity?.id || ""}`}
             record={editing || undefined}
             company={prefilledCompany}
+            opportunity={prefilledOpportunity}
             onClose={() => setEditing(undefined)}
             onSaved={(id) => {
               setEditing(undefined);
               setPrefilledCompany(undefined);
+              setPrefilledOpportunity(undefined);
               setParams({ record: id });
             }}
           />
@@ -661,12 +689,12 @@ export function ApplicationsPage() {
           setDeleting(undefined);
           setError("");
         }}
-        title={`Delete ${deleting?.kind === "company" ? "radar company" : "application"}?`}
+        title={`Delete ${deleting?.kind === "company" ? "interested company" : "application"}?`}
       >
         <div className="stack">
           <p>
             {deleting?.kind === "company"
-              ? "Applications keep their company name. Removing this radar company does not delete them."
+              ? "Applications and saved opportunities keep their company name. Removing this company does not delete them."
               : "The application, its appointments, and preparation notes will be permanently deleted."}
           </p>
           {error && (
@@ -736,34 +764,45 @@ function Destination({
 function ApplicationForm({
   record,
   company,
+  opportunity,
   onClose,
   onSaved,
 }: {
   record?: WorkRecord;
   company?: WorkRecord;
+  opportunity?: Opportunity;
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
-  const { records, preferences, create, update, pending } = useWorkspace();
+  const { records, preferences, create, update, pending, refresh } =
+    useWorkspace();
+  const [submitting, setSubmitting] = useState(false);
   const companies = records.filter((item) => item.kind === "company");
   const [form, setForm] = useState({
     company: record
       ? applicationCompany(record, records)
-      : company?.title || "",
+      : opportunity?.company || company?.title || "",
     companyId: field(record, "companyId") || company?.id || "",
-    title: record?.title || "",
+    title: record?.title || opportunity?.title || "",
     status: record ? applicationStatusSelection(record) : "Applied",
-    url: field(record, "url"),
+    url: field(record, "url") || opportunity?.sources[0]?.url || "",
     applicationDate: record ? applicationDate(record) : "",
-    location: field(record, "location"),
-    notes: record?.body || "",
-    deadline: field(record, "deadline"),
+    location:
+      field(record, "location") || opportunity?.locations.join(" · ") || "",
+    notes:
+      record?.body ||
+      (opportunity
+        ? [opportunity.notes, opportunity.description]
+            .filter(Boolean)
+            .join("\n\n")
+        : ""),
+    deadline: field(record, "deadline") || opportunity?.closingDate || "",
     followUp: field(record, "followUp"),
     contact: record ? applicationContact(record, records) : "",
   });
   const [error, setError] = useState("");
   const base: WorkRecord = record || {
-    data: { recruitmentSteps: commonRecruitmentProcess() },
+    data: { processVersion: 2, recruitmentSteps: commonRecruitmentProcess() },
     title: form.title,
     id: "new",
     kind: "application",
@@ -780,6 +819,8 @@ function ApplicationForm({
   }
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     setError("");
     try {
       if (!form.company.trim() || !form.title.trim())
@@ -825,20 +866,31 @@ function ApplicationForm({
         ]),
       ];
       const input = { title: form.title.trim(), body: form.notes, links, data };
-      const saved = record
-        ? await update(record.id, input)
-        : await create({ kind: "application", ...input });
+      const saved =
+        opportunity && !record
+          ? (
+              await request<{ record: WorkRecord }>(
+                `/api/radar/opportunities/${opportunity.id}/application`,
+                jsonRequest("POST", { kind: "application", ...input }),
+              )
+            ).record
+          : record
+            ? await update(record.id, input)
+            : await create({ kind: "application", ...input });
+      if (opportunity) await refresh();
       onSaved(saved.id);
     } catch (failure) {
       setError(errorMessage(failure));
+    } finally {
+      setSubmitting(false);
     }
   }
   return (
     <form className="stack" onSubmit={(event) => void save(event)}>
       {companies.length > 0 && (
         <Field
-          label="Radar company"
-          hint="Optional. Choosing a company links this application to its radar entry."
+          label="Interested company"
+          hint="Optional. Choosing a company links this application to its Interested entry."
         >
           <Select
             value={form.companyId}
@@ -984,8 +1036,8 @@ function ApplicationForm({
         </p>
       )}
       <div className="inline-actions">
-        <Button type="submit" disabled={!!pending}>
-          {pending ? "Saving…" : "Save application"}
+        <Button type="submit" disabled={!!pending || submitting}>
+          {pending || submitting ? "Saving…" : "Save application"}
         </Button>
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel

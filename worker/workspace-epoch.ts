@@ -4,6 +4,7 @@ export function epochDatabase(
   db: D1Database,
   owner: string,
   epoch: string,
+  radarVersion?: number,
 ): D1Database {
   const originals = new WeakMap<D1PreparedStatement, D1PreparedStatement>();
   const guarded = async (statements: D1PreparedStatement[]) => {
@@ -12,9 +13,14 @@ export function epochDatabase(
       const results = await db.batch([
         db
           .prepare(
-            "INSERT INTO write_guards(id,value) SELECT ?,EXISTS(SELECT 1 FROM workspace_state WHERE owner_id=? AND epoch=?)",
+            `INSERT INTO write_guards(id,value) SELECT ?,EXISTS(SELECT 1 FROM workspace_state WHERE owner_id=? AND epoch=?)${radarVersion === undefined ? "" : " AND EXISTS(SELECT 1 FROM radar_settings WHERE owner_id=? AND version=?)"}`,
           )
-          .bind(guard, owner, epoch),
+          .bind(
+            guard,
+            owner,
+            epoch,
+            ...(radarVersion === undefined ? [] : [owner, radarVersion]),
+          ),
         ...statements.map((statement) => originals.get(statement) ?? statement),
         db.prepare("DELETE FROM write_guards WHERE id=?").bind(guard),
       ]);

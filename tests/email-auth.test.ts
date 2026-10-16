@@ -123,6 +123,7 @@ beforeAll(async () => {
     "0009_current_workspace.sql",
     "0010_goal_actions.sql",
     "0011_email_auth.sql",
+    "0012_radar.sql",
   ])
     await env.DB.exec(
       readFileSync(new URL(`../migrations/${name}`, import.meta.url), "utf8")

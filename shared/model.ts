@@ -107,7 +107,7 @@ export const arrayField = (
 
 export const KIND_LABELS: Record<RecordKind, string> = {
   note: "Notes",
-  company: "Radar company",
+  company: "Interested company",
   application: "Application",
   interview: "Appointment",
   story: "STAR story",
@@ -120,7 +120,8 @@ export const KIND_LABELS: Record<RecordKind, string> = {
 };
 export const recordUrl = (record: WorkRecord): string => {
   const id = encodeURIComponent(record.id);
-  if (record.kind === "company") return `/applications?tab=radar&record=${id}`;
+  if (record.kind === "company")
+    return `/applications?tab=interested&record=${id}`;
   if (record.kind === "application") return `/applications?record=${id}`;
   if (record.kind === "interview") return `/applications?interview=${id}`;
   if (record.kind === "asset" || record.kind === "resource")
@@ -153,10 +154,7 @@ export function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-export function niceDate(
-  value: string,
-  timezone = "Australia/Sydney",
-): string {
+export function niceDate(value: string, timezone = "Australia/Sydney"): string {
   if (!value) return "No date yet";
   const parsed = new Date(value.length === 10 ? `${value}T12:00:00Z` : value);
   if (Number.isNaN(parsed.getTime())) return value;

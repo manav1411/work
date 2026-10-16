@@ -44,6 +44,9 @@ if (
     "AUTH_MAILER_ACCESS_CLIENT_SECRET",
     "ALLOWED_GITHUB_USERS",
     "GITHUB_CLIENT_SECRET",
+    "TYPESAFE_API_KEY",
+    "JSEARCH_API_KEY",
+    "APIFY_TOKEN",
   ].some((name) => Object.hasOwn(config.vars ?? {}, name))
 )
   throw new Error(

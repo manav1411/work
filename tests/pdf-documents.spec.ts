@@ -235,13 +235,16 @@ test("uploaded PDFs keep the page layout stable across previews, reloads and nav
   expect(
     Math.abs(buttonZoomCenter.canvasY - buttonZoomCenter.viewportY),
   ).toBeLessThan(3);
-  for (let step = 0; step < 5; step++)
-    await page.getByRole("button", { name: "Zoom in" }).click();
+  const zoomIn = page.getByRole("button", { name: "Zoom in" });
+  for (let step = 0; step < 8 && (await zoomIn.isEnabled()); step++)
+    await zoomIn.click();
+  await expect(zoomValue).toHaveText("200%");
+  await expect(zoomIn).toBeDisabled();
   await expect
     .poll(() =>
       canvas.evaluate((element) => Number.parseFloat(element.style.width)),
     )
-    .toBeGreaterThan(initialWidth * 2.8);
+    .toBe(1200);
   const zoomedWidth = await canvas.evaluate((element) =>
     Number.parseFloat(element.style.width),
   );

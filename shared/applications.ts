@@ -93,6 +93,7 @@ export const ApplicationDataSchema = z
     location: z.string().max(1000).optional(),
     deadline: optionalDate.optional(),
     followUp: optionalDate.optional(),
+    contact: z.string().max(1000).optional(),
   })
   .strict()
   .superRefine((data, context) => {
@@ -177,9 +178,8 @@ export const ApplicationDataSchema = z
           "Change terminal outcomes explicitly using application status.",
       });
   });
-export const RadarCompanyDataSchema = z
+export const InterestedCompanyDataSchema = z
   .object({
-    radar: z.boolean().optional(),
     website: optionalUrl.optional(),
     careersUrl: optionalUrl.optional(),
     location: z.string().max(1000).optional(),

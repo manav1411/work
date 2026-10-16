@@ -18,6 +18,12 @@ import { dependentRecordIds } from "../../shared/deletion";
 import { detachDataReferences } from "../../shared/references";
 import { demoGoals } from "./demo-goals";
 import { ApiError, type ApiAdapter } from "./api";
+import {
+  defaultRadarConfig,
+  jobSchema,
+  profileMatches,
+  type Opportunity,
+} from "../../shared/radar";
 export function makeRecord(input: RecordInput): WorkRecord {
   const at = new Date().toISOString();
   return {
@@ -45,7 +51,12 @@ export function createDemoStore() {
     attachments: [] as Attachment[],
     files: {} as Record<string, string>,
     projects: {} as Record<string, LatexProject>,
-    seedVersion: 2,
+    seedVersion: 3,
+    radar: {
+      config: defaultRadarConfig(),
+      version: 0,
+      opportunities: [] as Opportunity[],
+    },
   };
   const seeds = demoShowcaseRecords(),
     byKey = new Map<string, WorkRecord>();
@@ -136,61 +147,6 @@ export function createDemoStore() {
   } catch {
     /* Start a fresh demo. */
   }
-  if (state !== initial) {
-    state.projects ??= {};
-    state.attachments ??= [];
-    state.files ??= {};
-    for (const seedRecord of initial.records) {
-      const seedProject = initial.projects[seedRecord.id];
-      const seedJob = seedProject?.latestJob;
-      const seedFileId = seedJob?.pdfAttachmentId;
-      const seedFile = seedFileId
-        ? initial.attachments.find((file) => file.id === seedFileId)
-        : undefined;
-      const contents = seedFileId ? initial.files[seedFileId] : undefined;
-      const savedRecord = state.records.find(
-        (record) =>
-          record.kind === seedRecord.kind &&
-          record.title === seedRecord.title &&
-          record.data.type === seedRecord.data.type &&
-          record.data.nativeDocument === true,
-      );
-      if (
-        !seedProject ||
-        !seedJob ||
-        !seedFile ||
-        !contents ||
-        !savedRecord ||
-        state.projects[savedRecord.id]
-      )
-        continue;
-
-      const attachmentId = crypto.randomUUID();
-      const attachment = {
-        ...seedFile,
-        id: attachmentId,
-        recordId: savedRecord.id,
-      };
-      const job = { ...seedJob, pdfAttachmentId: attachmentId };
-      state.attachments.push(attachment);
-      state.files[attachmentId] = contents;
-      state.projects[savedRecord.id] = {
-        ...seedProject,
-        latestJob: job,
-        latestSuccessfulJob: job,
-      };
-      savedRecord.data = {
-        ...savedRecord.data,
-        latexProject: seedRecord.data.latexProject,
-        latexJobs: [
-          ...(Array.isArray(savedRecord.data.latexJobs)
-            ? savedRecord.data.latexJobs
-            : []),
-          job,
-        ],
-      };
-    }
-  }
   const persist = () => {
     try {
       sessionStorage.setItem(key, JSON.stringify(state));
@@ -236,6 +192,129 @@ export function createDemoStore() {
     const url = new URL(path, "https://demo.invalid"),
       method = init.method ?? "GET",
       body = typeof init.body === "string" ? JSON.parse(init.body) : {};
+    if (url.pathname.startsWith("/api/radar/")) {
+      const radar = state.radar;
+      if (url.pathname === "/api/radar/settings") {
+        if (method === "PUT") {
+          if (body.config.enabled || body.config.emailFrequency !== "disabled")
+            throw new ApiError(
+              "Scheduled discovery and email are available in your signed-in workspace.",
+              400,
+            );
+          radar.config = body.config;
+          radar.version++;
+          persist();
+        }
+        return {
+          config: radar.config,
+          version: radar.version,
+          providers: { jsearch: false, apify: false, jev: false },
+          runs: [],
+          usage: [],
+          emailConfigured: false,
+        };
+      }
+      if (url.pathname === "/api/radar/opportunities") {
+        if (method === "POST") {
+          const job = jobSchema.parse(body),
+            at = new Date().toISOString();
+          const opportunity: Opportunity = {
+            ...job,
+            id: crypto.randomUUID(),
+            version: 1,
+            firstSeenAt: at,
+            lastSeenAt: at,
+            saved: true,
+            flagged: false,
+            dismissed: false,
+            seen: false,
+            tracked: false,
+            notified: false,
+            notes: "",
+            applicationId: "",
+            assessment: null,
+            profileIds: radar.config.profiles
+              .filter((p) => profileMatches(job, p))
+              .map((p) => p.id),
+          };
+          radar.opportunities.push(opportunity);
+          persist();
+          return { opportunity };
+        }
+        const view = url.searchParams.get("view") || "radar",
+          q = (url.searchParams.get("q") || "").toLowerCase();
+        return {
+          opportunities: structuredClone(
+            radar.opportunities.filter(
+              (o) =>
+                (view === "all" || view === "interested"
+                  ? view === "all" || o.saved
+                  : view === "tracked"
+                    ? o.tracked
+                    : view === "dismissed"
+                      ? o.dismissed
+                      : !o.saved && !o.tracked && !o.dismissed) &&
+                (!q ||
+                  `${o.title} ${o.company} ${o.description}`
+                    .toLowerCase()
+                    .includes(q)) &&
+                (url.searchParams.get("flagged") !== "true" || o.flagged),
+            ),
+          ),
+          nextCursor: null,
+        };
+      }
+      const match =
+        /^\/api\/radar\/opportunities\/([^/]+)(?:\/(state|application))?$/.exec(
+          url.pathname,
+        );
+      if (match) {
+        const opportunity = radar.opportunities.find((o) => o.id === match[1]);
+        if (!opportunity) throw new ApiError("Opportunity not found.", 404);
+        if (match[2] === "state") {
+          if (body.version !== opportunity.version)
+            throw new ApiError(
+              "This opportunity changed. Refresh and try again.",
+              409,
+            );
+          for (const key of [
+            "saved",
+            "flagged",
+            "dismissed",
+            "seen",
+            "notes",
+          ] as const)
+            if (body[key] !== undefined)
+              Object.assign(opportunity, { [key]: body[key] });
+          if (body.restore && !opportunity.applicationId)
+            opportunity.tracked = false;
+          opportunity.version++;
+          persist();
+          return { opportunity: structuredClone(opportunity) };
+        }
+        if (match[2] === "application") {
+          const existing = state.records.find(
+            (r) => r.id === opportunity.applicationId,
+          );
+          if (existing) return { record: structuredClone(existing) };
+          const record = makeRecord(body);
+          validate(record);
+          state.records.push(record);
+          opportunity.applicationId = record.id;
+          opportunity.tracked = true;
+          opportunity.version++;
+          persist();
+          return { record };
+        }
+        return { opportunity: structuredClone(opportunity) };
+      }
+      if (url.pathname === "/api/radar/digests/preview")
+        return { opportunities: [] };
+      throw new ApiError(
+        "Discovery and email are available in your signed-in workspace.",
+        503,
+      );
+    }
     if (url.pathname === "/api/preferences") {
       if (method === "PUT") {
         state.preferences = { ...state.preferences, ...body };

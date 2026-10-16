@@ -2,6 +2,7 @@ import { recordContractStatements, validateRecordContract } from "../contracts";
 import type { Attachment, RecordInput, WorkRecord } from "../../shared/model";
 import { dataReferences, detachDataReferences } from "../../shared/references";
 import { ApiError, id, now } from "../env";
+import { trackingStatements } from "../radar-store";
 
 export { dataReferences } from "../../shared/references";
 
@@ -472,6 +473,7 @@ export async function writeRecord(
       ...linkStatements(db, owner, record),
       ...recordContractStatements(db, owner, [record]),
       ...additionalStatements,
+      ...(await trackingStatements(db, owner, record)),
     ]);
     const returned = results[beforeStatements.length]?.results?.[0] as
       { data?: string } | undefined;

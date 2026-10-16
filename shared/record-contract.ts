@@ -1,7 +1,7 @@
 import { type RecordKind } from "./model";
 import {
   ApplicationDataSchema,
-  RadarCompanyDataSchema,
+  InterestedCompanyDataSchema,
   InterviewAppointmentDataSchema,
 } from "./applications";
 import { contentDataError, contentDataSchemaFor } from "./content";
@@ -18,7 +18,7 @@ export function recordDataError(
   if (content) return content;
   let schema: z.ZodType | undefined;
   if (kind === "application") schema = ApplicationDataSchema;
-  if (kind === "company") schema = RadarCompanyDataSchema;
+  if (kind === "company") schema = InterestedCompanyDataSchema;
   if (kind === "interview") schema = InterviewAppointmentDataSchema;
   if (data.category === "direction") {
     if (!DIRECTION_KINDS.some((value) => value === kind))

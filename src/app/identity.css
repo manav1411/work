@@ -332,6 +332,7 @@
   }
 }
 .brand .brand-arrow,
+.mobile-work-brand .brand-arrow,
 .work-symbol .brand-arrow,
 .signin-mark .brand-arrow {
   display: inline-flex;

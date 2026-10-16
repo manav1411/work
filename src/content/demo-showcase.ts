@@ -128,7 +128,6 @@ export function demoShowcaseRecords(today = localDate()): RecordInput[] {
       tags: ["demo", "payments", "infrastructure"],
       data: {
         demoSeedKey: "radar-stripe",
-        radar: true,
         location: "Australia / Remote",
         website: "https://stripe.com/",
         careersUrl: "https://stripe.com/jobs",
@@ -141,7 +140,6 @@ export function demoShowcaseRecords(today = localDate()): RecordInput[] {
       tags: ["demo", "security", "networking"],
       data: {
         demoSeedKey: "radar-cloudflare",
-        radar: true,
         location: "Melbourne / Remote",
         website: "https://www.cloudflare.com/",
         careersUrl: "https://www.cloudflare.com/careers/jobs/",

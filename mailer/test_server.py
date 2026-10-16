@@ -107,6 +107,31 @@ class MailerTests(unittest.TestCase):
         self.assertEqual(restarted.submit(self.job)["state"], "uncertain")
         self.assertEqual(len(FakeSMTP.messages), 1)
 
+    def digest(self):
+        return {"id": str(uuid.uuid4()), "email": "owner@example.invalid", "type": "radar-digest", "from": self.mailer.sender, "expiresAt": int(time.time() * 1000) + 3_600_000, "appUrl": "https://work.manavdodia.com/applications?tab=radar", "items": [{"id": str(uuid.uuid4()), "title": "Engineer <script>alert(1)</script>", "company": "Example & Co", "location": "Melbourne", "salary": "Not listed", "interest": "90/100", "qualification": "Not enough information", "publisher": "LinkedIn", "url": "https://linkedin.com/jobs/view/1234"}]}
+
+    def test_radar_digest_is_fixed_escaped_and_idempotent(self):
+        job = self.digest()
+        self.assertEqual(self.mailer.submit(job)["state"], "accepted")
+        self.assertEqual(self.mailer.submit(job)["state"], "accepted")
+        self.assertEqual(len(FakeSMTP.messages), 1)
+        message = FakeSMTP.messages[0][0]
+        html = message.get_body(preferencelist=("html",)).get_content()
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("Change email frequency", html)
+        self.assertEqual(str(message["Subject"]), "1 new opportunities on your Work Radar")
+
+    def test_radar_digest_rejects_arbitrary_templates_destinations_and_excess_items(self):
+        for changes in [{"html": "arbitrary"}, {"appUrl": "https://evil.invalid/applications"}, {"items": []}, {"items": self.digest()["items"] * 16}]:
+            with self.assertRaises(server.SubmissionError):
+                self.mailer.submit({**self.digest(), **changes})
+        job = self.digest()
+        job["items"][0]["url"] = "javascript:alert(1)"
+        with self.assertRaises(server.SubmissionError):
+            self.mailer.submit(job)
+        self.assertEqual(len(FakeSMTP.messages), 0)
+
     def gmail(self):
         FakeGmailSMTP.authentication_failure = None
         mock = patch("smtplib.SMTP_SSL", FakeGmailSMTP)
@@ -117,7 +142,7 @@ class MailerTests(unittest.TestCase):
 
     def test_gmail_authenticates_over_verified_tls_and_preserves_idempotency(self):
         mailer = self.gmail()
-        self.assertEqual(mailer.health(), {"ok": True, "transport": "gmail-smtp"})
+        self.assertEqual(mailer.health(), {"ok": True, "transport": "gmail-smtp", "templates": ["email-verification", "forget-password", "radar-digest"]})
         self.assertTrue(mailer.submit(self.job)["accepted"])
         self.assertTrue(mailer.submit(self.job)["accepted"])
         self.assertEqual(len(FakeSMTP.messages), 1)
