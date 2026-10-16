@@ -155,11 +155,6 @@
   gap: 12px;
   justify-content: space-between;
   align-items: center;
-  padding: 11px 14px;
-  border: 1px solid var(--orange);
-  background: color-mix(in srgb, var(--orange) 12%, var(--paper));
-  border-radius: 7px;
-  font-size: 12px;
   margin-bottom: 20px;
 }
 .learn-source-footer {

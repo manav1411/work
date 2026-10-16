@@ -82,7 +82,7 @@ export function TodayPage() {
     <div className="page-stack home-page">
       <PageHeader title="Home" />
       {model.error && (
-        <div role="alert" className="notice notice-warning">
+        <div role="alert" className="notice notice-error">
           {model.error}
           <Button variant="ghost" onClick={() => void model.refresh()}>
             Retry

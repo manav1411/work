@@ -95,7 +95,6 @@
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  color: var(--red, #b52a44);
 }
 .content-delete-control > [role="alert"] {
   color: var(--red, #b52a44);

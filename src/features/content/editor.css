@@ -441,8 +441,7 @@
   gap: 5px;
   font-size: 11px;
 }
-.rich-save-state.has-error,
-.rich-save-error {
+.rich-save-state.has-error {
   color: var(--danger, #b52a44);
 }
 .rich-save-spinner {
@@ -466,10 +465,6 @@
 }
 .rich-word-count {
   white-space: nowrap;
-}
-.rich-save-error {
-  padding: 10px 18px;
-  font-size: 12px;
 }
 .rich-history-tools {
   padding: 4px 12px 8px;

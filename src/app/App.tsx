@@ -364,7 +364,7 @@ function Shell() {
             )
           )}
           {error && (
-            <div className="notice notice-warning" role="alert">
+            <div className="notice notice-error" role="alert">
               {error}
             </div>
           )}

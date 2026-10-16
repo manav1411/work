@@ -19,6 +19,9 @@
   --lime: #b9ed32;
   --orange: #ff9850;
   --aqua: #36d6bd;
+  --warning: #d6af30;
+  --warning-ink: #69500b;
+  --danger: #b43838;
   --difficulty-easy: #63cf78;
   --difficulty-medium: #f2c343;
   --difficulty-hard: #ed6265;
@@ -469,22 +472,42 @@ kbd {
   color: var(--ink);
   box-shadow: 0 1px 4px #00000014;
 }
-.notice {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--blue);
-  background: var(--paper);
+.notice,
+.form-error,
+.content-save-error,
+.rich-save-error,
+.learn-source-error,
+.application-notice,
+.latex-conflict {
+  --notice-accent: var(--danger);
+  --notice-ink: var(--danger);
+  border: 1px solid var(--notice-accent);
+  background: color-mix(in srgb, var(--notice-accent) 8%, var(--paper));
+  color: var(--notice-ink);
   padding: 14px 17px;
   border-radius: 8px;
   font-size: 12px;
   line-height: 1.6;
 }
-.notice-warning {
-  border-left-color: #d98c1f;
-  background: #fff6df;
-  color: #69450b;
+.notice {
+  --notice-accent: var(--blue);
+  --notice-ink: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.notice-warning,
+.application-notice,
+.latex-conflict {
+  --notice-accent: var(--warning);
+  --notice-ink: var(--warning-ink);
+}
+.notice-error {
+  --notice-accent: var(--danger);
+  --notice-ink: var(--danger);
+}
+.form-error {
+  margin: 0.25rem 0;
 }
 .empty-state {
   text-align: center;
@@ -1044,9 +1067,12 @@ kbd {
   font-weight: 900;
   flex-shrink: 0;
 }
+.toast-error {
+  border-color: var(--danger);
+}
 .toast-error > span {
-  background: #ffd6d5;
-  color: #922e27;
+  background: color-mix(in srgb, var(--danger) 15%, var(--paper));
+  color: var(--danger);
 }
 .toast-info > span {
   background: var(--aqua);
@@ -2062,6 +2088,7 @@ kbd {
   --green: #62dc8e;
   --success: #62dc8e;
   --warning: #f2bf4d;
+  --warning-ink: var(--warning);
   --danger: #ff858b;
   --red: #ff858b;
   --focus-colour: #7a96ff;
@@ -2096,11 +2123,6 @@ kbd {
   background: color-mix(in srgb, var(--blue-fill) 13%, var(--paper));
   border-color: color-mix(in srgb, var(--blue) 28%, var(--line));
   color: var(--blue);
-}
-[data-theme="dark"] .notice-warning {
-  background: #3c311c;
-  color: var(--warning);
-  border-left-color: var(--warning);
 }
 [data-theme="dark"] .login-page {
   background: var(--canvas);
@@ -2175,10 +2197,6 @@ kbd {
 }
 [data-theme="dark"] .button-danger {
   border-color: var(--danger);
-}
-[data-theme="dark"] .toast-error > span {
-  background: var(--danger);
-  color: #202128;
 }
 [data-theme="dark"] .momentum-blue > svg {
   background: var(--blue);

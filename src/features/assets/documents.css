@@ -246,10 +246,6 @@
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
-  padding: 0.65rem;
-  border: 1px solid var(--line);
-  border-radius: 0.6rem;
-  background: var(--surface-tint);
 }
 .latex-conflict-dialog {
   padding: 1.25rem;

@@ -423,7 +423,7 @@ export function AuthPage() {
               </p>
             )}
             {(failure || workspaceError) && (
-              <p className="notice notice-warning" role="alert">
+              <p className="notice notice-error" role="alert">
                 {failure || workspaceError}
               </p>
             )}
